@@ -12,15 +12,19 @@
 #include <string.h>
 
 int timerfd_fds[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+static int timerfd_clockid[8];
+static int timerfd_flags[8];
+static int timerfd_has_set_interval[8];
+static struct itimerspec timerfd_timerspec[8];
 
 int
 timerfd_create(int clockid, int flags)
 {
-	if (clockid != CLOCK_MONOTONIC) {
+	if (clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME) {
 		return EINVAL;
 	}
 
-	if (flags != (TFD_CLOEXEC | TFD_NONBLOCK)) {
+	if (flags & ~(TFD_CLOEXEC | TFD_NONBLOCK)) {
 		return EINVAL;
 	}
 
@@ -37,6 +41,8 @@ timerfd_create(int clockid, int flags)
 	}
 
 	timerfd_fds[i] = kqueue();
+	timerfd_clockid[i] = clockid;
+	timerfd_flags[i] = flags;
 
 	return timerfd_fds[i];
 }
@@ -72,14 +78,8 @@ timerfd_settime(
 		return -1;
 	}
 
-	// only allow oneshot timers for now
-	if (new->it_interval.tv_sec != 0 || new->it_interval.tv_nsec != 0) {
-		errno = EINVAL;
-		return -1;
-	}
-
 	struct timespec now;
-	if (clock_gettime(CLOCK_MONOTONIC, &now) == -1) {
+	if (clock_gettime(timerfd_clockid[i], &now) == -1) {
 		return -1;
 	}
 
@@ -118,6 +118,8 @@ timerfd_settime(
 	if (ret == -1) {
 		return ret;
 	} else {
+		timerfd_timerspec[i] = *new;
+		timerfd_has_set_interval[i] = 0;
 		return 0;
 	}
 }
@@ -150,7 +152,8 @@ timerfd_read(int fd, void *buf, size_t nbytes)
 
 	struct timespec timeout = {0, 0};
 	struct kevent kev;
-	int ret = kevent(fd, NULL, 0, &kev, 1, &timeout);
+	int ret = kevent(fd, NULL, 0, &kev, 1,
+	    (timerfd_flags[i] & TFD_NONBLOCK) ? &timeout : NULL);
 	if (ret == -1) {
 		return -1;
 	} else if (ret == 0) {
@@ -161,6 +164,31 @@ timerfd_read(int fd, void *buf, size_t nbytes)
 	if (kev.data < 1) {
 		errno = EIO;
 		return -1;
+	}
+
+	if (!timerfd_has_set_interval[i] &&
+	    (timerfd_timerspec[i].it_interval.tv_sec ||
+		timerfd_timerspec[i].it_interval.tv_nsec)) {
+		struct kevent chlist[3];
+		int n = 0;
+
+		intptr_t millis_to_exp =
+		    timerfd_timerspec[i].it_interval.tv_sec * 1000;
+		millis_to_exp +=
+		    timerfd_timerspec[i].it_interval.tv_nsec / 1000 / 1000;
+		if (timerfd_timerspec[i].it_interval.tv_nsec % 1000000) {
+			++millis_to_exp;
+		}
+
+		EV_SET(&chlist[n++], 0, EVFILT_TIMER, EV_ADD, 0, 0, 0);
+		EV_SET(&chlist[n++], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
+		EV_SET(&chlist[n++], 0, EVFILT_TIMER, EV_ADD, 0, millis_to_exp,
+		    NULL);
+
+		if (kevent(fd, chlist, n, NULL, 0, NULL) == -1) {
+			return -1;
+		}
+		timerfd_has_set_interval[i] = 1;
 	}
 
 	uint64_t nr_expired = (uint64_t)kev.data;
