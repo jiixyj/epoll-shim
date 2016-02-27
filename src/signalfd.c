@@ -24,7 +24,7 @@ signalfd(int fd, const sigset_t *sigs, int flags)
 		return -1;
 	}
 
-	if (flags & (SFD_NONBLOCK | SFD_CLOEXEC)) {
+	if (flags & ~(SFD_NONBLOCK | SFD_CLOEXEC)) {
 		errno = EINVAL;
 		return -1;
 	}
