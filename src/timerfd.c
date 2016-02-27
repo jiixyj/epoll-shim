@@ -2,10 +2,11 @@
 #undef read
 #undef close
 
+#include <sys/types.h>
+
 #include <sys/event.h>
 #include <sys/param.h>
 #include <sys/time.h>
-#include <sys/types.h>
 
 #include <errno.h>
 #include <string.h>
@@ -156,7 +157,7 @@ timerfd_read(int fd, void *buf, size_t nbytes)
 		return -1;
 	}
 
-	if (ret != 1 || kev.data < 1) {
+	if (kev.data < 1) {
 		errno = EIO;
 		return -1;
 	}

@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <sys/types.h>
+
 #include <stdint.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -40,6 +42,12 @@ struct signalfd_siginfo {
 	uint16_t  ssi_addr_lsb;
 	uint8_t   pad[128-12*4-4*8-2];
 };
+
+ssize_t signalfd_read(int fd, void *buf, size_t nbytes);
+#define read signalfd_read
+
+int signalfd_close(int fd);
+#define close signalfd_close
 
 #ifdef __cplusplus
 }
