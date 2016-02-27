@@ -1,5 +1,5 @@
-#ifndef _SYS_SIGNALFD_H
-#define _SYS_SIGNALFD_H
+#ifndef SHIM_SYS_SIGNALFD_H
+#define SHIM_SYS_SIGNALFD_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -7,10 +7,13 @@ extern "C" {
 
 #include <stdint.h>
 #include <fcntl.h>
+#include <signal.h>
 
+#if 0
 #define __NEED_sigset_t
 
 #include <bits/alltypes.h>
+#endif
 
 #define SFD_CLOEXEC O_CLOEXEC
 #define SFD_NONBLOCK O_NONBLOCK

@@ -1,21 +1,43 @@
 #include <sys/signalfd.h>
-#include <signal.h>
+
+#include <sys/types.h>
+
+#include <sys/event.h>
+#include <sys/param.h>
+#include <sys/time.h>
+
 #include <errno.h>
 #include <fcntl.h>
-#include "syscall.h"
+#include <unistd.h>
 
-int signalfd(int fd, const sigset_t *sigs, int flags)
+int
+signalfd(int fd, const sigset_t *sigs, int flags)
 {
-	int ret = __syscall(SYS_signalfd4, fd, sigs, _NSIG/8, flags);
-#ifdef SYS_signalfd
-	if (ret != -ENOSYS) return __syscall_ret(ret);
-	ret = __syscall(SYS_signalfd, fd, sigs, _NSIG/8);
-	if (ret >= 0) {
-		if (flags & SFD_CLOEXEC)
-			__syscall(SYS_fcntl, ret, F_SETFD, FD_CLOEXEC);
-		if (flags & SFD_NONBLOCK)
-			__syscall(SYS_fcntl, ret, F_SETFL, O_NONBLOCK);
+	if (fd != -1 || flags != SFD_NONBLOCK) {
+		errno = EINVAL;
+		return -1;
 	}
-#endif
-	return __syscall_ret(ret);
+
+	int kq = kqueue();
+	if (kq == -1) {
+		return -1;
+	}
+
+	struct kevent kevs[_SIG_MAXSIG];
+	int nchanges = 0;
+
+	for (int i = 1; i <= _SIG_MAXSIG; ++i) {
+		if (sigismember(sigs, i)) {
+			EV_SET(&kevs[nchanges++], i, EVFILT_SIGNAL, EV_ADD, 0,
+			    0, 0);
+		}
+	}
+
+	int ret = kevent(kq, kevs, nchanges, NULL, 0, NULL);
+	if (ret == -1) {
+		close(kq);
+		return -1;
+	}
+
+	return kq;
 }
