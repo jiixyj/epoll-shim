@@ -11,7 +11,7 @@
 #include <errno.h>
 #include <string.h>
 
-static int timerfd_fds[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+int timerfd_fds[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
 
 int
 timerfd_create(int clockid, int flags)
@@ -144,7 +144,8 @@ timerfd_read(int fd, void *buf, size_t nbytes)
 	}
 
 	if (nbytes < sizeof(uint64_t)) {
-		return EINVAL;
+		errno = EINVAL;
+		return -1;
 	}
 
 	struct timespec timeout = {0, 0};

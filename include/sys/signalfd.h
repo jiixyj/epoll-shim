@@ -44,10 +44,12 @@ struct signalfd_siginfo {
 };
 
 ssize_t signalfd_read(int fd, void *buf, size_t nbytes);
-#define read signalfd_read
-
 int signalfd_close(int fd);
-#define close signalfd_close
+
+extern int epoll_shim_close(int fd);
+extern ssize_t epoll_shim_read(int fd, void *buf, size_t nbytes);
+#define read epoll_shim_read
+#define close epoll_shim_close
 
 #ifdef __cplusplus
 }

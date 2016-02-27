@@ -13,7 +13,7 @@
 #include <string.h>
 #include <unistd.h>
 
-static int signalfd_fds[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+int signalfd_fds[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
 static int signalfd_flags[8];
 
 int
