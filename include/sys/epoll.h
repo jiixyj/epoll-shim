@@ -1,5 +1,5 @@
-#ifndef	_SYS_EPOLL_H
-#define	_SYS_EPOLL_H
+#ifndef	SHIM_SYS_EPOLL_H
+#define	SHIM_SYS_EPOLL_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,9 +9,11 @@ extern "C" {
 #include <sys/types.h>
 #include <fcntl.h>
 
+#if 0
 #define __NEED_sigset_t
 
 #include <bits/alltypes.h>
+#endif
 
 #define EPOLL_CLOEXEC O_CLOEXEC
 #define EPOLL_NONBLOCK O_NONBLOCK
@@ -47,17 +49,23 @@ struct epoll_event {
 	uint32_t events;
 	epoll_data_t data;
 }
+#if 0
 #ifdef __x86_64__
 __attribute__ ((__packed__))
+#endif
 #endif
 ;
 
 
+#if 0
 int epoll_create(int);
+#endif
 int epoll_create1(int);
 int epoll_ctl(int, int, int, struct epoll_event *);
 int epoll_wait(int, struct epoll_event *, int, int);
+#if 0
 int epoll_pwait(int, struct epoll_event *, int, int, const sigset_t *);
+#endif
 
 
 #ifdef __cplusplus

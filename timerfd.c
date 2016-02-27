@@ -113,7 +113,12 @@ timerfd_settime(
 		    EV_ADD | EV_ONESHOT, 0, millis_to_exp, NULL);
 	}
 
-	return kevent(fd, chlist, nchanges, NULL, 0, NULL);
+	int ret = kevent(fd, chlist, nchanges, NULL, 0, NULL);
+	if (ret == -1) {
+		return ret;
+	} else {
+		return 0;
+	}
 }
 
 #if 0
