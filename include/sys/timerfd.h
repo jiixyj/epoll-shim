@@ -22,9 +22,6 @@ int timerfd_settime(int, int, const struct itimerspec *, struct itimerspec *);
 int timerfd_gettime(int, struct itimerspec *);
 #endif
 
-ssize_t timerfd_read(int fd, void *buf, size_t nbytes);
-int timerfd_close(int fd);
-
 extern int epoll_shim_close(int fd);
 extern ssize_t epoll_shim_read(int fd, void *buf, size_t nbytes);
 #define read epoll_shim_read

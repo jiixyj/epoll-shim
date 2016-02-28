@@ -15,26 +15,32 @@
 #include <signal.h>
 #include <string.h>
 
-int timerfd_fds[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
-static pthread_t timerfd_workers[8];
-static timer_t timerfd_timers[8];
-static int timerfd_clockid[8];
-static int timerfd_flags[8];
+struct timerfd_context {
+	int fd;
+	pthread_t worker;
+	timer_t timer;
+	int flags;
+};
 
-static void
-timer_notify_func(union sigval arg)
+static struct timerfd_context timerfd_contexts[8] = {{-1, 0, 0, 0},
+    {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0},
+    {-1, 0, 0, 0}, {-1, 0, 0, 0}};
+
+struct timerfd_context *
+get_timerfd_context(int fd)
 {
-	int kq = arg.sival_int;
-
-	struct kevent kev;
-	EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
-	(void)kevent(kq, &kev, 1, NULL, 0, NULL);
+	for (unsigned i = 0; i < nitems(timerfd_contexts); ++i) {
+		if (fd == timerfd_contexts[i].fd) {
+			return &timerfd_contexts[i];
+		}
+	}
+	return NULL;
 }
 
 static void *
 worker_function(void *arg)
 {
-	int i = (int)(intptr_t)arg;
+	struct timerfd_context *ctx = arg;
 
 	siginfo_t info;
 	sigset_t set;
@@ -46,15 +52,15 @@ worker_function(void *arg)
 	struct kevent kev;
 	EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
 	    (void *)(intptr_t)pthread_getthreadid_np());
-	(void)kevent(timerfd_fds[i], &kev, 1, NULL, 0, NULL);
+	(void)kevent(ctx->fd, &kev, 1, NULL, 0, NULL);
 
 	for (;;) {
 		if (sigwaitinfo(&set, &info) != SIGRTMIN) {
 			break;
 		}
 		EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
-		    (void *)(intptr_t)timer_getoverrun(timerfd_timers[i]));
-		(void)kevent(timerfd_fds[i], &kev, 1, NULL, 0, NULL);
+		    (void *)(intptr_t)timer_getoverrun(ctx->timer));
+		(void)kevent(ctx->fd, &kev, 1, NULL, 0, NULL);
 	}
 
 	return NULL;
@@ -71,46 +77,39 @@ timerfd_create(int clockid, int flags)
 		return EINVAL;
 	}
 
-	unsigned i;
-	for (i = 0; i < nitems(timerfd_fds); ++i) {
-		if (timerfd_fds[i] == -1) {
-			break;
-		}
-	}
-
-	if (i == nitems(timerfd_fds)) {
+	struct timerfd_context *ctx = get_timerfd_context(-1);
+	if (!ctx) {
 		errno = EMFILE;
 		return -1;
 	}
 
-	timerfd_fds[i] = kqueue();
-	if (timerfd_fds[i] == -1) {
+	ctx->fd = kqueue();
+	if (ctx->fd == -1) {
 		return -1;
 	}
 
-	timerfd_flags[i] = flags;
+	ctx->flags = flags;
 
 	struct kevent kev;
 	EV_SET(&kev, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
-	if (kevent(timerfd_fds[i], &kev, 1, NULL, 0, NULL) == -1) {
-		close(timerfd_fds[i]);
-		timerfd_fds[i] = -1;
+	if (kevent(ctx->fd, &kev, 1, NULL, 0, NULL) == -1) {
+		close(ctx->fd);
+		ctx->fd = -1;
 		return -1;
 	}
 
-	if (pthread_create(&timerfd_workers[i], NULL, worker_function,
-		(void *)(intptr_t)i) == -1) {
-		close(timerfd_fds[i]);
-		timerfd_fds[i] = -1;
+	if (pthread_create(&ctx->worker, NULL, worker_function, ctx) == -1) {
+		close(ctx->fd);
+		ctx->fd = -1;
 		return -1;
 	}
 
-	int ret = kevent(timerfd_fds[i], NULL, 0, &kev, 1, NULL);
+	int ret = kevent(ctx->fd, NULL, 0, &kev, 1, NULL);
 	if (ret == -1) {
-		pthread_kill(timerfd_workers[i], SIGRTMIN + 1);
-		pthread_join(timerfd_workers[i], NULL);
-		close(timerfd_fds[i]);
-		timerfd_fds[i] = -1;
+		pthread_kill(ctx->worker, SIGRTMIN + 1);
+		pthread_join(ctx->worker, NULL);
+		close(ctx->fd);
+		ctx->fd = -1;
 		return -1;
 	}
 
@@ -120,29 +119,23 @@ timerfd_create(int clockid, int flags)
 	    .sigev_signo = SIGRTMIN,
 	    .sigev_notify_thread_id = tid};
 
-	if (timer_create(clockid, &sigev, &timerfd_timers[i]) == -1) {
-		pthread_kill(timerfd_workers[i], SIGRTMIN + 1);
-		pthread_join(timerfd_workers[i], NULL);
-		close(timerfd_fds[i]);
-		timerfd_fds[i] = -1;
+	if (timer_create(clockid, &sigev, &ctx->timer) == -1) {
+		pthread_kill(ctx->worker, SIGRTMIN + 1);
+		pthread_join(ctx->worker, NULL);
+		close(ctx->fd);
+		ctx->fd = -1;
 		return -1;
 	}
 
-	return timerfd_fds[i];
+	return ctx->fd;
 }
 
 int
 timerfd_settime(
     int fd, int flags, const struct itimerspec *new, struct itimerspec *old)
 {
-	unsigned i;
-	for (i = 0; i < nitems(timerfd_fds); ++i) {
-		if (timerfd_fds[i] == fd) {
-			break;
-		}
-	}
-
-	if (i == nitems(timerfd_fds)) {
+	struct timerfd_context *ctx = get_timerfd_context(fd);
+	if (!ctx) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -152,7 +145,7 @@ timerfd_settime(
 		return -1;
 	}
 
-	return timer_settime(timerfd_timers[i],
+	return timer_settime(ctx->timer,
 	    (flags & TFD_TIMER_ABSTIME) ? TIMER_ABSTIME : 0, new, old);
 }
 
@@ -164,19 +157,8 @@ int timerfd_gettime(int fd, struct itimerspec *cur)
 #endif
 
 ssize_t
-timerfd_read(int fd, void *buf, size_t nbytes)
+timerfd_read(struct timerfd_context *ctx, void *buf, size_t nbytes)
 {
-	unsigned i;
-	for (i = 0; i < nitems(timerfd_fds); ++i) {
-		if (timerfd_fds[i] == fd) {
-			break;
-		}
-	}
-
-	if (i == nitems(timerfd_fds)) {
-		return read(fd, buf, nbytes);
-	}
-
 	if (nbytes < sizeof(uint64_t)) {
 		errno = EINVAL;
 		return -1;
@@ -184,8 +166,8 @@ timerfd_read(int fd, void *buf, size_t nbytes)
 
 	struct timespec timeout = {0, 0};
 	struct kevent kev;
-	int ret = kevent(fd, NULL, 0, &kev, 1,
-	    (timerfd_flags[i] & TFD_NONBLOCK) ? &timeout : NULL);
+	int ret = kevent(ctx->fd, NULL, 0, &kev, 1,
+	    (ctx->flags & TFD_NONBLOCK) ? &timeout : NULL);
 	if (ret == -1) {
 		return -1;
 	} else if (ret == 0) {
@@ -193,25 +175,18 @@ timerfd_read(int fd, void *buf, size_t nbytes)
 		return -1;
 	}
 
-	uint64_t nr_expired = 1 + (int)kev.udata;
+	uint64_t nr_expired = 1 + (uint64_t)kev.udata;
 	memcpy(buf, &nr_expired, sizeof(uint64_t));
 
 	return sizeof(uint64_t);
 }
 
 int
-timerfd_close(int fd)
+timerfd_close(struct timerfd_context *ctx)
 {
-	unsigned i;
-	for (i = 0; i < nitems(timerfd_fds); ++i) {
-		if (timerfd_fds[i] == fd) {
-			timer_delete(timerfd_timers[i]);
-			pthread_kill(timerfd_workers[i], SIGRTMIN + 1);
-			pthread_join(timerfd_workers[i], NULL);
-			timerfd_fds[i] = -1;
-			break;
-		}
-	}
-
-	return close(fd);
+	timer_delete(ctx->timer);
+	pthread_kill(ctx->worker, SIGRTMIN + 1);
+	pthread_join(ctx->worker, NULL);
+	ctx->fd = -1;
+	return close(ctx->fd);
 }

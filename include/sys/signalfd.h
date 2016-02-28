@@ -43,9 +43,6 @@ struct signalfd_siginfo {
 	uint8_t   pad[128-12*4-4*8-2];
 };
 
-ssize_t signalfd_read(int fd, void *buf, size_t nbytes);
-int signalfd_close(int fd);
-
 extern int epoll_shim_close(int fd);
 extern ssize_t epoll_shim_read(int fd, void *buf, size_t nbytes);
 #define read epoll_shim_read
