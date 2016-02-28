@@ -8,14 +8,57 @@
 #include <sys/param.h>
 #include <sys/time.h>
 
+#include <pthread.h>
+#include <pthread_np.h>
+
 #include <errno.h>
+#include <signal.h>
 #include <string.h>
 
 int timerfd_fds[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+static pthread_t timerfd_workers[8];
+static timer_t timerfd_timers[8];
 static int timerfd_clockid[8];
 static int timerfd_flags[8];
-static int timerfd_has_set_interval[8];
-static struct itimerspec timerfd_timerspec[8];
+
+static void
+timer_notify_func(union sigval arg)
+{
+	int kq = arg.sival_int;
+
+	struct kevent kev;
+	EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
+	(void)kevent(kq, &kev, 1, NULL, 0, NULL);
+}
+
+static void *
+worker_function(void *arg)
+{
+	int i = (int)(intptr_t)arg;
+
+	siginfo_t info;
+	sigset_t set;
+	sigemptyset(&set);
+	sigaddset(&set, SIGRTMIN);
+	sigaddset(&set, SIGRTMIN + 1);
+	(void)pthread_sigmask(SIG_BLOCK, &set, NULL);
+
+	struct kevent kev;
+	EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
+	    (void *)(intptr_t)pthread_getthreadid_np());
+	(void)kevent(timerfd_fds[i], &kev, 1, NULL, 0, NULL);
+
+	for (;;) {
+		if (sigwaitinfo(&set, &info) != SIGRTMIN) {
+			break;
+		}
+		EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
+		    (void *)(intptr_t)timer_getoverrun(timerfd_timers[i]));
+		(void)kevent(timerfd_fds[i], &kev, 1, NULL, 0, NULL);
+	}
+
+	return NULL;
+}
 
 int
 timerfd_create(int clockid, int flags)
@@ -41,8 +84,49 @@ timerfd_create(int clockid, int flags)
 	}
 
 	timerfd_fds[i] = kqueue();
-	timerfd_clockid[i] = clockid;
+	if (timerfd_fds[i] == -1) {
+		return -1;
+	}
+
 	timerfd_flags[i] = flags;
+
+	struct kevent kev;
+	EV_SET(&kev, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
+	if (kevent(timerfd_fds[i], &kev, 1, NULL, 0, NULL) == -1) {
+		close(timerfd_fds[i]);
+		timerfd_fds[i] = -1;
+		return -1;
+	}
+
+	if (pthread_create(&timerfd_workers[i], NULL, worker_function,
+		(void *)(intptr_t)i) == -1) {
+		close(timerfd_fds[i]);
+		timerfd_fds[i] = -1;
+		return -1;
+	}
+
+	int ret = kevent(timerfd_fds[i], NULL, 0, &kev, 1, NULL);
+	if (ret == -1) {
+		pthread_kill(timerfd_workers[i], SIGRTMIN + 1);
+		pthread_join(timerfd_workers[i], NULL);
+		close(timerfd_fds[i]);
+		timerfd_fds[i] = -1;
+		return -1;
+	}
+
+	int tid = (int)kev.udata;
+
+	struct sigevent sigev = {.sigev_notify = SIGEV_THREAD_ID,
+	    .sigev_signo = SIGRTMIN,
+	    .sigev_notify_thread_id = tid};
+
+	if (timer_create(clockid, &sigev, &timerfd_timers[i]) == -1) {
+		pthread_kill(timerfd_workers[i], SIGRTMIN + 1);
+		pthread_join(timerfd_workers[i], NULL);
+		close(timerfd_fds[i]);
+		timerfd_fds[i] = -1;
+		return -1;
+	}
 
 	return timerfd_fds[i];
 }
@@ -63,65 +147,13 @@ timerfd_settime(
 		return -1;
 	}
 
-	if (flags != TFD_TIMER_ABSTIME) {
+	if (flags & ~(TFD_TIMER_ABSTIME)) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	if (old != NULL) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	if (new == NULL) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	struct timespec now;
-	if (clock_gettime(timerfd_clockid[i], &now) == -1) {
-		return -1;
-	}
-
-	intptr_t millis_to_exp = 0;
-
-	if (new->it_value.tv_sec > now.tv_sec ||
-	    (new->it_value.tv_sec == now.tv_sec &&
-		new->it_value.tv_nsec > now.tv_nsec)) {
-		struct timespec timer_exp;
-		timer_exp.tv_sec = new->it_value.tv_sec - now.tv_sec;
-		timer_exp.tv_nsec = new->it_value.tv_nsec - now.tv_nsec;
-		if (timer_exp.tv_nsec < 0) {
-			timer_exp.tv_nsec += 1000000000;
-			timer_exp.tv_sec -= 1;
-		}
-		millis_to_exp = timer_exp.tv_sec * 1000;
-		millis_to_exp += timer_exp.tv_nsec / 1000 / 1000;
-		if (timer_exp.tv_nsec % 1000000) {
-			++millis_to_exp;
-		}
-	}
-
-	struct kevent chlist[3];
-	int nchanges = 0;
-
-	// first, disarm the timer if one was already set
-	EV_SET(&chlist[nchanges++], 0, EVFILT_TIMER, EV_ADD, 0, 0, 0);
-	EV_SET(&chlist[nchanges++], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-
-	if (new->it_value.tv_sec || new->it_value.tv_nsec) {
-		EV_SET(&chlist[nchanges++], 0, EVFILT_TIMER,
-		    EV_ADD | EV_ONESHOT, 0, millis_to_exp, NULL);
-	}
-
-	int ret = kevent(fd, chlist, nchanges, NULL, 0, NULL);
-	if (ret == -1) {
-		return ret;
-	} else {
-		timerfd_timerspec[i] = *new;
-		timerfd_has_set_interval[i] = 0;
-		return 0;
-	}
+	return timer_settime(timerfd_timers[i],
+	    (flags & TFD_TIMER_ABSTIME) ? TIMER_ABSTIME : 0, new, old);
 }
 
 #if 0
@@ -161,38 +193,9 @@ timerfd_read(int fd, void *buf, size_t nbytes)
 		return -1;
 	}
 
-	if (kev.data < 1) {
-		errno = EIO;
-		return -1;
-	}
-
-	if (!timerfd_has_set_interval[i] &&
-	    (timerfd_timerspec[i].it_interval.tv_sec ||
-		timerfd_timerspec[i].it_interval.tv_nsec)) {
-		struct kevent chlist[3];
-		int n = 0;
-
-		intptr_t millis_to_exp =
-		    timerfd_timerspec[i].it_interval.tv_sec * 1000;
-		millis_to_exp +=
-		    timerfd_timerspec[i].it_interval.tv_nsec / 1000 / 1000;
-		if (timerfd_timerspec[i].it_interval.tv_nsec % 1000000) {
-			++millis_to_exp;
-		}
-
-		EV_SET(&chlist[n++], 0, EVFILT_TIMER, EV_ADD, 0, 0, 0);
-		EV_SET(&chlist[n++], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-		EV_SET(&chlist[n++], 0, EVFILT_TIMER, EV_ADD, 0, millis_to_exp,
-		    NULL);
-
-		if (kevent(fd, chlist, n, NULL, 0, NULL) == -1) {
-			return -1;
-		}
-		timerfd_has_set_interval[i] = 1;
-	}
-
-	uint64_t nr_expired = (uint64_t)kev.data;
+	uint64_t nr_expired = 1 + (int)kev.udata;
 	memcpy(buf, &nr_expired, sizeof(uint64_t));
+
 	return sizeof(uint64_t);
 }
 
@@ -202,6 +205,9 @@ timerfd_close(int fd)
 	unsigned i;
 	for (i = 0; i < nitems(timerfd_fds); ++i) {
 		if (timerfd_fds[i] == fd) {
+			timer_delete(timerfd_timers[i]);
+			pthread_kill(timerfd_workers[i], SIGRTMIN + 1);
+			pthread_join(timerfd_workers[i], NULL);
 			timerfd_fds[i] = -1;
 			break;
 		}
