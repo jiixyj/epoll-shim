@@ -13,6 +13,8 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
 struct timerfd_context {
@@ -20,20 +22,34 @@ struct timerfd_context {
 	pthread_t worker;
 	timer_t timer;
 	int flags;
+	struct timerfd_context *next;
 };
 
-static struct timerfd_context timerfd_contexts[8] = {{-1, 0, 0, 0},
-    {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0},
-    {-1, 0, 0, 0}, {-1, 0, 0, 0}};
+static struct timerfd_context *timerfd_contexts;
+pthread_mutex_t timerfd_context_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 struct timerfd_context *
-get_timerfd_context(int fd)
+get_timerfd_context(int fd, bool create_new)
 {
-	for (unsigned i = 0; i < nitems(timerfd_contexts); ++i) {
-		if (fd == timerfd_contexts[i].fd) {
-			return &timerfd_contexts[i];
+	for (struct timerfd_context *ctx = timerfd_contexts; ctx;
+	     ctx = ctx->next) {
+		if (fd == ctx->fd) {
+			return ctx;
 		}
 	}
+
+	if (create_new) {
+		struct timerfd_context *new_ctx =
+		    calloc(1, sizeof(struct timerfd_context));
+		if (!new_ctx) {
+			return NULL;
+		}
+		new_ctx->fd = -1;
+		new_ctx->next = timerfd_contexts;
+		timerfd_contexts = new_ctx;
+		return new_ctx;
+	}
+
 	return NULL;
 }
 
@@ -66,8 +82,8 @@ worker_function(void *arg)
 	return NULL;
 }
 
-int
-timerfd_create(int clockid, int flags)
+static int
+timerfd_create_impl(int clockid, int flags)
 {
 	if (clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME) {
 		return EINVAL;
@@ -77,9 +93,9 @@ timerfd_create(int clockid, int flags)
 		return EINVAL;
 	}
 
-	struct timerfd_context *ctx = get_timerfd_context(-1);
+	struct timerfd_context *ctx = get_timerfd_context(-1, true);
 	if (!ctx) {
-		errno = EMFILE;
+		errno = ENOMEM;
 		return -1;
 	}
 
@@ -131,10 +147,19 @@ timerfd_create(int clockid, int flags)
 }
 
 int
-timerfd_settime(
+timerfd_create(int clockid, int flags)
+{
+	pthread_mutex_lock(&timerfd_context_mtx);
+	int ret = timerfd_create_impl(clockid, flags);
+	pthread_mutex_unlock(&timerfd_context_mtx);
+	return ret;
+}
+
+static int
+timerfd_settime_impl(
     int fd, int flags, const struct itimerspec *new, struct itimerspec *old)
 {
-	struct timerfd_context *ctx = get_timerfd_context(fd);
+	struct timerfd_context *ctx = get_timerfd_context(fd, false);
 	if (!ctx) {
 		errno = EINVAL;
 		return -1;
@@ -149,6 +174,16 @@ timerfd_settime(
 	    (flags & TFD_TIMER_ABSTIME) ? TIMER_ABSTIME : 0, new, old);
 }
 
+int
+timerfd_settime(
+    int fd, int flags, const struct itimerspec *new, struct itimerspec *old)
+{
+	pthread_mutex_lock(&timerfd_context_mtx);
+	int ret = timerfd_settime_impl(fd, flags, new, old);
+	pthread_mutex_unlock(&timerfd_context_mtx);
+	return ret;
+}
+
 #if 0
 int timerfd_gettime(int fd, struct itimerspec *cur)
 {
@@ -159,6 +194,10 @@ int timerfd_gettime(int fd, struct itimerspec *cur)
 ssize_t
 timerfd_read(struct timerfd_context *ctx, void *buf, size_t nbytes)
 {
+	int fd = ctx->fd;
+	int flags = ctx->flags;
+	pthread_mutex_unlock(&timerfd_context_mtx);
+
 	if (nbytes < sizeof(uint64_t)) {
 		errno = EINVAL;
 		return -1;
@@ -166,8 +205,8 @@ timerfd_read(struct timerfd_context *ctx, void *buf, size_t nbytes)
 
 	struct timespec timeout = {0, 0};
 	struct kevent kev;
-	int ret = kevent(ctx->fd, NULL, 0, &kev, 1,
-	    (ctx->flags & TFD_NONBLOCK) ? &timeout : NULL);
+	int ret = kevent(
+	    fd, NULL, 0, &kev, 1, (flags & TFD_NONBLOCK) ? &timeout : NULL);
 	if (ret == -1) {
 		return -1;
 	} else if (ret == 0) {

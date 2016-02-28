@@ -10,30 +10,48 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 struct signalfd_context {
 	int fd;
 	int flags;
+	struct signalfd_context *next;
 };
 
-static struct signalfd_context signalfd_contexts[8] = {
-    {-1, 0}, {-1, 0}, {-1, 0}, {-1, 0}, {-1, 0}, {-1, 0}, {-1, 0}, {-1, 0}};
+static struct signalfd_context *signalfd_contexts;
+pthread_mutex_t signalfd_context_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 struct signalfd_context *
-get_signalfd_context(int fd)
+get_signalfd_context(int fd, bool create_new)
 {
-	for (unsigned i = 0; i < nitems(signalfd_contexts); ++i) {
-		if (fd == signalfd_contexts[i].fd) {
-			return &signalfd_contexts[i];
+	for (struct signalfd_context *ctx = signalfd_contexts; ctx;
+	     ctx = ctx->next) {
+		if (fd == ctx->fd) {
+			return ctx;
 		}
 	}
+
+	if (create_new) {
+		struct signalfd_context *new_ctx =
+		    calloc(1, sizeof(struct signalfd_context));
+		if (!new_ctx) {
+			return NULL;
+		}
+		new_ctx->fd = -1;
+		new_ctx->next = signalfd_contexts;
+		signalfd_contexts = new_ctx;
+		return new_ctx;
+	}
+
 	return NULL;
 }
 
-int
-signalfd(int fd, const sigset_t *sigs, int flags)
+static int
+signalfd_impl(int fd, const sigset_t *sigs, int flags)
 {
 	if (fd != -1) {
 		errno = EINVAL;
@@ -45,7 +63,7 @@ signalfd(int fd, const sigset_t *sigs, int flags)
 		return -1;
 	}
 
-	struct signalfd_context *ctx = get_signalfd_context(-1);
+	struct signalfd_context *ctx = get_signalfd_context(-1, true);
 	if (!ctx) {
 		errno = EMFILE;
 		return -1;
@@ -77,9 +95,22 @@ signalfd(int fd, const sigset_t *sigs, int flags)
 	return ctx->fd;
 }
 
+int
+signalfd(int fd, const sigset_t *sigs, int flags)
+{
+	pthread_mutex_lock(&signalfd_context_mtx);
+	int ret = signalfd_impl(fd, sigs, flags);
+	pthread_mutex_unlock(&signalfd_context_mtx);
+	return ret;
+}
+
 ssize_t
 signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 {
+	int fd = ctx->fd;
+	int flags = ctx->flags;
+	pthread_mutex_unlock(&signalfd_context_mtx);
+
 	// TODO: fix this to read multiple signals
 	if (nbytes != sizeof(struct signalfd_siginfo)) {
 		errno = EINVAL;
@@ -88,8 +119,8 @@ signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 
 	struct timespec timeout = {0, 0};
 	struct kevent kev;
-	int ret = kevent(ctx->fd, NULL, 0, &kev, 1,
-	    (ctx->flags & SFD_NONBLOCK) ? &timeout : NULL);
+	int ret = kevent(
+	    fd, NULL, 0, &kev, 1, (flags & SFD_NONBLOCK) ? &timeout : NULL);
 	if (ret == -1) {
 		return -1;
 	} else if (ret == 0) {
