@@ -87,6 +87,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 	}
 
 	for (int i = 0; i < ret; ++i) {
+		ev[i].events = EPOLLIN;
 		ev[i].data.ptr = evlist[i].udata;
 	}
 
