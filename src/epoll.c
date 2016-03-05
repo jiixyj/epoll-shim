@@ -68,7 +68,7 @@ epoll_pwait(
 int
 epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 {
-	if (cnt > 32 || to != 0) {
+	if (cnt > 32 || to < -1) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -76,7 +76,12 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 	struct kevent evlist[32];
 
 	struct timespec timeout = {0, 0};
-	int ret = kevent(fd, NULL, 0, evlist, cnt, &timeout);
+	if (to > 0) {
+		timeout.tv_sec = to / 1000;
+		timeout.tv_nsec = (to % 1000) * 1000 * 1000;
+	}
+
+	int ret = kevent(fd, NULL, 0, evlist, cnt, to == -1 ? NULL : &timeout);
 	if (ret == -1) {
 		return ret;
 	}
