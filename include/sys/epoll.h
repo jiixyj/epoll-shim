@@ -49,13 +49,10 @@ struct epoll_event {
 	uint32_t events;
 	epoll_data_t data;
 }
-#if 0
-#ifdef __x86_64__
-__attribute__ ((__packed__))
-#endif
+#if defined(__amd64__)
+__attribute__((packed))
 #endif
 ;
-
 
 #if 0
 int epoll_create(int);
