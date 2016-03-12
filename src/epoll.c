@@ -6,6 +6,7 @@
 #include <sys/types.h>
 
 #include <errno.h>
+#include <poll.h>
 #include <signal.h>
 
 #if 0
@@ -26,6 +27,10 @@ epoll_create1(int flags)
 	return kqueue();
 }
 
+static int poll_fd = -1;
+static int poll_epoll_fd = -1;
+static void *poll_ptr;
+
 int
 epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
@@ -37,6 +42,12 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		}
 		EV_SET(&kev, fd2, EVFILT_READ, EV_ADD, 0, 0, ev->data.ptr);
 	} else if (op == EPOLL_CTL_DEL) {
+		if (poll_fd == fd2 && fd == poll_epoll_fd) {
+			poll_fd = -1;
+			poll_epoll_fd = -1;
+			poll_ptr = NULL;
+			return 0;
+		}
 		EV_SET(&kev, fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
 	} else {
 		errno = EINVAL;
@@ -45,6 +56,12 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 
 	int ret = kevent(fd, &kev, 1, NULL, 0, NULL);
 	if (ret == -1) {
+		if (errno == ENODEV && poll_fd == -1) {
+			poll_fd = fd2;
+			poll_epoll_fd = fd;
+			poll_ptr = ev->data.ptr;
+			return 0;
+		}
 		return ret;
 	} else {
 		return 0;
@@ -68,9 +85,27 @@ epoll_pwait(
 int
 epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 {
-	if (cnt > 32 || to < -1) {
+	if (cnt < 1 || cnt > 32 || to < -1) {
 		errno = EINVAL;
 		return -1;
+	}
+
+	if (poll_fd != -1 && fd == poll_epoll_fd) {
+		struct pollfd pfds[2];
+		pfds[0].fd = poll_fd;
+		pfds[0].events = POLLIN;
+		pfds[1].fd = fd;
+		pfds[1].events = POLLIN;
+		int ret = poll(pfds, 2, to);
+		if (ret <= 0) {
+			return ret;
+		}
+		if (pfds[0].revents & POLLIN) {
+			ev[0].events = EPOLLIN;
+			ev[0].data.ptr = poll_ptr;
+			return 1;
+		}
+		to = 0;
 	}
 
 	struct kevent evlist[32];
