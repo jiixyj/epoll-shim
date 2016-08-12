@@ -1,9 +1,13 @@
 LIB=		epoll-shim
-SHLIBDIR?=	
+SHLIB_MAJOR=	0
 SRCS=		src/epoll.c src/timerfd.c src/signalfd.c src/common.c
 INCS=		include/sys/epoll.h include/sys/timerfd.h include/sys/signalfd.h
-MAN=
+INCSDIR=	${INCLUDEDIR}/sys
 
-CFLAGS+=	-I${.CURDIR}/include -fPIC -Weverything -Wno-missing-prototypes -Wno-padded -Wno-missing-variable-declarations -Wno-thread-safety-analysis
+CFLAGS+=	-I${.CURDIR}/include -Weverything -Wno-missing-prototypes -Wno-padded -Wno-missing-variable-declarations -Wno-thread-safety-analysis
+
+distrib-dirs:
+	mkdir -p "${DESTDIR}/${LIBDIR}"
+	mkdir -p "${DESTDIR}/${INCSDIR}"
 
 .include <bsd.lib.mk>
