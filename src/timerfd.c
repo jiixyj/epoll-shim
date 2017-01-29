@@ -129,7 +129,7 @@ timerfd_create_impl(int clockid, int flags)
 		return -1;
 	}
 
-	int tid = (int)kev.udata;
+	int tid = (int)(intptr_t)kev.udata;
 
 	struct sigevent sigev = {.sigev_notify = SIGEV_THREAD_ID,
 	    .sigev_signo = SIGRTMIN,
