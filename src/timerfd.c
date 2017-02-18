@@ -226,6 +226,7 @@ timerfd_close(struct timerfd_context *ctx)
 	timer_delete(ctx->timer);
 	pthread_kill(ctx->worker, SIGRTMIN + 1);
 	pthread_join(ctx->worker, NULL);
+	int ret = close(ctx->fd);
 	ctx->fd = -1;
-	return close(ctx->fd);
+	return ret;
 }

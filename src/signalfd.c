@@ -137,6 +137,7 @@ signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 int
 signalfd_close(struct signalfd_context *ctx)
 {
+	int ret = close(ctx->fd);
 	ctx->fd = -1;
-	return close(ctx->fd);
+	return ret;
 }
