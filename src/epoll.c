@@ -2,9 +2,9 @@
 
 #include <sys/event.h>
 #include <sys/param.h>
+#include <sys/queue.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/queue.h>
 
 #include <errno.h>
 #include <poll.h>
@@ -14,9 +14,12 @@
 #include <string.h>
 
 #if 1
-int epoll_create(int size __unused)
+int
+epoll_create(int size __unused)
 {
-	fprintf(stderr, "ERROR: epoll_create() is deprecated, use epoll_create1(EPOLL_CLOEXEC).\n");
+	fprintf(stderr,
+	    "ERROR: epoll_create() is deprecated, use "
+	    "epoll_create1(EPOLL_CLOEXEC).\n");
 	exit(-1);
 	/* return epoll_create1(0); */
 }
@@ -39,7 +42,7 @@ static void *poll_ptr;
 
 static int
 epoll_kevent_set(int fd, uintptr_t ident, short filter, u_short flags,
-				 u_int fflags, intptr_t data, void *udata)
+    u_int fflags, intptr_t data, void *udata)
 {
 	int ret = 0;
 	struct kevent kev;
@@ -48,19 +51,20 @@ epoll_kevent_set(int fd, uintptr_t ident, short filter, u_short flags,
 	return ret;
 }
 
-
 static int
 epoll_ctl_add(int fd, int fd2, struct epoll_event *ev)
 {
 	int ret = 0;
 	if (ev->events & EPOLLIN) {
-		ret = epoll_kevent_set(fd, fd2, EVFILT_READ, EV_ADD, 0, 0, ev->data.ptr);
+		ret = epoll_kevent_set(
+		    fd, fd2, EVFILT_READ, EV_ADD, 0, 0, ev->data.ptr);
 	}
 	if (ret < 0) {
 		return ret;
 	}
 	if (ev->events & EPOLLOUT) {
-		ret = epoll_kevent_set(fd, fd2, EVFILT_WRITE, EV_ADD, 0, 0, ev->data.ptr);
+		ret = epoll_kevent_set(
+		    fd, fd2, EVFILT_WRITE, EV_ADD, 0, 0, ev->data.ptr);
 	}
 	return ret;
 }
@@ -105,15 +109,19 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			// precedence rules this conditional was always false.
 		} else if ((ev->events & EPOLLOUT) == 0) {
 			// Is it OK to assume this?
-			ret = epoll_kevent_set(fd, fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
-			// Returns -1 if event does not exist so ignore return value for now.
+			ret = epoll_kevent_set(
+			    fd, fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+			// Returns -1 if event does not exist so ignore return
+			// value for now.
 			ret = 0;
 
 			// TODO: same as above
 		} else if ((ev->events & EPOLLIN) == 0) {
 			// Is it OK to assume this?
-			ret = epoll_kevent_set(fd, fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
-			// Returns -1 if event does not exist so ignore return value for now.
+			ret = epoll_kevent_set(
+			    fd, fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
+			// Returns -1 if event does not exist so ignore return
+			// value for now.
 			ret = 0;
 		}
 	} else {
@@ -189,15 +197,15 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 
 	for (int i = 0; i < ret; ++i) {
 		int events = 0;
-		if(evlist[i].filter == EVFILT_READ) {
+		if (evlist[i].filter == EVFILT_READ) {
 			events |= EPOLLIN;
-		} else if(evlist[i].filter == EVFILT_WRITE) {
+		} else if (evlist[i].filter == EVFILT_WRITE) {
 			events |= EPOLLOUT;
 		}
-		if(evlist[i].flags & EV_ERROR) {
+		if (evlist[i].flags & EV_ERROR) {
 			events |= EPOLLERR;
 		}
-		if(evlist[i].flags & EV_EOF) {
+		if (evlist[i].flags & EV_EOF) {
 			events |= EPOLLHUP;
 		}
 		ev[i].events = events;
