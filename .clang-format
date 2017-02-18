@@ -1,0 +1,17 @@
+BasedOnStyle: LLVM
+AlignAfterOpenBracket: DontAlign
+AlignOperands: false
+AlignTrailingComments: true
+AlwaysBreakAfterDefinitionReturnType: true
+BreakBeforeBinaryOperators: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+ColumnLimit: 79
+UseTab: Always
+Standard: Auto
+IndentWidth: 8
+TabWidth: 8
+ContinuationIndentWidth: 4
+AllowShortFunctionsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: true
