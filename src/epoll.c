@@ -13,17 +13,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if 1
 int
 epoll_create(int size __unused)
 {
 	fprintf(stderr,
 	    "ERROR: epoll_create() is deprecated, use "
 	    "epoll_create1(EPOLL_CLOEXEC).\n");
-	exit(-1);
-	/* return epoll_create1(0); */
+	errno = EINVAL;
+	return -1;
 }
-#endif
 
 int
 epoll_create1(int flags)

@@ -54,9 +54,7 @@ __attribute__((packed))
 #endif
 ;
 
-#if 1
 int epoll_create(int);
-#endif
 int epoll_create1(int);
 int epoll_ctl(int, int, int, struct epoll_event *);
 int epoll_wait(int, struct epoll_event *, int, int);
