@@ -2,7 +2,9 @@ LIB=		epoll-shim
 SHLIB_MAJOR=	0
 SRCS=		src/epoll.c src/timerfd.c src/signalfd.c src/common.c
 INCS=		include/sys/epoll.h include/sys/timerfd.h include/sys/signalfd.h
-INCSDIR=	${INCLUDEDIR}/libepoll-shim/sys
+
+LIBDIR=		/usr/local/lib
+INCSDIR=	/usr/local/include/libepoll-shim/sys
 
 CFLAGS+=	-I${.CURDIR}/include -Wall -Wextra -Wno-missing-prototypes -Wno-padded -Wno-missing-variable-declarations -Wno-thread-safety-analysis
 
