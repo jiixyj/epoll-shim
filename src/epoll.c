@@ -100,8 +100,10 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			// Existing events will be modified.
 			ret = epoll_ctl_add(fd, fd2, ev);
 
-			// TODO: make sure this is correct
-		} else if (ev->events & EPOLLOUT) {
+			// TODO: This probably doesn't do what it should do.
+			// The parenthesis were missing here and due to C
+			// precedence rules this conditional was always false.
+		} else if ((ev->events & EPOLLOUT) == 0) {
 			// Is it OK to assume this?
 			ret = epoll_kevent_set(
 			    fd, fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
@@ -110,7 +112,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			ret = 0;
 
 			// TODO: same as above
-		} else if (ev->events & EPOLLIN) {
+		} else if ((ev->events & EPOLLIN) == 0) {
 			// Is it OK to assume this?
 			ret = epoll_kevent_set(
 			    fd, fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
