@@ -10,10 +10,11 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if 1
-int epoll_create(int size)
+int epoll_create(int size __unused)
 {
 	fprintf(stderr, "ERROR: epoll_create() is deprecated, use epoll_create1(EPOLL_CLOEXEC).\n");
 	exit(-1);
@@ -51,21 +52,21 @@ epoll_kevent_set(int fd, uintptr_t ident, short filter, u_short flags,
 static int
 epoll_ctl_add(int fd, int fd2, struct epoll_event *ev)
 {
-	struct kevent kev;
 	int ret = 0;
-	if(ev->events & EPOLLIN) {
+	if (ev->events & EPOLLIN) {
 		ret = epoll_kevent_set(fd, fd2, EVFILT_READ, EV_ADD, 0, 0, ev->data.ptr);
 	}
-	if(ret < 0)
+	if (ret < 0) {
 		return ret;
-	if(ev->events & EPOLLOUT) {
+	}
+	if (ev->events & EPOLLOUT) {
 		ret = epoll_kevent_set(fd, fd2, EVFILT_WRITE, EV_ADD, 0, 0, ev->data.ptr);
 	}
 	return ret;
 }
 
 static int
-epoll_ctl_del(int fd, int fd2, struct epoll_event *ev)
+epoll_ctl_del(int fd, int fd2, struct epoll_event *ev __unused)
 {
 	int ret = 0;
 	// This will fail (return -1) if we try to delete a non-existing
@@ -94,16 +95,22 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			ret = epoll_ctl_del(fd, fd2, ev);
 		}
 	} else if (op == EPOLL_CTL_MOD) {
-		if(ev->events & EPOLLIN && ev->events & EPOLLOUT) {
+		if ((ev->events & EPOLLIN) && (ev->events & EPOLLOUT)) {
 			// Adding both EVFILT_READ and EVFILT_WRITE
 			// Existing events will be modified.
 			ret = epoll_ctl_add(fd, fd2, ev);
-		} else if(ev->events & EPOLLOUT == 0) {
+
+			// TODO: This probably doesn't do what it should do.
+			// The parenthesis were missing here and due to C
+			// precedence rules this conditional was always false.
+		} else if ((ev->events & EPOLLOUT) == 0) {
 			// Is it OK to assume this?
 			ret = epoll_kevent_set(fd, fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
 			// Returns -1 if event does not exist so ignore return value for now.
 			ret = 0;
-		} else if(ev->events & EPOLLIN == 0) {
+
+			// TODO: same as above
+		} else if ((ev->events & EPOLLIN) == 0) {
 			// Is it OK to assume this?
 			ret = epoll_kevent_set(fd, fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
 			// Returns -1 if event does not exist so ignore return value for now.
