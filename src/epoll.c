@@ -42,11 +42,9 @@ static int
 epoll_kevent_set(int fd, uintptr_t ident, short filter, u_short flags,
     u_int fflags, intptr_t data, void *udata)
 {
-	int ret = 0;
 	struct kevent kev;
 	EV_SET(&kev, ident, filter, flags, fflags, data, udata);
-	ret = kevent(fd, &kev, 1, NULL, 0, NULL);
-	return ret;
+	return kevent(fd, &kev, 1, NULL, 0, NULL);
 }
 
 static int
