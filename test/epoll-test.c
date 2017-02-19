@@ -734,6 +734,13 @@ test16(bool specify_rdhup)
 		    (int)event.events);
 
 		if (event.events == (EPOLLIN | rdhup_flag)) {
+			uint8_t buf;
+			ssize_t ret = read(conn, &buf, 1);
+
+			if (ret != 0) {
+				return -1;
+			}
+
 			shutdown(conn, SHUT_RDWR);
 		} else if (event.events == (EPOLLIN | rdhup_flag | EPOLLHUP)) {
 			close(conn);
