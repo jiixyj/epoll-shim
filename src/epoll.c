@@ -38,92 +38,62 @@ static int poll_fd = -1;
 static int poll_epoll_fd = -1;
 static void *poll_ptr;
 
-static int
-epoll_kevent_set(int fd, uintptr_t ident, short filter, u_short flags,
-    u_int fflags, intptr_t data, void *udata)
-{
-	struct kevent kev;
-	EV_SET(&kev, ident, filter, flags, fflags, data, udata);
-	return kevent(fd, &kev, 1, NULL, 0, NULL);
-}
-
-static int
-epoll_ctl_add(int fd, int fd2, struct epoll_event *ev)
-{
-	int ret = 0;
-	if (ev->events & EPOLLIN) {
-		ret = epoll_kevent_set(
-		    fd, fd2, EVFILT_READ, EV_ADD, 0, 0, ev->data.ptr);
-	}
-	if (ret < 0) {
-		return ret;
-	}
-	if (ev->events & EPOLLOUT) {
-		ret = epoll_kevent_set(
-		    fd, fd2, EVFILT_WRITE, EV_ADD, 0, 0, ev->data.ptr);
-	}
-	return ret;
-}
-
-static int
-epoll_ctl_del(int fd, int fd2, struct epoll_event *ev __unused)
-{
-	int ret = 0;
-	// This will fail (return -1) if we try to delete a non-existing
-	// event. This can happen so ignore return value for now.
-	ret = epoll_kevent_set(fd, fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
-	ret = epoll_kevent_set(fd, fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
-	// TODO: Check if event exist before attemt to delete. Is there an
-	// API for that or do we need to keep track of <ident,filter> events
-	// we added to the queue?
-	return 0;
-}
-
 int
 epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
-	int ret = 0;
+	if ((!ev && op != EPOLL_CTL_DEL) ||
+	    (ev && (ev->events & ~(EPOLLIN | EPOLLOUT)))) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	struct kevent kev[3];
+
 	if (op == EPOLL_CTL_ADD) {
-		ret = epoll_ctl_add(fd, fd2, ev);
+		/* Check if the fd already has been registered in this kqueue.
+		 * See below for an explanation of this 'cookie' mechanism. */
+		EV_SET(&kev[0], fd2, EVFILT_USER, 0, 0, 0, 0);
+		if (!(kevent(fd, kev, 1, NULL, 0, NULL) == -1 &&
+			errno == ENOENT)) {
+			errno = EEXIST;
+			return -1;
+		}
+
+		EV_SET(&kev[0], fd2, EVFILT_READ,
+		    EV_ADD | (ev->events & EPOLLIN ? 0 : EV_DISABLE), 0, 0,
+		    ev->data.ptr);
+		EV_SET(&kev[1], fd2, EVFILT_WRITE,
+		    EV_ADD | (ev->events & EPOLLOUT ? 0 : EV_DISABLE), 0, 0,
+		    ev->data.ptr);
+		/* We save a 'cookie' knote inside the kq to signal if the fd
+		 * has been 'registered'. We need this because there is no way
+		 * to ask a kqueue if a knote has been registered without
+		 * modifying the udata. */
+		EV_SET(&kev[2], fd2, EVFILT_USER, EV_ADD, 0, 0, 0);
 	} else if (op == EPOLL_CTL_DEL) {
 		if (poll_fd == fd2 && fd == poll_epoll_fd) {
 			poll_fd = -1;
 			poll_epoll_fd = -1;
 			poll_ptr = NULL;
 			return 0;
-		} else {
-			ret = epoll_ctl_del(fd, fd2, ev);
 		}
+
+		EV_SET(&kev[0], fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
+		EV_SET(&kev[1], fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+		EV_SET(&kev[2], fd2, EVFILT_USER, EV_DELETE, 0, 0, 0);
 	} else if (op == EPOLL_CTL_MOD) {
-		if ((ev->events & EPOLLIN) && (ev->events & EPOLLOUT)) {
-			// Adding both EVFILT_READ and EVFILT_WRITE
-			// Existing events will be modified.
-			ret = epoll_ctl_add(fd, fd2, ev);
-
-			// TODO: This probably doesn't do what it should do.
-			// The parenthesis were missing here and due to C
-			// precedence rules this conditional was always false.
-		} else if ((ev->events & EPOLLOUT) == 0) {
-			// Is it OK to assume this?
-			ret = epoll_kevent_set(
-			    fd, fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
-			// Returns -1 if event does not exist so ignore return
-			// value for now.
-			ret = 0;
-
-			// TODO: same as above
-		} else if ((ev->events & EPOLLIN) == 0) {
-			// Is it OK to assume this?
-			ret = epoll_kevent_set(
-			    fd, fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
-			// Returns -1 if event does not exist so ignore return
-			// value for now.
-			ret = 0;
-		}
+		EV_SET(&kev[0], fd2, EVFILT_READ,
+		    ev->events & EPOLLIN ? EV_ENABLE : EV_DISABLE, 0, 0,
+		    ev->data.ptr);
+		EV_SET(&kev[1], fd2, EVFILT_WRITE,
+		    ev->events & EPOLLOUT ? EV_ENABLE : EV_DISABLE, 0, 0,
+		    ev->data.ptr);
 	} else {
 		errno = EINVAL;
 		return -1;
 	}
+
+	int ret = kevent(fd, kev, 2 + (op != EPOLL_CTL_MOD), NULL, 0, NULL);
 	if (ret == -1) {
 		if (errno == ENODEV && poll_fd == -1) {
 			poll_fd = fd2;
