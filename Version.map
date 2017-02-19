@@ -1,0 +1,13 @@
+{
+  global:
+    epoll_shim_close;
+    epoll_shim_read;
+    epoll_create;
+    epoll_create1;
+    epoll_ctl;
+    epoll_wait;
+    signalfd;
+    timerfd_create;
+    timerfd_settime;
+  local: *;
+};

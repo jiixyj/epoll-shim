@@ -2,6 +2,7 @@ LIB=		epoll-shim
 SHLIB_MAJOR=	0
 SRCS=		src/epoll.c src/timerfd.c src/signalfd.c src/common.c
 INCS=		include/sys/epoll.h include/sys/timerfd.h include/sys/signalfd.h
+VERSION_MAP=	Version.map
 
 LIBDIR=		/usr/local/lib
 INCSDIR=	/usr/local/include/libepoll-shim/sys
