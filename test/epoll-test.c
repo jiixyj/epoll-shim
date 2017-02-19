@@ -445,6 +445,21 @@ test13()
 		return -1;
 	}
 
+	event.events = EPOLLIN;
+	event.data.fd = fds[0];
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+		return -1;
+	}
+
+	if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+		return -1;
+	}
+
+	if (event_result.data.fd != fds[0] ||
+	    event_result.events != EPOLLIN) {
+		return -1;
+	}
+
 	close(ep);
 	return 0;
 }
