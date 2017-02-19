@@ -785,7 +785,7 @@ test17()
 		return -1;
 	}
 
-        int ret = epoll_wait(ep, &event, 1, 100);
+	int ret = epoll_wait(ep, &event, 1, 100);
 	if (!(ret == 0 || ret == 1)) {
 		return -1;
 	}
