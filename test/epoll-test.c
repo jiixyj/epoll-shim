@@ -284,6 +284,7 @@ test9()
 	}
 
 	event.events = EPOLLIN;
+	event.data.fd = 42;
 	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == -1) {
 		return -1;
 	}
@@ -292,7 +293,7 @@ test9()
 		return -1;
 	}
 
-	if (event_result.data.fd != fds[0]) {
+	if (event_result.data.fd != 42) {
 		return -1;
 	}
 
