@@ -100,6 +100,8 @@ test4()
 		return -1;
 	}
 
+	close(fds[0]);
+	close(fds[1]);
 	close(ep);
 	return 0;
 }
@@ -144,6 +146,8 @@ test5(int sleep)
 	pthread_join(writer_thread, NULL);
 
 	close(ep);
+	close(fds[0]);
+	close(fds[1]);
 	return 0;
 }
 
@@ -166,6 +170,8 @@ test6()
 	}
 
 	close(ep);
+	close(fds[0]);
+	close(fds[1]);
 	return 0;
 }
 
@@ -195,6 +201,8 @@ test7()
 	}
 
 	close(ep);
+	close(fds[0]);
+	close(fds[1]);
 	return 0;
 }
 
@@ -245,6 +253,8 @@ test8(bool change_udata)
 		return -1;
 	}
 
+	close(fds[0]);
+	close(fds[1]);
 	close(ep);
 	return 0;
 }
@@ -297,6 +307,8 @@ test9()
 		return -1;
 	}
 
+	close(fds[0]);
+	close(fds[1]);
 	close(ep);
 	return 0;
 }
@@ -323,6 +335,8 @@ test10()
 		return -1;
 	}
 
+	close(fds[0]);
+	close(fds[1]);
 	close(ep);
 	return 0;
 }
@@ -404,6 +418,7 @@ test12()
 		return -1;
 	}
 
+	close(fds[0]);
 	close(ep);
 	return 0;
 }
@@ -464,6 +479,8 @@ test13()
 		return -1;
 	}
 
+	close(fds[0]);
+	close(fds[1]);
 	close(ep);
 	return 0;
 }
@@ -529,11 +546,14 @@ test14()
 		    (unsigned long long)tot_exp);
 	}
 
+	close(ep);
 	close(fd);
 	return 0;
 }
 
-static int test15() {
+static int
+test15()
+{
 	sigset_t mask;
 	int sfd;
 	struct signalfd_siginfo fdsi;
@@ -584,6 +604,28 @@ static int test15() {
 		return -1;
 	}
 
+	close(ep);
+	close(sfd);
+
+	return 0;
+}
+
+static int
+testxx()
+{
+	/* test that all fds of previous tests have been closed successfully */
+
+	int fds[2];
+	if (pipe2(fds, O_CLOEXEC) == -1) {
+		return -1;
+	}
+
+	if (fds[0] != 3 || fds[1] != 4) {
+		return -1;
+	}
+
+	close(fds[0]);
+	close(fds[1]);
 	return 0;
 }
 
@@ -607,5 +649,7 @@ main()
 	TEST(test13());
 	TEST(test14());
 	TEST(test15());
+
+	TEST(testxx());
 	return 0;
 }
