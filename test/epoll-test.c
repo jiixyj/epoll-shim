@@ -349,6 +349,11 @@ test11()
 		return -1;
 	}
 
+	if (epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) == -1) {
+		return -1;
+	}
+
+	close(fd);
 	close(ep);
 	return 0;
 }
@@ -399,6 +404,51 @@ test12()
 	return 0;
 }
 
+static int
+test13()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	int fds[2];
+	if (pipe2(fds, O_CLOEXEC) == -1) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLOUT;
+	event.data.fd = fds[1];
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) == -1) {
+		return -1;
+	}
+
+	struct epoll_event event_result;
+	if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+		return -1;
+	}
+
+	if (event_result.data.fd != fds[1] ||
+	    event_result.events != EPOLLOUT) {
+		return -1;
+	}
+
+	uint8_t data[512] = {};
+
+	for (int i = 0; i < 128; ++i) {
+		write(fds[1], &data, sizeof(data));
+	}
+
+	if (epoll_wait(ep, &event_result, 1, 300) != 0) {
+		return -1;
+	}
+
+	close(ep);
+	return 0;
+}
+
 int
 main()
 {
@@ -416,5 +466,6 @@ main()
 	TEST(test10());
 	TEST(test11());
 	TEST(test12());
+	TEST(test13());
 	return 0;
 }
