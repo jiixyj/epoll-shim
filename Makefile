@@ -7,7 +7,8 @@ VERSION_MAP=	Version.map
 LIBDIR=		/usr/local/lib
 INCSDIR=	/usr/local/include/libepoll-shim/sys
 
-CFLAGS+=	-I${.CURDIR}/include -Wall -Wextra -Wno-missing-prototypes -Wno-padded -Wno-missing-variable-declarations -Wno-thread-safety-analysis
+CFLAGS+=	-I${.CURDIR}/include -pthread -Wall -Wextra -Wno-missing-prototypes -Wno-padded -Wno-missing-variable-declarations -Wno-thread-safety-analysis
+LDFLAGS+=	-pthread -lrt
 
 distrib-dirs:
 	mkdir -p "${DESTDIR}/${LIBDIR}"
