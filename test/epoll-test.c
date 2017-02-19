@@ -4,9 +4,15 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include <sys/types.h>
+
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
 #include <sys/signalfd.h>
+#include <sys/socket.h>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -629,6 +635,125 @@ testxx()
 	return 0;
 }
 
+static void *
+connector(void *arg)
+{
+	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	if (sock == -1) {
+		return NULL;
+	}
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1337);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+		return NULL;
+	}
+
+	if (connect(sock, &addr, sizeof(addr)) == -1) {
+		return NULL;
+	}
+
+	fprintf(stderr, "got client\n");
+
+	shutdown(sock, SHUT_WR);
+	usleep(1000000);
+
+	close(sock);
+
+	return NULL;
+}
+
+static int
+test16(bool specify_rdhup)
+{
+	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	if (sock == -1) {
+		return -1;
+	}
+
+	int enable = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) ==
+	    -1) {
+		return -1;
+	}
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1337);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+		return -1;
+	}
+
+	if (bind(sock, &addr, sizeof(addr)) == -1) {
+		return -1;
+	}
+
+	if (listen(sock, 5) == -1) {
+		return -1;
+	}
+
+	pthread_t client_thread;
+	pthread_create(&client_thread, NULL, connector, NULL);
+
+	int conn = accept(sock, NULL, NULL);
+	if (conn == -1) {
+		return -1;
+	}
+
+	// if (shutdown(conn, SHUT_RDWR) == -1) {
+	// 	return -1;
+	// }
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	int rdhup_flag = specify_rdhup ? EPOLLRDHUP : 0;
+
+	struct epoll_event event;
+	event.events = EPOLLIN;
+	event.data.fd = conn;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, conn, &event) == -1) {
+		return -1;
+	}
+
+	event.events = EPOLLIN | rdhup_flag;
+	if (epoll_ctl(ep, EPOLL_CTL_MOD, conn, &event) == -1) {
+		return -1;
+	}
+
+	for (;;) {
+		if (epoll_wait(ep, &event, 1, -1) != 1) {
+			return -1;
+		}
+
+		fprintf(stderr, "got event: %x\n",
+		    (int)event.events);
+
+		if (event.events == (EPOLLIN | rdhup_flag)) {
+			shutdown(conn, SHUT_RDWR);
+		} else if (event.events == (EPOLLIN | rdhup_flag | EPOLLHUP)) {
+			close(conn);
+			break;
+		} else {
+			return -1;
+		}
+	}
+
+	if (epoll_wait(ep, &event, 1, 300) != 0) {
+		return -1;
+	}
+
+	pthread_join(client_thread, NULL);
+
+	close(sock);
+
+	return 0;
+}
+
 int
 main()
 {
@@ -649,6 +774,8 @@ main()
 	TEST(test13());
 	TEST(test14());
 	TEST(test15());
+	TEST(test16(true));
+	TEST(test16(false));
 
 	TEST(testxx());
 	return 0;
