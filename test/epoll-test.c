@@ -396,7 +396,7 @@ test12()
 	}
 
 	struct epoll_event event;
-	event.events = EPOLLIN;
+	event.events = EPOLLIN | EPOLLRDHUP;
 	event.data.fd = fds[0];
 
 	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {

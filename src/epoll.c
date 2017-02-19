@@ -6,6 +6,7 @@
 #include <sys/param.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 
 #include <errno.h>
@@ -249,7 +250,14 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 		if (evlist[i].flags & EV_EOF) {
 			int epoll_event = EPOLLHUP;
 
-			if (evlist[i].filter == EVFILT_READ) {
+			struct stat statbuf;
+			if (fstat(evlist[i].ident, &statbuf) == -1) {
+				return -1;
+			}
+
+			/* do some special EPOLLRDHUP handling for sockets */
+			if ((statbuf.st_mode & S_IFSOCK) &&
+			    evlist[i].filter == EVFILT_READ) {
 				/* if we are reading, we just know for sure
 				 * that we can't receive any more, so use
 				 * EPOLLRDHUP per default */
@@ -257,16 +265,10 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 				    ? EPOLLRDHUP
 				    : 0;
 
-				struct pollfd fds[1];
-				fds[0].fd = evlist[i].ident;
-				fds[0].events = 0;
-				if (poll(fds, 1, 0) == -1) {
-					return -1;
-				}
-
-				/* only set EPOLLHUP if an extra poll says that
+				/* only set EPOLLHUP if the stat says that
 				 * writing is also impossible */
-				if (fds[0].revents & POLLHUP) {
+				if (!(statbuf.st_mode &
+					(S_IWUSR | S_IWGRP | S_IWOTH))) {
 					epoll_event |= EPOLLHUP;
 				}
 			}
