@@ -49,9 +49,6 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 
 	struct kevent kev[3];
 
-/* macro to make the autoformatting of the EV_SET lines below nicer */
-#define REC(flag) ((flag) | EV_RECEIPT)
-
 	if (op == EPOLL_CTL_ADD) {
 		/* Check if the fd already has been registered in this kqueue.
 		 * See below for an explanation of this 'cookie' mechanism. */
@@ -63,16 +60,16 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		}
 
 		EV_SET(&kev[0], fd2, EVFILT_READ,
-		    REC(EV_ADD | (ev->events & EPOLLIN ? 0 : EV_DISABLE)), 0,
-		    0, ev->data.ptr);
+		    EV_ADD | (ev->events & EPOLLIN ? 0 : EV_DISABLE), 0, 0,
+		    ev->data.ptr);
 		EV_SET(&kev[1], fd2, EVFILT_WRITE,
-		    REC(EV_ADD | (ev->events & EPOLLOUT ? 0 : EV_DISABLE)), 0,
-		    0, ev->data.ptr);
+		    EV_ADD | (ev->events & EPOLLOUT ? 0 : EV_DISABLE), 0, 0,
+		    ev->data.ptr);
 		/* We save a 'cookie' knote inside the kq to signal if the fd
 		 * has been 'registered'. We need this because there is no way
 		 * to ask a kqueue if a knote has been registered without
 		 * modifying the udata. */
-		EV_SET(&kev[2], fd2, EVFILT_USER, REC(EV_ADD), 0, 0, 0);
+		EV_SET(&kev[2], fd2, EVFILT_USER, EV_ADD, 0, 0, 0);
 	} else if (op == EPOLL_CTL_DEL) {
 		if (poll_fd == fd2 && fd == poll_epoll_fd) {
 			poll_fd = -1;
@@ -81,25 +78,27 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			return 0;
 		}
 
-		EV_SET(&kev[0], fd2, EVFILT_READ, REC(EV_DELETE), 0, 0, 0);
-		EV_SET(&kev[1], fd2, EVFILT_WRITE, REC(EV_DELETE), 0, 0, 0);
-		EV_SET(&kev[2], fd2, EVFILT_USER, REC(EV_DELETE), 0, 0, 0);
+		EV_SET(&kev[0], fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
+		EV_SET(&kev[1], fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+		EV_SET(&kev[2], fd2, EVFILT_USER, EV_DELETE, 0, 0, 0);
 	} else if (op == EPOLL_CTL_MOD) {
 		EV_SET(&kev[0], fd2, EVFILT_READ,
-		    REC(ev->events & EPOLLIN ? EV_ENABLE : EV_DISABLE), 0, 0,
+		    ev->events & EPOLLIN ? EV_ENABLE : EV_DISABLE, 0, 0,
 		    ev->data.ptr);
 		EV_SET(&kev[1], fd2, EVFILT_WRITE,
-		    REC(ev->events & EPOLLOUT ? EV_ENABLE : EV_DISABLE), 0, 0,
+		    ev->events & EPOLLOUT ? EV_ENABLE : EV_DISABLE, 0, 0,
 		    ev->data.ptr);
 		/* we don't really need this, but now we have 3 kevents in all
 		 * branches which is nice */
-		EV_SET(&kev[2], fd2, EVFILT_USER, EV_RECEIPT, 0, 0, 0);
+		EV_SET(&kev[2], fd2, EVFILT_USER, 0, 0, 0, 0);
 	} else {
 		errno = EINVAL;
 		return -1;
 	}
 
-#undef REC
+	for (int i = 0; i < 3; ++i) {
+		kev[i].flags |= EV_RECEIPT;
+	}
 
 	int ret = kevent(fd, kev, 3, kev, 3, NULL);
 	if (ret == -1) {
