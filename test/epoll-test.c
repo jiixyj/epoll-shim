@@ -435,7 +435,7 @@ test13()
 		return -1;
 	}
 
-	uint8_t data[512] = {};
+	uint8_t data[512] = {0};
 
 	for (int i = 0; i < 128; ++i) {
 		write(fds[1], &data, sizeof(data));
