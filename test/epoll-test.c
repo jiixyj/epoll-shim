@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include <sys/epoll.h>
+#include <sys/timerfd.h>
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -464,6 +465,71 @@ test13()
 	return 0;
 }
 
+static int
+test14()
+{
+	struct itimerspec new_value;
+	struct timespec now;
+	uint64_t exp, tot_exp;
+	ssize_t s;
+
+	if (clock_gettime(CLOCK_REALTIME, &now) == -1) {
+		return -1;
+	}
+
+	new_value.it_value.tv_sec = now.tv_sec + 1;
+	new_value.it_value.tv_nsec = now.tv_nsec;
+	new_value.it_interval.tv_sec = 0;
+	new_value.it_interval.tv_nsec = 500000000;
+
+	int fd = timerfd_create(CLOCK_REALTIME, 0);
+	if (fd == -1) {
+		return -1;
+	}
+
+	if (timerfd_settime(fd, TFD_TIMER_ABSTIME, &new_value, NULL) == -1) {
+		return -1;
+	}
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLIN | EPOLLOUT;
+	event.data.fd = fd;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) == -1) {
+		return -1;
+	}
+
+	struct epoll_event event_result;
+
+	for (tot_exp = 0; tot_exp < 3;) {
+		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+			return -1;
+		}
+
+		if (event_result.events != EPOLLIN ||
+		    event_result.data.fd != fd) {
+			return -1;
+		}
+
+		s = read(fd, &exp, sizeof(uint64_t));
+		if (s != sizeof(uint64_t)) {
+			return -1;
+		}
+
+		tot_exp += exp;
+		printf("read: %llu; total=%llu\n", (unsigned long long)exp,
+		    (unsigned long long)tot_exp);
+	}
+
+	close(fd);
+	return 0;
+}
+
 int
 main()
 {
@@ -482,5 +548,6 @@ main()
 	TEST(test11());
 	TEST(test12());
 	TEST(test13());
+	TEST(test14());
 	return 0;
 }
