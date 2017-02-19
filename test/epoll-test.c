@@ -383,7 +383,7 @@ test11()
 }
 
 static int
-test12()
+test12(bool do_write_data)
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	if (ep == -1) {
@@ -404,7 +404,9 @@ test12()
 	}
 
 	uint8_t data = '\0';
-	write(fds[1], &data, 1);
+	if (do_write_data) {
+		write(fds[1], &data, 1);
+	}
 	close(fds[1]);
 
 	struct epoll_event event_result;
@@ -412,7 +414,8 @@ test12()
 		return -1;
 	}
 
-	if (event_result.events != (EPOLLHUP | EPOLLIN)) {
+	if (event_result.events !=
+	    (EPOLLHUP | (do_write_data ? EPOLLIN : 0))) {
 		return -1;
 	}
 
@@ -777,7 +780,8 @@ main()
 	TEST(test9());
 	TEST(test10());
 	TEST(test11());
-	TEST(test12());
+	TEST(test12(false));
+	TEST(test12(true));
 	TEST(test13());
 	TEST(test14());
 	TEST(test15());

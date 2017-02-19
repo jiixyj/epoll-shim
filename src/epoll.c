@@ -240,7 +240,9 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 	for (int i = 0; i < ret; ++i) {
 		int events = 0;
 		if (evlist[i].filter == EVFILT_READ) {
-			events |= EPOLLIN;
+			if (evlist[i].data) {
+				events |= EPOLLIN;
+			}
 		} else if (evlist[i].filter == EVFILT_WRITE) {
 			events |= EPOLLOUT;
 		}
@@ -260,8 +262,9 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 			    evlist[i].filter == EVFILT_READ) {
 				/* if we are reading, we just know for sure
 				 * that we can't receive any more, so use
-				 * EPOLLRDHUP per default */
-				epoll_event = get_fflags(fd, evlist[i].ident)
+				 * EPOLLIN/EPOLLRDHUP per default */
+				epoll_event = EPOLLIN;
+				epoll_event |= get_fflags(fd, evlist[i].ident)
 				    ? EPOLLRDHUP
 				    : 0;
 
