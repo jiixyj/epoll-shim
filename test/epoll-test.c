@@ -1,10 +1,12 @@
 #define _GNU_SOURCE
 #include <errno.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
+#include <sys/signalfd.h>
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -530,6 +532,60 @@ test14()
 	return 0;
 }
 
+static int test15() {
+	sigset_t mask;
+	int sfd;
+	struct signalfd_siginfo fdsi;
+	ssize_t s;
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+
+	if (sigprocmask(SIG_BLOCK, &mask, NULL) == -1) {
+		return -1;
+	}
+
+	sfd = signalfd(-1, &mask, 0);
+	if (sfd == -1) {
+		return -1;
+	}
+
+	kill(getpid(), SIGINT);
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLIN | EPOLLOUT;
+	event.data.fd = sfd;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, sfd, &event) == -1) {
+		return -1;
+	}
+
+	struct epoll_event event_result;
+	if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+		return -1;
+	}
+
+	if (event_result.events != EPOLLIN || event_result.data.fd != sfd) {
+		return -1;
+	}
+
+	s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
+	if (s != sizeof(struct signalfd_siginfo)) {
+		return -1;
+	}
+
+	if (fdsi.ssi_signo != SIGINT) {
+		return -1;
+	}
+
+	return 0;
+}
+
 int
 main()
 {
@@ -549,5 +605,6 @@ main()
 	TEST(test12());
 	TEST(test13());
 	TEST(test14());
+	TEST(test15());
 	return 0;
 }
