@@ -509,7 +509,7 @@ test14()
 	new_value.it_value.tv_sec = now.tv_sec + 1;
 	new_value.it_value.tv_nsec = now.tv_nsec;
 	new_value.it_interval.tv_sec = 0;
-	new_value.it_interval.tv_nsec = 500000000;
+	new_value.it_interval.tv_nsec = 100000000;
 
 	int fd = timerfd_create(CLOCK_REALTIME, 0);
 	if (fd == -1) {
@@ -660,7 +660,7 @@ connector(void *arg)
 	fprintf(stderr, "got client\n");
 
 	shutdown(sock, SHUT_WR);
-	usleep(1000000);
+	usleep(300000);
 
 	close(sock);
 
@@ -764,6 +764,42 @@ test16(bool specify_rdhup)
 	return 0;
 }
 
+static int
+test17()
+{
+	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	if (sock == -1) {
+		return -1;
+	}
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLIN;
+	event.data.fd = sock;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == -1) {
+		return -1;
+	}
+
+        int ret = epoll_wait(ep, &event, 1, 100);
+	if (!(ret == 0 || ret == 1)) {
+		return -1;
+	}
+
+	if (!(event.events == EPOLLHUP || ret == 0)) {
+		return -1;
+	}
+
+	close(ep);
+	close(sock);
+
+	return 0;
+}
+
 int
 main()
 {
@@ -787,6 +823,7 @@ main()
 	TEST(test15());
 	TEST(test16(true));
 	TEST(test16(false));
+	TEST(test17());
 
 	TEST(testxx());
 	return 0;
