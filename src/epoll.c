@@ -250,12 +250,13 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 			events |= EPOLLERR;
 		}
 		if (evlist[i].flags & EV_EOF) {
-			int epoll_event = EPOLLHUP;
 
 			struct stat statbuf;
 			if (fstat(evlist[i].ident, &statbuf) == -1) {
 				return -1;
 			}
+
+			int epoll_event;
 
 			/* do some special EPOLLRDHUP handling for sockets */
 			if ((statbuf.st_mode & S_IFSOCK) &&
@@ -274,6 +275,8 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 					(S_IWUSR | S_IWGRP | S_IWOTH))) {
 					epoll_event |= EPOLLHUP;
 				}
+			} else {
+				epoll_event = EPOLLHUP;
 			}
 
 			events |= epoll_event;
