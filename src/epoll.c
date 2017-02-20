@@ -250,33 +250,35 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 			events |= EPOLLERR;
 		}
 		if (evlist[i].flags & EV_EOF) {
+			int epoll_event = EPOLLHUP;
 
-			struct stat statbuf;
-			if (fstat(evlist[i].ident, &statbuf) == -1) {
-				return -1;
-			}
-
-			int epoll_event;
-
-			/* do some special EPOLLRDHUP handling for sockets */
-			if ((statbuf.st_mode & S_IFSOCK) &&
-			    evlist[i].filter == EVFILT_READ) {
-				/* if we are reading, we just know for sure
-				 * that we can't receive any more, so use
-				 * EPOLLIN/EPOLLRDHUP per default */
-				epoll_event = EPOLLIN;
-				epoll_event |= get_fflags(fd, evlist[i].ident)
-				    ? EPOLLRDHUP
-				    : 0;
-
-				/* only set EPOLLHUP if the stat says that
-				 * writing is also impossible */
-				if (!(statbuf.st_mode &
-					(S_IWUSR | S_IWGRP | S_IWOTH))) {
-					epoll_event |= EPOLLHUP;
+			if (evlist[i].filter == EVFILT_READ) {
+				struct stat statbuf;
+				if (fstat(evlist[i].ident, &statbuf) == -1) {
+					return -1;
 				}
-			} else {
-				epoll_event = EPOLLHUP;
+
+				/* do some special EPOLLRDHUP handling for
+				 * sockets */
+				if (statbuf.st_mode & S_IFSOCK) {
+					/* if we are reading, we just know for
+					 * sure that we can't receive any more,
+					 * so use EPOLLIN/EPOLLRDHUP per
+					 * default */
+					epoll_event = EPOLLIN;
+					epoll_event |=
+					    get_fflags(fd, evlist[i].ident)
+					    ? EPOLLRDHUP
+					    : 0;
+
+					/* only set EPOLLHUP if the stat says
+					 * that writing is also impossible */
+					if (!(statbuf.st_mode &
+						(S_IWUSR | S_IWGRP |
+						    S_IWOTH))) {
+						epoll_event |= EPOLLHUP;
+					}
+				}
 			}
 
 			events |= epoll_event;
