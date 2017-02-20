@@ -246,18 +246,20 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 		} else if (evlist[i].filter == EVFILT_WRITE) {
 			events |= EPOLLOUT;
 		}
+
 		if (evlist[i].flags & EV_ERROR) {
 			events |= EPOLLERR;
 		}
+
 		if (evlist[i].flags & EV_EOF) {
 			int epoll_event = EPOLLHUP;
 
-			if (evlist[i].filter == EVFILT_READ) {
-				struct stat statbuf;
-				if (fstat(evlist[i].ident, &statbuf) == -1) {
-					return -1;
-				}
+			struct stat statbuf;
+			if (fstat(evlist[i].ident, &statbuf) == -1) {
+				return -1;
+			}
 
+			if (evlist[i].filter == EVFILT_READ) {
 				/* do some special EPOLLRDHUP handling for
 				 * sockets */
 				if (statbuf.st_mode & S_IFSOCK) {
@@ -278,6 +280,10 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 						    S_IWOTH))) {
 						epoll_event |= EPOLLHUP;
 					}
+				}
+			} else if (evlist[i].filter == EVFILT_WRITE) {
+				if (statbuf.st_mode & S_IFIFO) {
+					epoll_event = EPOLLERR;
 				}
 			}
 

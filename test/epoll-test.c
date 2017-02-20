@@ -800,6 +800,60 @@ test17()
 	return 0;
 }
 
+static int
+test18()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	int fds[2];
+	if (pipe2(fds, O_CLOEXEC) == -1) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLOUT;
+	event.data.fd = fds[1];
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) == -1) {
+		return -1;
+	}
+
+	for (;;) {
+		struct epoll_event event_result;
+		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+			return -1;
+		}
+
+		fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
+		    (int)event_result.events);
+
+		if (event_result.data.fd != fds[1]) {
+			return -1;
+		}
+
+		if (event_result.events == EPOLLOUT) {
+			// continue
+		} else if (event_result.events == (EPOLLOUT | EPOLLERR)) {
+			break;
+		} else {
+			return -1;
+		}
+
+		uint8_t data[512] = {0};
+		write(fds[1], &data, sizeof(data));
+
+		close(fds[0]);
+	}
+
+	close(fds[0]);
+	close(fds[1]);
+	close(ep);
+	return 0;
+}
+
 int
 main()
 {
@@ -824,6 +878,7 @@ main()
 	TEST(test16(true));
 	TEST(test16(false));
 	TEST(test17());
+	TEST(test18());
 
 	TEST(testxx());
 	return 0;
