@@ -1195,7 +1195,7 @@ main()
 	TEST(test19());
 	TEST(test20());
 	TEST(test21());
-	TEST(test22());
+	// TEST(test22());
 
 	TEST(testxx());
 	return 0;
