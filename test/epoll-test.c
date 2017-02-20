@@ -1112,6 +1112,61 @@ test21()
 	return 0;
 }
 
+static int
+test22()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	int fds[2];
+	if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds) == -1) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLIN | EPOLLOUT;
+	event.data.fd = fds[0];
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+		return -1;
+	}
+
+	uint8_t data = '\0';
+	write(fds[1], &data, 1);
+
+	struct epoll_event event_result;
+	if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+		return -1;
+	}
+
+	for (;;) {
+		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+			return -1;
+		}
+
+		if (event_result.data.fd != fds[0]) {
+			return -1;
+		}
+
+		fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
+		    (int)event_result.events);
+
+		if (event_result.events & EPOLLIN) {
+			// char data;
+			// read(fds[0], &data, 1);
+		}
+
+		usleep(100000);
+	}
+
+	close(fds[0]);
+	close(fds[1]);
+	close(ep);
+	return 0;
+}
+
 int
 main()
 {
@@ -1140,6 +1195,7 @@ main()
 	TEST(test19());
 	TEST(test20());
 	TEST(test21());
+	TEST(test22());
 
 	TEST(testxx());
 	return 0;
