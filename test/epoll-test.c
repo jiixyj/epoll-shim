@@ -1011,6 +1011,107 @@ test20()
 	return 0;
 }
 
+static void *
+connector2(void *arg)
+{
+	int sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (sock == -1) {
+		return NULL;
+	}
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1337);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+		return NULL;
+	}
+
+	if (connect(sock, &addr, sizeof(addr)) == -1) {
+		return NULL;
+	}
+
+	fprintf(stderr, "got client\n");
+
+	uint8_t data = '\0';
+	write(sock, &data, 0);
+	usleep(500000);
+	close(sock);
+
+	return NULL;
+}
+
+static int
+test21()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	int sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (sock == -1) {
+		return -1;
+	}
+
+	int enable = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) ==
+	    -1) {
+		return -1;
+	}
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1337);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+		return -1;
+	}
+
+	if (bind(sock, &addr, sizeof(addr)) == -1) {
+		return -1;
+	}
+
+	pthread_t client_thread;
+	pthread_create(&client_thread, NULL, connector2, NULL);
+
+	int fds[2];
+	fds[0] = sock;
+
+	struct epoll_event event;
+	event.events = EPOLLIN | EPOLLRDHUP;
+	event.data.fd = fds[0];
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+		return -1;
+	}
+
+	struct epoll_event event_result;
+	if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+		return -1;
+	}
+
+	fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
+	    (int)event_result.events);
+
+	if (event_result.events != EPOLLIN) {
+		return -1;
+	}
+
+	uint8_t data = '\0';
+	if (read(fds[0], &data, 1) == -1) {
+		return -1;
+	}
+
+	if (event_result.data.fd != fds[0]) {
+		return -1;
+	}
+
+	pthread_join(client_thread, NULL);
+
+	close(fds[0]);
+	close(ep);
+	return 0;
+}
+
 int
 main()
 {
@@ -1038,6 +1139,7 @@ main()
 	TEST(test18());
 	TEST(test19());
 	TEST(test20());
+	TEST(test21());
 
 	TEST(testxx());
 	return 0;
