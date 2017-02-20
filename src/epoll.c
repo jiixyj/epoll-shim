@@ -252,6 +252,12 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 		}
 
 		if (evlist[i].flags & EV_EOF) {
+			// fprintf(stderr, "got fflags: %d\n",
+			// evlist[i].fflags);
+			if (evlist[i].fflags) {
+				events |= EPOLLERR;
+			}
+
 			int epoll_event = EPOLLHUP;
 
 			struct stat statbuf;

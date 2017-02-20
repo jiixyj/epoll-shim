@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <sys/types.h>
 
@@ -790,6 +791,7 @@ test17()
 		return -1;
 	}
 
+	// TODO: Linux returns EPOLLHUP, FreeBSD times out
 	if (!(event.events == EPOLLHUP || ret == 0)) {
 		return -1;
 	}
@@ -854,6 +856,162 @@ test18()
 	return 0;
 }
 
+static int
+test19()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	int fds[2];
+	if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds) == -1) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLOUT;
+	event.data.fd = fds[1];
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) == -1) {
+		return -1;
+	}
+
+	for (;;) {
+		struct epoll_event event_result;
+		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+			return -1;
+		}
+
+		fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
+		    (int)event_result.events);
+
+		if (event_result.data.fd != fds[1]) {
+			return -1;
+		}
+
+		if (event_result.events == EPOLLOUT) {
+			// continue
+		} else if ((event_result.events & (EPOLLOUT | EPOLLHUP)) ==
+		    (EPOLLOUT | EPOLLHUP)) {
+			// TODO: Linux sets EPOLLERR in addition
+			{
+				int error = 0;
+				socklen_t errlen = sizeof(error);
+				getsockopt(fds[1], SOL_SOCKET, SO_ERROR,
+				    (void *)&error, &errlen);
+				fprintf(stderr, "socket error: %d (%s)\n",
+				    error, strerror(error));
+			}
+			break;
+		} else {
+			return -1;
+		}
+
+		uint8_t data[512] = {0};
+		write(fds[1], &data, sizeof(data));
+
+		close(fds[0]);
+	}
+
+	close(fds[0]);
+	close(fds[1]);
+	close(ep);
+	return 0;
+}
+
+static int
+test20()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
+		return -1;
+	}
+
+	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	if (sock == -1) {
+		return -1;
+	}
+
+	int enable = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) ==
+	    -1) {
+		return -1;
+	}
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1337);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+		return -1;
+	}
+
+	if (bind(sock, &addr, sizeof(addr)) == -1) {
+		return -1;
+	}
+
+	if (listen(sock, 5) == -1) {
+		return -1;
+	}
+
+	pthread_t client_thread;
+	pthread_create(&client_thread, NULL, connector, NULL);
+
+	int conn = accept(sock, NULL, NULL);
+	if (conn == -1) {
+		return -1;
+	}
+
+	int fds[2];
+	fds[1] = conn;
+
+	struct epoll_event event;
+	event.events = EPOLLOUT;
+	event.data.fd = fds[1];
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) == -1) {
+		return -1;
+	}
+
+	for (;;) {
+		struct epoll_event event_result;
+		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+			return -1;
+		}
+
+		if (event_result.data.fd != fds[1]) {
+			return -1;
+		}
+
+		if (event_result.events == EPOLLOUT) {
+			// continue
+		} else if (event_result.events ==
+		    (EPOLLOUT | EPOLLERR | EPOLLHUP)) {
+			{
+				int error = 0;
+				socklen_t errlen = sizeof(error);
+				getsockopt(fds[1], SOL_SOCKET, SO_ERROR,
+				    (void *)&error, &errlen);
+				fprintf(stderr, "socket error: %d (%s)\n",
+				    error, strerror(error));
+			}
+			break;
+		} else {
+			return -1;
+		}
+
+		uint8_t data[512] = {0};
+		write(fds[1], &data, sizeof(data));
+	}
+
+	close(fds[1]);
+	close(ep);
+
+	pthread_join(client_thread, NULL);
+	close(sock);
+	return 0;
+}
+
 int
 main()
 {
@@ -879,6 +1037,8 @@ main()
 	TEST(test16(false));
 	TEST(test17());
 	TEST(test18());
+	TEST(test19());
+	TEST(test20());
 
 	TEST(testxx());
 	return 0;
