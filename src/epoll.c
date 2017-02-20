@@ -262,7 +262,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 			if (evlist[i].filter == EVFILT_READ) {
 				/* do some special EPOLLRDHUP handling for
 				 * sockets */
-				if (statbuf.st_mode & S_IFSOCK) {
+				if (S_ISSOCK(statbuf.st_mode)) {
 					/* if we are reading, we just know for
 					 * sure that we can't receive any more,
 					 * so use EPOLLIN/EPOLLRDHUP per
@@ -282,7 +282,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 					}
 				}
 			} else if (evlist[i].filter == EVFILT_WRITE) {
-				if (statbuf.st_mode & S_IFIFO) {
+				if (S_ISFIFO(statbuf.st_mode)) {
 					epoll_event = EPOLLERR;
 				}
 			}
