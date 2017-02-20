@@ -240,7 +240,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 	for (int i = 0; i < ret; ++i) {
 		int events = 0;
 		if (evlist[i].filter == EVFILT_READ) {
-			if (evlist[i].data) {
+			if (evlist[i].data || !(evlist[i].flags & EV_EOF)) {
 				events |= EPOLLIN;
 			}
 		} else if (evlist[i].filter == EVFILT_WRITE) {
