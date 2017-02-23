@@ -1120,49 +1120,105 @@ test22()
 		return -1;
 	}
 
-	int fds[2];
-	if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds) == -1) {
-		return -1;
+#define FDS_SIZE 13
+
+	int fds[FDS_SIZE][2];
+
+	for (int i = 0; i < FDS_SIZE; ++i) {
+		if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds[i]) == -1) {
+			return -1;
+		}
+	}
+
+	uint8_t data = '\0';
+	for (int i = 0; i < FDS_SIZE; ++i) {
+		write(fds[i][1], &data, 1);
 	}
 
 	struct epoll_event event;
 	event.events = EPOLLIN | EPOLLOUT;
-	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	for (int i = 0; i < FDS_SIZE; ++i) {
+		event.data.fd = fds[i][0];
+		if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[i][0], &event) == -1) {
+			return -1;
+		}
+	}
+
+	for (int j = 0; j < 100; ++j) {
+		struct epoll_event event_result[32];
+		int event_size;
+		if ((event_size = epoll_wait(ep, event_result, 32, -1)) ==
+		    -1) {
+			return -1;
+		}
+
+		for (int i = 0; i < event_size; ++i) {
+			fprintf(stderr, "got event %d: %x %d dat: %d\n", i,
+			    (int)event_result[i].events,
+			    (int)event_result[i].events,
+			    event_result[i].data.fd);
+
+			if ((event_result[i].events & EPOLLIN) && !(i % 4)) {
+				char data;
+				read(event_result[i].data.fd, &data, 1);
+			}
+		}
+
+		fprintf(stderr, "\n");
+
+		usleep(1000000);
+
+		if (!(j % 5)) {
+			for (int i = 0; i < FDS_SIZE; ++i) {
+				write(fds[i][1], &data, 1);
+			}
+		}
+	}
+
+	for (int i = 0; i < FDS_SIZE; ++i) {
+		close(fds[i][0]);
+		close(fds[i][1]);
+	}
+
+#undef FDS_SIZE
+
+	close(ep);
+	return 0;
+}
+
+static int
+test23()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep == -1) {
 		return -1;
 	}
 
-	uint8_t data = '\0';
-	write(fds[1], &data, 1);
+	struct epoll_event event;
+	event.events = EPOLLIN;
+	event.data.fd = 0;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, 0, &event) == -1) {
+		return -1;
+	}
 
 	struct epoll_event event_result;
 	if (epoll_wait(ep, &event_result, 1, -1) != 1) {
 		return -1;
 	}
 
-	for (;;) {
-		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
-			return -1;
-		}
-
-		if (event_result.data.fd != fds[0]) {
-			return -1;
-		}
-
-		fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
-		    (int)event_result.events);
-
-		if (event_result.events & EPOLLIN) {
-			// char data;
-			// read(fds[0], &data, 1);
-		}
-
-		usleep(100000);
+	if (event_result.data.fd != 0) {
+		return -1;
 	}
 
-	close(fds[0]);
-	close(fds[1]);
+	fprintf(stderr, "got event: %x\n", (int)event.events);
+
+	char c;
+	if (read(0, &c, 1) != 0) {
+		return -1;
+	}
+
 	close(ep);
 	return 0;
 }
@@ -1196,6 +1252,7 @@ main()
 	TEST(test20());
 	TEST(test21());
 	// TEST(test22());
+	TEST(test23());
 
 	TEST(testxx());
 	return 0;
