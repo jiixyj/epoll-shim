@@ -18,7 +18,7 @@ extern ssize_t signalfd_read(
 extern int signalfd_close(struct signalfd_context *);
 
 #define WRAP(context, return_type, call, unlock_after_call)                   \
-	{                                                                     \
+	if (fd >= 0) {                                                        \
 		pthread_mutex_lock(&context##_mtx);                           \
 		struct context *ctx = get_##context(fd, false);               \
 		if (ctx) {                                                    \
