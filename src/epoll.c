@@ -204,9 +204,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 	for (int i = 0; i < ret; ++i) {
 		int events = 0;
 		if (evlist[i].filter == EVFILT_READ) {
-			if (evlist[i].data || !(evlist[i].flags & EV_EOF)) {
-				events |= EPOLLIN;
-			}
+			events |= EPOLLIN;
 		} else if (evlist[i].filter == EVFILT_WRITE) {
 			events |= EPOLLOUT;
 		}
@@ -216,44 +214,49 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 		}
 
 		if (evlist[i].flags & EV_EOF) {
-			// fprintf(stderr, "got fflags: %d\n",
-			// evlist[i].fflags);
+			// socket errors live in fflags when EV_EOF is set
 			if (evlist[i].fflags) {
 				events |= EPOLLERR;
 			}
 
-			int epoll_event = EPOLLHUP;
-
-			struct stat statbuf;
-			if (fstat(evlist[i].ident, &statbuf) == -1) {
+			// if we got an EV_EOF, we _may_ have a POLLHUP
+			// condition, need to check
+			struct pollfd fds[1];
+			fds[0].fd = evlist[i].ident;
+			fds[0].events = 0;
+			if (poll(fds, 1, 0) == -1) {
+				// should not really happen
 				return -1;
 			}
 
-			if (evlist[i].filter == EVFILT_READ) {
-				/* do some special EPOLLRDHUP handling for
-				 * sockets */
-				if (S_ISSOCK(statbuf.st_mode)) {
-					/* if we are reading, we just know for
-					 * sure that we can't receive any more,
-					 * so use EPOLLIN/EPOLLRDHUP per
-					 * default */
-					epoll_event = EPOLLIN;
+			int hup_event = (fds[0].revents & (POLLHUP | POLLNVAL))
+			    ? EPOLLHUP
+			    : 0;
 
-					/* only set EPOLLHUP if the stat says
-					 * that writing is also impossible */
-					if (!(statbuf.st_mode &
-						(S_IWUSR | S_IWGRP |
-						    S_IWOTH))) {
-						epoll_event |= EPOLLHUP;
+			if (hup_event) {
+				// fprintf(stderr, "got fflags: %d\n",
+				// evlist[i].fflags);
+
+				int old_errno = errno;
+				struct stat statbuf;
+				int fstat_ret =
+				    fstat(evlist[i].ident, &statbuf);
+				errno = old_errno;
+
+				if (fstat_ret == 0 &&
+				    S_ISFIFO(statbuf.st_mode)) {
+					if (evlist[i].filter == EVFILT_READ) {
+						if (!evlist[i].data) {
+							events &= ~EPOLLIN;
+						}
+					} else if (evlist[i].filter ==
+					    EVFILT_WRITE) {
+						hup_event = EPOLLERR;
 					}
 				}
-			} else if (evlist[i].filter == EVFILT_WRITE) {
-				if (S_ISFIFO(statbuf.st_mode)) {
-					epoll_event = EPOLLERR;
-				}
-			}
 
-			events |= epoll_event;
+				events |= hup_event;
+			}
 		}
 		ev[i].events = events;
 		ev[i].data.ptr = evlist[i].udata;
