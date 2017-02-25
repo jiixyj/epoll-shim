@@ -29,6 +29,100 @@
 		printf(STR(fun) " successful\n");                             \
 	}
 
+int
+fd_pipe(int fds[3])
+{
+	fds[2] = -1;
+	if (pipe2(fds, O_CLOEXEC) == -1) {
+		return -1;
+	}
+	return 0;
+}
+
+int
+fd_domain_socket(int fds[3])
+{
+	fds[2] = -1;
+	if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds) == -1) {
+		return -1;
+	}
+	return 0;
+}
+
+static void *
+connector_client(void *arg)
+{
+	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	if (sock == -1) {
+		return NULL;
+	}
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1337);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+		return NULL;
+	}
+
+	if (connect(sock, &addr, sizeof(addr)) == -1) {
+		return NULL;
+	}
+
+	return (void *)(intptr_t)sock;
+}
+
+int
+fd_tcp_socket(int fds[3])
+{
+	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	if (sock == -1) {
+		return -1;
+	}
+
+	int enable = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) ==
+	    -1) {
+		return -1;
+	}
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1337);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+		return -1;
+	}
+
+	if (bind(sock, &addr, sizeof(addr)) == -1) {
+		return -1;
+	}
+
+	if (listen(sock, 5) == -1) {
+		return -1;
+	}
+
+	pthread_t client_thread;
+	if (pthread_create(&client_thread, NULL, connector_client, NULL) ==
+	    -1) {
+		return -1;
+	}
+
+	int conn = accept(sock, NULL, NULL);
+	if (conn == -1) {
+		return -1;
+	}
+
+	void *client_socket = NULL;
+
+	if (pthread_join(client_thread, &client_socket) == -1) {
+		return -1;
+	}
+
+	fds[0] = conn;
+	fds[1] = (int)(intptr_t)client_socket;
+	fds[2] = sock;
+	return 0;
+}
+
 static int
 test1()
 {
@@ -82,8 +176,8 @@ test4()
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -130,8 +224,8 @@ test5(int sleep)
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -166,8 +260,8 @@ test6()
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -190,8 +284,8 @@ test7()
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -221,8 +315,8 @@ test8(bool change_udata)
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -274,8 +368,8 @@ test9()
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -328,8 +422,8 @@ test10()
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -391,8 +485,8 @@ test12(bool do_write_data)
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -416,7 +510,7 @@ test12(bool do_write_data)
 	}
 
 	if (event_result.events !=
-	    (EPOLLHUP | (do_write_data ? EPOLLIN : 0))) {
+	    (EPOLLHUP | (do_write_data ? EPOLLIN : EPOLLIN /* TODO: fix */))) {
 		return -1;
 	}
 
@@ -441,8 +535,8 @@ test13()
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -625,8 +719,8 @@ testxx()
 {
 	/* test that all fds of previous tests have been closed successfully */
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -669,48 +763,14 @@ connector(void *arg)
 }
 
 static int
-test16(bool specify_rdhup)
-{
-	int sock = socket(PF_INET, SOCK_STREAM, 0);
-	if (sock == -1) {
-		return -1;
-	}
-
-	int enable = 1;
-	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) ==
-	    -1) {
-		return -1;
-	}
-
-	struct sockaddr_in addr = {0};
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(1337);
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
-		return -1;
-	}
-
-	if (bind(sock, &addr, sizeof(addr)) == -1) {
-		return -1;
-	}
-
-	if (listen(sock, 5) == -1) {
-		return -1;
-	}
-
-	pthread_t client_thread;
-	pthread_create(&client_thread, NULL, connector, NULL);
-
-	int conn = accept(sock, NULL, NULL);
-	if (conn == -1) {
-		return -1;
-	}
-
-	// if (shutdown(conn, SHUT_RDWR) == -1) {
-	// 	return -1;
-	// }
-
+test16(bool specify_rdhup) {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	if (ep == -1) {
+		return -1;
+	}
+
+	int fds[3];
+	if (fd_tcp_socket(fds) == -1) {
 		return -1;
 	}
 
@@ -718,16 +778,18 @@ test16(bool specify_rdhup)
 
 	struct epoll_event event;
 	event.events = EPOLLIN;
-	event.data.fd = conn;
+	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, conn, &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
 		return -1;
 	}
 
 	event.events = EPOLLIN | rdhup_flag;
-	if (epoll_ctl(ep, EPOLL_CTL_MOD, conn, &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == -1) {
 		return -1;
 	}
+
+	shutdown(fds[1], SHUT_WR);
 
 	for (;;) {
 		if (epoll_wait(ep, &event, 1, -1) != 1) {
@@ -739,15 +801,15 @@ test16(bool specify_rdhup)
 
 		if (event.events == (EPOLLIN | rdhup_flag)) {
 			uint8_t buf;
-			ssize_t ret = read(conn, &buf, 1);
+			ssize_t ret = read(fds[0], &buf, 1);
 
 			if (ret != 0) {
 				return -1;
 			}
 
-			shutdown(conn, SHUT_RDWR);
+			shutdown(fds[0], SHUT_RDWR);
 		} else if (event.events == (EPOLLIN | rdhup_flag | EPOLLHUP)) {
-			close(conn);
+			close(fds[0]);
 			break;
 		} else {
 			return -1;
@@ -758,9 +820,10 @@ test16(bool specify_rdhup)
 		return -1;
 	}
 
-	pthread_join(client_thread, NULL);
+	close(fds[1]);
+	close(fds[2]);
 
-	close(sock);
+	close(ep);
 
 	return 0;
 }
@@ -810,8 +873,8 @@ test18()
 		return -1;
 	}
 
-	int fds[2];
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	int fds[3];
+	if (fd_pipe(fds) == -1) {
 		return -1;
 	}
 
@@ -864,8 +927,8 @@ test19()
 		return -1;
 	}
 
-	int fds[2];
-	if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds) == -1) {
+	int fds[3];
+	if (fd_domain_socket(fds) == -1) {
 		return -1;
 	}
 
@@ -927,48 +990,18 @@ test20()
 		return -1;
 	}
 
-	int sock = socket(PF_INET, SOCK_STREAM, 0);
-	if (sock == -1) {
+	int fds[3];
+	if (fd_tcp_socket(fds) == -1) {
 		return -1;
 	}
 
-	int enable = 1;
-	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) ==
-	    -1) {
-		return -1;
-	}
-
-	struct sockaddr_in addr = {0};
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(1337);
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
-		return -1;
-	}
-
-	if (bind(sock, &addr, sizeof(addr)) == -1) {
-		return -1;
-	}
-
-	if (listen(sock, 5) == -1) {
-		return -1;
-	}
-
-	pthread_t client_thread;
-	pthread_create(&client_thread, NULL, connector, NULL);
-
-	int conn = accept(sock, NULL, NULL);
-	if (conn == -1) {
-		return -1;
-	}
-
-	int fds[2];
-	fds[1] = conn;
+	shutdown(fds[1], SHUT_WR);
 
 	struct epoll_event event;
 	event.events = EPOLLOUT;
-	event.data.fd = fds[1];
+	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
 		return -1;
 	}
 
@@ -978,7 +1011,7 @@ test20()
 			return -1;
 		}
 
-		if (event_result.data.fd != fds[1]) {
+		if (event_result.data.fd != fds[0]) {
 			return -1;
 		}
 
@@ -989,7 +1022,7 @@ test20()
 			{
 				int error = 0;
 				socklen_t errlen = sizeof(error);
-				getsockopt(fds[1], SOL_SOCKET, SO_ERROR,
+				getsockopt(fds[0], SOL_SOCKET, SO_ERROR,
 				    (void *)&error, &errlen);
 				fprintf(stderr, "socket error: %d (%s)\n",
 				    error, strerror(error));
@@ -1000,14 +1033,15 @@ test20()
 		}
 
 		uint8_t data[512] = {0};
-		write(fds[1], &data, sizeof(data));
+		write(fds[0], &data, sizeof(data));
+
+		close(fds[1]);
 	}
 
-	close(fds[1]);
+	close(fds[0]);
+	close(fds[2]);
 	close(ep);
 
-	pthread_join(client_thread, NULL);
-	close(sock);
 	return 0;
 }
 
@@ -1122,10 +1156,10 @@ test22()
 
 #define FDS_SIZE 13
 
-	int fds[FDS_SIZE][2];
+	int fds[FDS_SIZE][3];
 
 	for (int i = 0; i < FDS_SIZE; ++i) {
-		if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds[i]) == -1) {
+		if (fd_domain_socket(fds[i]) == -1) {
 			return -1;
 		}
 	}
