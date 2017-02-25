@@ -46,7 +46,11 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
 	if ((!ev && op != EPOLL_CTL_DEL) ||
 	    (ev &&
-		(ev->events & ~(EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR)))) {
+		((ev->events & ~(EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR))
+		    /* the user should really set one of EPOLLIN or EPOLLOUT
+		     * such that EPOLLHUP and EPOLLERR work. Don't make this a
+		     * hard error for now, though. */
+		    /* || !(ev->events & (EPOLLIN | EPOLLOUT)) */))) {
 		errno = EINVAL;
 		return -1;
 	}
