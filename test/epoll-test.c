@@ -29,7 +29,7 @@
 		printf(STR(fun) " successful\n");                             \
 	}
 
-int
+static int
 fd_pipe(int fds[3])
 {
 	fds[2] = -1;
@@ -39,7 +39,7 @@ fd_pipe(int fds[3])
 	return 0;
 }
 
-int
+static int
 fd_domain_socket(int fds[3])
 {
 	fds[2] = -1;
@@ -71,7 +71,7 @@ connector_client(void *arg)
 	return (void *)(intptr_t)sock;
 }
 
-int
+static int
 fd_tcp_socket(int fds[3])
 {
 	int sock = socket(PF_INET, SOCK_STREAM, 0);
@@ -169,7 +169,7 @@ test3()
 }
 
 static int
-test4()
+test4(int (*fd_fun)(int fds[3]))
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	if (ep == -1) {
@@ -177,7 +177,7 @@ test4()
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_fun(fds) == -1) {
 		return -1;
 	}
 
@@ -203,6 +203,7 @@ test4()
 
 	close(fds[0]);
 	close(fds[1]);
+	close(fds[2]);
 	close(ep);
 	return 0;
 }
@@ -1266,7 +1267,9 @@ main()
 	TEST(test1());
 	TEST(test2());
 	TEST(test3());
-	TEST(test4());
+	TEST(test4(fd_pipe));
+	TEST(test4(fd_domain_socket));
+	TEST(test4(fd_tcp_socket));
 	TEST(test5(-1));
 	TEST(test5(-2));
 	TEST(test6());
