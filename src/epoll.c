@@ -46,9 +46,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
 	if ((!ev && op != EPOLL_CTL_DEL) ||
 	    (ev &&
-		(ev->events &
-		    ~(EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP |
-			EPOLLERR)))) {
+		(ev->events & ~(EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR)))) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -75,8 +73,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		 * has been 'registered'. We need this because there is no way
 		 * to ask a kqueue if a knote has been registered without
 		 * modifying the udata. */
-		EV_SET(&kev[2], fd2, EVFILT_USER, EV_ADD,
-		    ev->events & EPOLLRDHUP ? 1 : 0, 0, 0);
+		EV_SET(&kev[2], fd2, EVFILT_USER, EV_ADD, 0, 0, 0);
 	} else if (op == EPOLL_CTL_DEL) {
 		if (poll_fd == fd2 && fd == poll_epoll_fd) {
 			poll_fd = -1;
@@ -97,8 +94,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		    ev->data.ptr);
 		/* we don't really need this, but now we have 3 kevents in all
 		 * branches which is nice */
-		EV_SET(&kev[2], fd2, EVFILT_USER, 0,
-		    NOTE_FFCOPY | (ev->events & EPOLLRDHUP ? 1 : 0), 0, 0);
+		EV_SET(&kev[2], fd2, EVFILT_USER, 0, NOTE_FFCOPY, 0, 0);
 	} else {
 		errno = EINVAL;
 		return -1;
@@ -159,38 +155,6 @@ epoll_pwait(
 	return __syscall_ret(r);
 }
 #endif
-
-static u_int
-get_fflags(int kq, int fd)
-{
-	struct kevent kev;
-	EV_SET(&kev, fd, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
-	if (kevent(kq, &kev, 1, NULL, 0, NULL) == -1) {
-		return -1;
-	}
-
-	for (;;) {
-		struct timespec timeout = {0, 0};
-
-		if (kevent(kq, NULL, 0, &kev, 1, &timeout) == -1) {
-			return -1;
-		}
-
-		// fprintf(stderr, "ev user: %d %d %d\n", (int)kev.filter,
-		//     (int)kev.fflags, (int)kev.udata);
-
-		if (kev.filter == EVFILT_USER) {
-			u_int fflags = kev.fflags;
-
-			EV_SET(&kev, fd, EVFILT_USER, EV_CLEAR, 0, 0, 0);
-			if (kevent(kq, &kev, 1, NULL, 0, NULL) == -1) {
-				return -1;
-			}
-
-			return fflags;
-		}
-	}
-}
 
 int
 epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
@@ -274,10 +238,6 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 					 * so use EPOLLIN/EPOLLRDHUP per
 					 * default */
 					epoll_event = EPOLLIN;
-					epoll_event |=
-					    get_fflags(fd, evlist[i].ident)
-					    ? EPOLLRDHUP
-					    : 0;
 
 					/* only set EPOLLHUP if the stat says
 					 * that writing is also impossible */

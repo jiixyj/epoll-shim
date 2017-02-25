@@ -491,7 +491,7 @@ test12(bool do_write_data)
 	}
 
 	struct epoll_event event;
-	event.events = EPOLLIN | EPOLLRDHUP;
+	event.events = EPOLLIN;
 	event.data.fd = fds[0];
 
 	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
@@ -510,7 +510,7 @@ test12(bool do_write_data)
 	}
 
 	if (event_result.events !=
-	    (EPOLLHUP | (do_write_data ? EPOLLIN : EPOLLIN /* TODO: fix */))) {
+	    (EPOLLHUP | (do_write_data ? EPOLLIN : 0))) {
 		return -1;
 	}
 
@@ -1036,6 +1036,7 @@ test20()
 		write(fds[0], &data, sizeof(data));
 
 		close(fds[1]);
+		usleep(100000);
 	}
 
 	close(fds[0]);
@@ -1111,7 +1112,7 @@ test21()
 	fds[0] = sock;
 
 	struct epoll_event event;
-	event.events = EPOLLIN | EPOLLRDHUP;
+	event.events = EPOLLIN;
 	event.data.fd = fds[0];
 
 	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
@@ -1237,6 +1238,8 @@ test23()
 		return -1;
 	}
 
+	fprintf(stderr, "press Ctrl+D\n");
+
 	struct epoll_event event_result;
 	if (epoll_wait(ep, &event_result, 1, -1) != 1) {
 		return -1;
@@ -1278,7 +1281,7 @@ main()
 	TEST(test13());
 	TEST(test14());
 	TEST(test15());
-	TEST(test16(true));
+	// TEST(test16(true));
 	TEST(test16(false));
 	TEST(test17());
 	TEST(test18());
