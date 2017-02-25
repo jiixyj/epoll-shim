@@ -921,7 +921,7 @@ test18()
 }
 
 static int
-test19()
+test20(int (*fd_fun)(int fds[3]))
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	if (ep == -1) {
@@ -929,9 +929,11 @@ test19()
 	}
 
 	int fds[3];
-	if (fd_domain_socket(fds) == -1) {
+	if (fd_fun(fds) == -1) {
 		return -1;
 	}
+
+	shutdown(fds[0], SHUT_WR);
 
 	struct epoll_event event;
 	event.events = EPOLLOUT;
@@ -956,9 +958,21 @@ test19()
 
 		if (event_result.events == EPOLLOUT) {
 			// continue
-		} else if ((event_result.events & (EPOLLOUT | EPOLLHUP)) ==
-		    (EPOLLOUT | EPOLLHUP)) {
+		} else if (fd_fun == fd_domain_socket &&
+		    (event_result.events & (EPOLLOUT | EPOLLHUP)) ==
+			(EPOLLOUT | EPOLLHUP)) {
 			// TODO: Linux sets EPOLLERR in addition
+			{
+				int error = 0;
+				socklen_t errlen = sizeof(error);
+				getsockopt(fds[1], SOL_SOCKET, SO_ERROR,
+				    (void *)&error, &errlen);
+				fprintf(stderr, "socket error: %d (%s)\n",
+				    error, strerror(error));
+			}
+			break;
+		} else if (fd_fun == fd_tcp_socket &&
+		    event_result.events == (EPOLLOUT | EPOLLERR | EPOLLHUP)) {
 			{
 				int error = 0;
 				socklen_t errlen = sizeof(error);
@@ -976,71 +990,10 @@ test19()
 		write(fds[1], &data, sizeof(data));
 
 		close(fds[0]);
-	}
-
-	close(fds[1]);
-	close(ep);
-	return 0;
-}
-
-static int
-test20()
-{
-	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
-		return -1;
-	}
-
-	int fds[3];
-	if (fd_tcp_socket(fds) == -1) {
-		return -1;
-	}
-
-	shutdown(fds[1], SHUT_WR);
-
-	struct epoll_event event;
-	event.events = EPOLLOUT;
-	event.data.fd = fds[0];
-
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
-		return -1;
-	}
-
-	for (;;) {
-		struct epoll_event event_result;
-		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
-			return -1;
-		}
-
-		if (event_result.data.fd != fds[0]) {
-			return -1;
-		}
-
-		if (event_result.events == EPOLLOUT) {
-			// continue
-		} else if (event_result.events ==
-		    (EPOLLOUT | EPOLLERR | EPOLLHUP)) {
-			{
-				int error = 0;
-				socklen_t errlen = sizeof(error);
-				getsockopt(fds[0], SOL_SOCKET, SO_ERROR,
-				    (void *)&error, &errlen);
-				fprintf(stderr, "socket error: %d (%s)\n",
-				    error, strerror(error));
-			}
-			break;
-		} else {
-			return -1;
-		}
-
-		uint8_t data[512] = {0};
-		write(fds[0], &data, sizeof(data));
-
-		close(fds[1]);
 		usleep(100000);
 	}
 
-	close(fds[0]);
+	close(fds[1]);
 	close(fds[2]);
 	close(ep);
 
@@ -1288,8 +1241,8 @@ main()
 	TEST(test16(false));
 	TEST(test17());
 	TEST(test18());
-	TEST(test19());
-	TEST(test20());
+	TEST(test20(fd_tcp_socket));
+	TEST(test20(fd_domain_socket));
 	TEST(test21());
 	// TEST(test22());
 	TEST(test23());
