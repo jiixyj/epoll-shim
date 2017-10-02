@@ -196,8 +196,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 		to = 0;
 	}
 
-	struct kevent evlist[cnt];
-	memset(evlist, 0, sizeof(evlist));
+	struct kevent evlist[32];
 
 	struct timespec timeout = {0, 0};
 	if (to > 0) {
