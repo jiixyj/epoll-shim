@@ -62,7 +62,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		/* Check if the fd already has been registered in this kqueue.
 		 * See below for an explanation of this 'cookie' mechanism. */
 		EV_SET(&kev[0], fd2 * 2, EVFILT_USER, 0, 0, 0, 0);
-		if (!(kevent(fd, kev, 1, NULL, 0, NULL) == -1 &&
+		if (!(kevent(fd, kev, 1, NULL, 0, NULL) < 0 &&
 			errno == ENOENT)) {
 			errno = EEXIST;
 			return -1;
@@ -113,7 +113,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 	}
 
 	int ret = kevent(fd, kev, 4, kev, 4, NULL);
-	if (ret == -1) {
+	if (ret < 0) {
 		return -1;
 	}
 
@@ -128,7 +128,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			return -1;
 		}
 
-		if (kev[i].data == ENODEV && poll_fd == -1) {
+		if (kev[i].data == ENODEV && poll_fd < 0) {
 			poll_fd = fd2;
 			poll_epoll_fd = fd;
 			poll_ptr = ev->data.ptr;
@@ -210,8 +210,8 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 	}
 
 	int ret = kevent(fd, NULL, 0, evlist, cnt, ptimeout);
-	if (ret == -1) {
-		return ret;
+	if (ret < 0) {
+		return -1;
 	}
 
 	for (int i = 0; i < ret; ++i) {
@@ -236,7 +236,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 			int epoll_event = EPOLLHUP;
 
 			struct stat statbuf;
-			if (fstat(evlist[i].ident, &statbuf) == -1) {
+			if (fstat(evlist[i].ident, &statbuf) < 0) {
 				return -1;
 			}
 
