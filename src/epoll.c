@@ -218,9 +218,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 	for (int i = 0; i < ret; ++i) {
 		int events = 0;
 		if (evlist[i].filter == EVFILT_READ) {
-			if (evlist[i].data || !(evlist[i].flags & EV_EOF)) {
-				events |= EPOLLIN;
-			}
+			events |= EPOLLIN;
 		} else if (evlist[i].filter == EVFILT_WRITE) {
 			events |= EPOLLOUT;
 		}
@@ -228,7 +226,6 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 		if (evlist[i].flags & EV_ERROR) {
 			events |= EPOLLERR;
 		}
-
 
 		if (evlist[i].flags & EV_EOF) {
 			// fprintf(stderr, "got fflags: %d\n",
@@ -244,38 +241,38 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 				return -1;
 			}
 
-			if (evlist[i].filter == EVFILT_READ) {
+			if (S_ISFIFO(statbuf.st_mode)) {
+				if (evlist[i].filter == EVFILT_READ &&
+				    evlist[i].data == 0) {
+					events &= ~EPOLLIN;
+				} else if (evlist[i].filter == EVFILT_WRITE) {
+					epoll_event = EPOLLERR;
+				}
+			} else if (S_ISSOCK(statbuf.st_mode) &&
+			    evlist[i].filter == EVFILT_READ) {
 				/* do some special EPOLLRDHUP handling for
 				 * sockets */
-				if (S_ISSOCK(statbuf.st_mode)) {
-					struct kevent kev[1];
-					/* if we are reading, we just know for
-					 * sure that we can't receive any more,
-					 * so use EPOLLIN/EPOLLRDHUP per
-					 * default */
-					epoll_event = EPOLLIN;
-					EV_SET(&kev[0],
-					    evlist[i].ident * 2 + 1,
-					    EVFILT_USER, 0, 0, 0, 0);
-					int old_errno = errno;
-					if (!(kevent(fd, kev, 1, NULL, 0,
-						  NULL) == -1 &&
-						errno == ENOENT)) {
-						epoll_event |= EPOLLRDHUP;
-					}
-					errno = old_errno;
-
-					/* only set EPOLLHUP if the stat says
-					 * that writing is also impossible */
-					if (!(statbuf.st_mode &
-						(S_IWUSR | S_IWGRP |
-						    S_IWOTH))) {
-						epoll_event |= EPOLLHUP;
-					}
+				struct kevent kev[1];
+				/* if we are reading, we just know for
+				 * sure that we can't receive any more,
+				 * so use EPOLLIN/EPOLLRDHUP per
+				 * default */
+				epoll_event = EPOLLIN;
+				EV_SET(&kev[0], evlist[i].ident * 2 + 1,
+				    EVFILT_USER, 0, 0, 0, 0);
+				int old_errno = errno;
+				if (!(kevent(fd, kev, 1, NULL, 0, NULL) ==
+					    -1 &&
+					errno == ENOENT)) {
+					epoll_event |= EPOLLRDHUP;
 				}
-			} else if (evlist[i].filter == EVFILT_WRITE) {
-				if (S_ISFIFO(statbuf.st_mode)) {
-					epoll_event = EPOLLERR;
+				errno = old_errno;
+
+				/* only set EPOLLHUP if the stat says
+				 * that writing is also impossible */
+				if (!(statbuf.st_mode &
+					(S_IWUSR | S_IWGRP | S_IWOTH))) {
+					epoll_event |= EPOLLHUP;
 				}
 			}
 
