@@ -492,7 +492,7 @@ test12(bool do_write_data)
 	}
 
 	struct epoll_event event;
-	event.events = EPOLLIN;
+	event.events = EPOLLIN | EPOLLRDHUP;
 	event.data.fd = fds[0];
 
 	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
@@ -778,7 +778,7 @@ test16(bool specify_rdhup) {
 	int rdhup_flag = specify_rdhup ? EPOLLRDHUP : 0;
 
 	struct epoll_event event;
-	event.events = EPOLLIN;
+	event.events = EPOLLIN | (specify_rdhup ? 0 : EPOLLRDHUP);
 	event.data.fd = fds[0];
 
 	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
@@ -1066,7 +1066,7 @@ test21()
 	fds[0] = sock;
 
 	struct epoll_event event;
-	event.events = EPOLLIN;
+	event.events = EPOLLIN | EPOLLRDHUP;
 	event.data.fd = fds[0];
 
 	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
@@ -1237,7 +1237,7 @@ main()
 	TEST(test13());
 	TEST(test14());
 	TEST(test15());
-	// TEST(test16(true));
+	TEST(test16(true));
 	TEST(test16(false));
 	TEST(test17());
 	TEST(test18());

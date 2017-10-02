@@ -46,21 +46,22 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
 	if ((!ev && op != EPOLL_CTL_DEL) ||
 	    (ev &&
-		((ev->events & ~(EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR))
+		((ev->events &
+		    ~(EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLERR))
 		    /* the user should really set one of EPOLLIN or EPOLLOUT
-		     * such that EPOLLHUP and EPOLLERR work. Don't make this a
+		     * so that EPOLLHUP and EPOLLERR work. Don't make this a
 		     * hard error for now, though. */
 		    /* || !(ev->events & (EPOLLIN | EPOLLOUT)) */))) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	struct kevent kev[3];
+	struct kevent kev[4];
 
 	if (op == EPOLL_CTL_ADD) {
 		/* Check if the fd already has been registered in this kqueue.
 		 * See below for an explanation of this 'cookie' mechanism. */
-		EV_SET(&kev[0], fd2, EVFILT_USER, 0, 0, 0, 0);
+		EV_SET(&kev[0], fd2 * 2, EVFILT_USER, 0, 0, 0, 0);
 		if (!(kevent(fd, kev, 1, NULL, 0, NULL) == -1 &&
 			errno == ENOENT)) {
 			errno = EEXIST;
@@ -77,7 +78,9 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		 * has been 'registered'. We need this because there is no way
 		 * to ask a kqueue if a knote has been registered without
 		 * modifying the udata. */
-		EV_SET(&kev[2], fd2, EVFILT_USER, EV_ADD, 0, 0, 0);
+		EV_SET(&kev[2], fd2 * 2, EVFILT_USER, EV_ADD, 0, 0, 0);
+		EV_SET(&kev[3], fd2 * 2 + 1, EVFILT_USER,
+		    (ev->events & EPOLLRDHUP) ? EV_ADD : 0, 0, 0, 0);
 	} else if (op == EPOLL_CTL_DEL) {
 		if (poll_fd == fd2 && fd == poll_epoll_fd) {
 			poll_fd = -1;
@@ -88,7 +91,8 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 
 		EV_SET(&kev[0], fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
 		EV_SET(&kev[1], fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
-		EV_SET(&kev[2], fd2, EVFILT_USER, EV_DELETE, 0, 0, 0);
+		EV_SET(&kev[2], fd2 * 2, EVFILT_USER, EV_DELETE, 0, 0, 0);
+		EV_SET(&kev[3], fd2 * 2 + 1, EVFILT_USER, EV_DELETE, 0, 0, 0);
 	} else if (op == EPOLL_CTL_MOD) {
 		EV_SET(&kev[0], fd2, EVFILT_READ,
 		    ev->events & EPOLLIN ? EV_ENABLE : EV_DISABLE, 0, 0,
@@ -96,29 +100,29 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		EV_SET(&kev[1], fd2, EVFILT_WRITE,
 		    ev->events & EPOLLOUT ? EV_ENABLE : EV_DISABLE, 0, 0,
 		    ev->data.ptr);
-		/* we don't really need this, but now we have 3 kevents in all
-		 * branches which is nice */
-		EV_SET(&kev[2], fd2, EVFILT_USER, 0, NOTE_FFCOPY, 0, 0);
+		EV_SET(&kev[2], fd2 * 2, EVFILT_USER, 0, 0, 0, 0);
+		EV_SET(&kev[3], fd2 * 2 + 1, EVFILT_USER,
+		    (ev->events & EPOLLRDHUP) ? EV_ADD : EV_DELETE, 0, 0, 0);
 	} else {
 		errno = EINVAL;
 		return -1;
 	}
 
-	for (int i = 0; i < 3; ++i) {
+	for (int i = 0; i < 4; ++i) {
 		kev[i].flags |= EV_RECEIPT;
 	}
 
-	int ret = kevent(fd, kev, 3, kev, 3, NULL);
+	int ret = kevent(fd, kev, 4, kev, 4, NULL);
 	if (ret == -1) {
 		return -1;
 	}
 
-	if (ret != 3) {
+	if (ret != 4) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	for (int i = 0; i < 3; ++i) {
+	for (int i = 0; i < 4; ++i) {
 		if (kev[i].flags != EV_ERROR) {
 			errno = EINVAL;
 			return -1;
@@ -134,6 +138,12 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		/* ignore EVFILT_WRITE registration EINVAL errors (some fd
 		 * types such as kqueues themselves don't support it) */
 		if (i == 1 && kev[i].data == EINVAL) {
+			continue;
+		}
+
+		/* ignore EVFILT_USER registration ENOENT errors (used for
+		 * EPOLLRDHUP cookie fd and may therefore not exist) */
+		if (i == 3 && kev[i].data == ENOENT) {
 			continue;
 		}
 
@@ -219,6 +229,7 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 			events |= EPOLLERR;
 		}
 
+
 		if (evlist[i].flags & EV_EOF) {
 			// fprintf(stderr, "got fflags: %d\n",
 			// evlist[i].fflags);
@@ -237,11 +248,22 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 				/* do some special EPOLLRDHUP handling for
 				 * sockets */
 				if (S_ISSOCK(statbuf.st_mode)) {
+					struct kevent kev[1];
 					/* if we are reading, we just know for
 					 * sure that we can't receive any more,
 					 * so use EPOLLIN/EPOLLRDHUP per
 					 * default */
 					epoll_event = EPOLLIN;
+					EV_SET(&kev[0],
+					    evlist[i].ident * 2 + 1,
+					    EVFILT_USER, 0, 0, 0, 0);
+					int old_errno = errno;
+					if (!(kevent(fd, kev, 1, NULL, 0,
+						  NULL) == -1 &&
+						errno == ENOENT)) {
+						epoll_event |= EPOLLRDHUP;
+					}
+					errno = old_errno;
 
 					/* only set EPOLLHUP if the stat says
 					 * that writing is also impossible */
