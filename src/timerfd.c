@@ -59,11 +59,16 @@ worker_function(void *arg)
 	struct timerfd_context *ctx = arg;
 
 	siginfo_t info;
-	sigset_t set;
-	sigemptyset(&set);
-	sigaddset(&set, SIGRTMIN);
-	sigaddset(&set, SIGRTMIN + 1);
-	(void)pthread_sigmask(SIG_BLOCK, &set, NULL);
+	sigset_t rt_set;
+	sigset_t block_set;
+
+	sigemptyset(&rt_set);
+	sigaddset(&rt_set, SIGRTMIN);
+	sigaddset(&rt_set, SIGRTMIN + 1);
+
+	sigfillset(&block_set);
+
+	(void)pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
 	struct kevent kev;
 	EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
@@ -71,7 +76,7 @@ worker_function(void *arg)
 	(void)kevent(ctx->fd, &kev, 1, NULL, 0, NULL);
 
 	for (;;) {
-		if (sigwaitinfo(&set, &info) != SIGRTMIN) {
+		if (sigwaitinfo(&rt_set, &info) != SIGRTMIN) {
 			break;
 		}
 		EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
