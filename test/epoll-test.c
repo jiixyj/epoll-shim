@@ -34,7 +34,7 @@ static int
 fd_pipe(int fds[3])
 {
 	fds[2] = -1;
-	if (pipe2(fds, O_CLOEXEC) == -1) {
+	if (pipe2(fds, O_CLOEXEC) < 0) {
 		return -1;
 	}
 	return 0;
@@ -44,7 +44,7 @@ static int
 fd_domain_socket(int fds[3])
 {
 	fds[2] = -1;
-	if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds) == -1) {
+	if (socketpair(PF_LOCAL, SOCK_STREAM, 0, fds) < 0) {
 		return -1;
 	}
 	return 0;
@@ -56,7 +56,7 @@ connector_client(void *arg)
 	(void)arg;
 
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (sock == -1) {
+	if (sock < 0) {
 		return NULL;
 	}
 
@@ -67,8 +67,7 @@ connector_client(void *arg)
 		return NULL;
 	}
 
-	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) ==
-	    -1) {
+	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
 		return NULL;
 	}
 
@@ -79,13 +78,13 @@ static int
 fd_tcp_socket(int fds[3])
 {
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (sock == -1) {
+	if (sock < 0) {
 		return -1;
 	}
 
 	int enable = 1;
-	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) ==
-	    -1) {
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, /**/
+		&enable, sizeof(int)) < 0) {
 		return -1;
 	}
 
@@ -96,28 +95,27 @@ fd_tcp_socket(int fds[3])
 		return -1;
 	}
 
-	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) == -1) {
+	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
 		return -1;
 	}
 
-	if (listen(sock, 5) == -1) {
+	if (listen(sock, 5) < 0) {
 		return -1;
 	}
 
 	pthread_t client_thread;
-	if (pthread_create(&client_thread, NULL, connector_client, NULL) ==
-	    -1) {
+	if (pthread_create(&client_thread, NULL, connector_client, NULL) < 0) {
 		return -1;
 	}
 
 	int conn = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
-	if (conn == -1) {
+	if (conn < 0) {
 		return -1;
 	}
 
 	void *client_socket = NULL;
 
-	if (pthread_join(client_thread, &client_socket) == -1) {
+	if (pthread_join(client_thread, &client_socket) < 0) {
 		return -1;
 	}
 
@@ -142,7 +140,7 @@ static int
 test2()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
@@ -167,7 +165,7 @@ test3()
 #if defined(__amd64__)
 	return sizeof(event) == 12 ? 0 : -1;
 #else
-	// TODO: test for other architectures
+	// TODO(jan): test for other architectures
 	return -1;
 #endif
 }
@@ -176,12 +174,12 @@ static int
 test4(int (*fd_fun)(int fds[3]))
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_fun(fds) == -1) {
+	if (fd_fun(fds) < 0) {
 		return -1;
 	}
 
@@ -189,7 +187,7 @@ test4(int (*fd_fun)(int fds[3]))
 	event.events = EPOLLIN;
 	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -225,19 +223,19 @@ static int
 test5(int sleep)
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
 	struct epoll_event event;
 	event.events = EPOLLIN;
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -261,12 +259,12 @@ static int
 test6()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -285,12 +283,12 @@ static int
 test7()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -298,11 +296,11 @@ test7()
 	event.events = EPOLLIN;
 	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
-	if (epoll_ctl(ep, EPOLL_CTL_DEL, fds[0], NULL) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_DEL, fds[0], NULL) < 0) {
 		return -1;
 	}
 
@@ -316,12 +314,12 @@ static int
 test8(bool change_udata)
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -329,7 +327,7 @@ test8(bool change_udata)
 	event.events = EPOLLIN;
 	event.data.u32 = 42;
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -369,12 +367,12 @@ static int
 test9()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -382,12 +380,12 @@ test9()
 	event.events = EPOLLIN;
 	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
 	event.events = 0;
-	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -401,7 +399,7 @@ test9()
 
 	event.events = EPOLLIN;
 	event.data.fd = 42;
-	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -423,12 +421,12 @@ static int
 test10()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -451,12 +449,12 @@ static int
 test11()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
-	if (fd == -1) {
+	if (fd < 0) {
 		return -1;
 	}
 
@@ -464,7 +462,7 @@ test11()
 	event.events = EPOLLIN | EPOLLOUT;
 	event.data.fd = fd;
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) < 0) {
 		return -1;
 	}
 
@@ -473,7 +471,7 @@ test11()
 		return -1;
 	}
 
-	if (epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) < 0) {
 		return -1;
 	}
 
@@ -486,12 +484,12 @@ static int
 test12(bool do_write_data)
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -499,7 +497,7 @@ test12(bool do_write_data)
 	event.events = EPOLLIN | EPOLLRDHUP;
 	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -519,7 +517,7 @@ test12(bool do_write_data)
 		return -1;
 	}
 
-	if (read(fds[0], &data, 1) == -1) {
+	if (read(fds[0], &data, 1) < 0) {
 		return -1;
 	}
 
@@ -536,12 +534,12 @@ static int
 test13()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -549,7 +547,7 @@ test13()
 	event.events = EPOLLOUT;
 	event.data.fd = fds[1];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) < 0) {
 		return -1;
 	}
 
@@ -575,7 +573,7 @@ test13()
 
 	event.events = EPOLLIN;
 	event.data.fd = fds[0];
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -602,7 +600,7 @@ test14()
 	uint64_t exp, tot_exp;
 	ssize_t s;
 
-	if (clock_gettime(CLOCK_REALTIME, &now) == -1) {
+	if (clock_gettime(CLOCK_REALTIME, &now) < 0) {
 		return -1;
 	}
 
@@ -612,16 +610,16 @@ test14()
 	new_value.it_interval.tv_nsec = 100000000;
 
 	int fd = timerfd_create(CLOCK_REALTIME, 0);
-	if (fd == -1) {
+	if (fd < 0) {
 		return -1;
 	}
 
-	if (timerfd_settime(fd, TFD_TIMER_ABSTIME, &new_value, NULL) == -1) {
+	if (timerfd_settime(fd, TFD_TIMER_ABSTIME, &new_value, NULL) < 0) {
 		return -1;
 	}
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
@@ -629,7 +627,7 @@ test14()
 	event.events = EPOLLIN | EPOLLOUT;
 	event.data.fd = fd;
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) < 0) {
 		return -1;
 	}
 
@@ -671,19 +669,19 @@ test15()
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
 
-	if (sigprocmask(SIG_BLOCK, &mask, NULL) == -1) {
+	if (sigprocmask(SIG_BLOCK, &mask, NULL) < 0) {
 		return -1;
 	}
 
 	sfd = signalfd(-1, &mask, 0);
-	if (sfd == -1) {
+	if (sfd < 0) {
 		return -1;
 	}
 
 	kill(getpid(), SIGINT);
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
@@ -691,7 +689,7 @@ test15()
 	event.events = EPOLLIN | EPOLLOUT;
 	event.data.fd = sfd;
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, sfd, &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, sfd, &event) < 0) {
 		return -1;
 	}
 
@@ -725,7 +723,7 @@ testxx()
 	/* test that all fds of previous tests have been closed successfully */
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -744,7 +742,7 @@ connector(void *arg)
 	(void)arg;
 
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (sock == -1) {
+	if (sock < 0) {
 		return NULL;
 	}
 
@@ -755,8 +753,7 @@ connector(void *arg)
 		return NULL;
 	}
 
-	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) ==
-	    -1) {
+	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
 		return NULL;
 	}
 
@@ -773,12 +770,12 @@ connector(void *arg)
 static int
 test16(bool specify_rdhup) {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_tcp_socket(fds) == -1) {
+	if (fd_tcp_socket(fds) < 0) {
 		return -1;
 	}
 
@@ -788,12 +785,12 @@ test16(bool specify_rdhup) {
 	event.events = EPOLLIN | (specify_rdhup ? 0 : EPOLLRDHUP);
 	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
 	event.events = EPOLLIN | rdhup_flag;
-	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -840,12 +837,12 @@ static int
 test17()
 {
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (sock == -1) {
+	if (sock < 0) {
 		return -1;
 	}
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
@@ -853,7 +850,7 @@ test17()
 	event.events = EPOLLIN;
 	event.data.fd = sock;
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) < 0) {
 		return -1;
 	}
 
@@ -877,12 +874,12 @@ static int
 test18()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_pipe(fds) == -1) {
+	if (fd_pipe(fds) < 0) {
 		return -1;
 	}
 
@@ -890,7 +887,7 @@ test18()
 	event.events = EPOLLOUT;
 	event.data.fd = fds[1];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) < 0) {
 		return -1;
 	}
 
@@ -931,12 +928,12 @@ static int
 test20(int (*fd_fun)(int fds[3]))
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int fds[3];
-	if (fd_fun(fds) == -1) {
+	if (fd_fun(fds) < 0) {
 		return -1;
 	}
 
@@ -946,7 +943,7 @@ test20(int (*fd_fun)(int fds[3]))
 	event.events = EPOLLOUT;
 	event.data.fd = fds[1];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) < 0) {
 		return -1;
 	}
 
@@ -1013,7 +1010,7 @@ connector2(void *arg)
 	(void)arg;
 
 	int sock = socket(PF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (sock == -1) {
+	if (sock < 0) {
 		return NULL;
 	}
 
@@ -1024,8 +1021,7 @@ connector2(void *arg)
 		return NULL;
 	}
 
-	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) ==
-	    -1) {
+	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
 		return NULL;
 	}
 
@@ -1043,18 +1039,18 @@ static int
 test21()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
 	int sock = socket(PF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (sock == -1) {
+	if (sock < 0) {
 		return -1;
 	}
 
 	int enable = 1;
-	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) ==
-	    -1) {
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, /**/
+		&enable, sizeof(int)) < 0) {
 		return -1;
 	}
 
@@ -1065,7 +1061,7 @@ test21()
 		return -1;
 	}
 
-	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) == -1) {
+	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
 		return -1;
 	}
 
@@ -1079,7 +1075,7 @@ test21()
 	event.events = EPOLLIN | EPOLLRDHUP;
 	event.data.fd = fds[0];
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
@@ -1096,7 +1092,7 @@ test21()
 	}
 
 	uint8_t data = '\0';
-	if (read(fds[0], &data, 1) == -1) {
+	if (read(fds[0], &data, 1) < 0) {
 		return -1;
 	}
 
@@ -1115,7 +1111,7 @@ static int
 test22()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
@@ -1124,7 +1120,7 @@ test22()
 	int fds[FDS_SIZE][3];
 
 	for (int i = 0; i < FDS_SIZE; ++i) {
-		if (fd_domain_socket(fds[i]) == -1) {
+		if (fd_domain_socket(fds[i]) < 0) {
 			return -1;
 		}
 	}
@@ -1139,7 +1135,7 @@ test22()
 
 	for (int i = 0; i < FDS_SIZE; ++i) {
 		event.data.fd = fds[i][0];
-		if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[i][0], &event) == -1) {
+		if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[i][0], &event) < 0) {
 			return -1;
 		}
 	}
@@ -1147,8 +1143,7 @@ test22()
 	for (int j = 0; j < 100; ++j) {
 		struct epoll_event event_result[32];
 		int event_size;
-		if ((event_size = epoll_wait(ep, event_result, 32, -1)) ==
-		    -1) {
+		if ((event_size = epoll_wait(ep, event_result, 32, -1)) < 0) {
 			return -1;
 		}
 
@@ -1190,7 +1185,7 @@ static int
 test23()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep == -1) {
+	if (ep < 0) {
 		return -1;
 	}
 
@@ -1198,7 +1193,7 @@ test23()
 	event.events = EPOLLIN;
 	event.data.fd = 0;
 
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, 0, &event) == -1) {
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, 0, &event) < 0) {
 		return -1;
 	}
 
