@@ -1,24 +1,17 @@
 #include <sys/epoll.h>
 
-#include <sys/types.h>
-
 #include <sys/event.h>
-#include <sys/param.h>
-#include <sys/queue.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 
 #include <errno.h>
 #include <poll.h>
-#include <signal.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <time.h>
 
 int
-epoll_create(int size __unused)
+epoll_create(int size)
 {
+	(void)size;
 	fprintf(stderr,
 	    "ERROR: epoll_create() is deprecated, use "
 	    "epoll_create1(EPOLL_CLOEXEC).\n");
