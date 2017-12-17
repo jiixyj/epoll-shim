@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-#include <sys/types.h>
+#include <sys/types.h> /* IWYU pragma: keep -- include the same as musl */
 #include <fcntl.h>
 
 #if 0
