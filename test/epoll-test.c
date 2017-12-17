@@ -24,10 +24,10 @@
 #define STR(a) #a
 
 #define TEST(fun)                                                             \
-	if (fun != 0) {                                                       \
-		printf(STR(fun) " failed\n");                                 \
+	if ((fun) != 0) {                                                     \
+		printf(STR((fun)) " failed\n");                               \
 	} else {                                                              \
-		printf(STR(fun) " successful\n");                             \
+		printf(STR((fun)) " successful\n");                           \
 	}
 
 static int
@@ -53,7 +53,9 @@ fd_domain_socket(int fds[3])
 static void *
 connector_client(void *arg)
 {
-	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	(void)arg;
+
+	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock == -1) {
 		return NULL;
 	}
@@ -76,7 +78,7 @@ connector_client(void *arg)
 static int
 fd_tcp_socket(int fds[3])
 {
-	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock == -1) {
 		return -1;
 	}
@@ -108,7 +110,7 @@ fd_tcp_socket(int fds[3])
 		return -1;
 	}
 
-	int conn = accept(sock, NULL, NULL);
+	int conn = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
 	if (conn == -1) {
 		return -1;
 	}
@@ -739,7 +741,9 @@ testxx()
 static void *
 connector(void *arg)
 {
-	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	(void)arg;
+
+	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock == -1) {
 		return NULL;
 	}
@@ -835,7 +839,7 @@ test16(bool specify_rdhup) {
 static int
 test17()
 {
-	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock == -1) {
 		return -1;
 	}
@@ -858,7 +862,7 @@ test17()
 		return -1;
 	}
 
-	// TODO: Linux returns EPOLLHUP, FreeBSD times out
+	// TODO(jan): Linux returns EPOLLHUP, FreeBSD times out
 	if (!(event.events == EPOLLHUP || ret == 0)) {
 		return -1;
 	}
@@ -964,7 +968,7 @@ test20(int (*fd_fun)(int fds[3]))
 		} else if (fd_fun == fd_domain_socket &&
 		    (event_result.events & (EPOLLOUT | EPOLLHUP)) ==
 			(EPOLLOUT | EPOLLHUP)) {
-			// TODO: Linux sets EPOLLERR in addition
+			// TODO(jan): Linux sets EPOLLERR in addition
 			{
 				int error = 0;
 				socklen_t errlen = sizeof(error);
@@ -1006,7 +1010,9 @@ test20(int (*fd_fun)(int fds[3]))
 static void *
 connector2(void *arg)
 {
-	int sock = socket(PF_INET, SOCK_DGRAM, 0);
+	(void)arg;
+
+	int sock = socket(PF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (sock == -1) {
 		return NULL;
 	}
@@ -1041,7 +1047,7 @@ test21()
 		return -1;
 	}
 
-	int sock = socket(PF_INET, SOCK_DGRAM, 0);
+	int sock = socket(PF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (sock == -1) {
 		return -1;
 	}

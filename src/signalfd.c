@@ -122,7 +122,8 @@ signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 	    fd, NULL, 0, &kev, 1, (flags & SFD_NONBLOCK) ? &timeout : NULL);
 	if (ret == -1) {
 		return -1;
-	} else if (ret == 0) {
+	}
+	if (ret == 0) {
 		errno = EAGAIN;
 		return -1;
 	}

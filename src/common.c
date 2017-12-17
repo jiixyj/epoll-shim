@@ -1,9 +1,11 @@
-#include <sys/param.h>
-#include <sys/types.h>
+#include <stddef.h>
 
 #include <pthread.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+struct signalfd_context;
+struct timerfd_context;
 
 extern pthread_mutex_t timerfd_context_mtx;
 extern struct timerfd_context *get_timerfd_context(int fd, bool create_new);

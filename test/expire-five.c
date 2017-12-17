@@ -8,12 +8,15 @@
 #include <err.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <time.h>
+#include <unistd.h>
 
 #include <sys/timerfd.h>
 
 int
-main(int argc, char **argv)
+main()
 {
 	int fd;
 	struct itimerspec value;
