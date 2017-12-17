@@ -69,7 +69,7 @@ signalfd_impl(int fd, const sigset_t *sigs, int flags)
 	}
 
 	ctx->fd = kqueue();
-	if (ctx->fd == -1) {
+	if (ctx->fd < 0) {
 		return -1;
 	}
 
@@ -85,7 +85,7 @@ signalfd_impl(int fd, const sigset_t *sigs, int flags)
 	}
 
 	int ret = kevent(ctx->fd, kevs, n, NULL, 0, NULL);
-	if (ret == -1) {
+	if (ret < 0) {
 		close(ctx->fd);
 		ctx->fd = -1;
 		return -1;

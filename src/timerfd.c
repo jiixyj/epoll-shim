@@ -102,7 +102,7 @@ timerfd_create_impl(int clockid, int flags)
 	}
 
 	ctx->fd = kqueue();
-	if (ctx->fd == -1) {
+	if (ctx->fd < 0) {
 		return -1;
 	}
 
@@ -110,20 +110,20 @@ timerfd_create_impl(int clockid, int flags)
 
 	struct kevent kev;
 	EV_SET(&kev, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
-	if (kevent(ctx->fd, &kev, 1, NULL, 0, NULL) == -1) {
+	if (kevent(ctx->fd, &kev, 1, NULL, 0, NULL) < 0) {
 		close(ctx->fd);
 		ctx->fd = -1;
 		return -1;
 	}
 
-	if (pthread_create(&ctx->worker, NULL, worker_function, ctx) == -1) {
+	if (pthread_create(&ctx->worker, NULL, worker_function, ctx) < 0) {
 		close(ctx->fd);
 		ctx->fd = -1;
 		return -1;
 	}
 
 	int ret = kevent(ctx->fd, NULL, 0, &kev, 1, NULL);
-	if (ret == -1) {
+	if (ret < 0) {
 		pthread_kill(ctx->worker, SIGRTMIN + 1);
 		pthread_join(ctx->worker, NULL);
 		close(ctx->fd);
@@ -137,7 +137,7 @@ timerfd_create_impl(int clockid, int flags)
 	    .sigev_signo = SIGRTMIN,
 	    .sigev_notify_thread_id = tid};
 
-	if (timer_create(clockid, &sigev, &ctx->timer) == -1) {
+	if (timer_create(clockid, &sigev, &ctx->timer) < 0) {
 		pthread_kill(ctx->worker, SIGRTMIN + 1);
 		pthread_join(ctx->worker, NULL);
 		close(ctx->fd);
