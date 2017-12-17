@@ -2,11 +2,7 @@
 #undef read
 #undef close
 
-#include <sys/types.h>
-
 #include <sys/event.h>
-#include <sys/param.h>
-#include <sys/time.h>
 
 #include <pthread.h>
 #include <pthread_np.h>
@@ -14,6 +10,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -214,7 +211,9 @@ timerfd_read(struct timerfd_context *ctx, void *buf, size_t nbytes)
 	    fd, NULL, 0, &kev, 1, (flags & TFD_NONBLOCK) ? &timeout : NULL);
 	if (ret == -1) {
 		return -1;
-	} else if (ret == 0) {
+	}
+
+	if (ret == 0) {
 		errno = EAGAIN;
 		return -1;
 	}
