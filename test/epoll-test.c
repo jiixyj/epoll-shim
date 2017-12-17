@@ -64,7 +64,8 @@ connector_client(void *arg)
 		return NULL;
 	}
 
-	if (connect(sock, &addr, sizeof(addr)) == -1) {
+	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) ==
+	    -1) {
 		return NULL;
 	}
 
@@ -92,7 +93,7 @@ fd_tcp_socket(int fds[3])
 		return -1;
 	}
 
-	if (bind(sock, &addr, sizeof(addr)) == -1) {
+	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) == -1) {
 		return -1;
 	}
 
@@ -749,7 +750,8 @@ connector(void *arg)
 		return NULL;
 	}
 
-	if (connect(sock, &addr, sizeof(addr)) == -1) {
+	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) ==
+	    -1) {
 		return NULL;
 	}
 
@@ -1015,7 +1017,8 @@ connector2(void *arg)
 		return NULL;
 	}
 
-	if (connect(sock, &addr, sizeof(addr)) == -1) {
+	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) ==
+	    -1) {
 		return NULL;
 	}
 
@@ -1055,7 +1058,7 @@ test21()
 		return -1;
 	}
 
-	if (bind(sock, &addr, sizeof(addr)) == -1) {
+	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) == -1) {
 		return -1;
 	}
 
