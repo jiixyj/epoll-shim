@@ -5,15 +5,14 @@
 #include <sys/types.h>
 
 #include <sys/event.h>
-#include <sys/param.h>
-#include <sys/time.h>
 
 #include <errno.h>
-#include <fcntl.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 struct signalfd_context {
@@ -111,7 +110,7 @@ signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 	int flags = ctx->flags;
 	pthread_mutex_unlock(&signalfd_context_mtx);
 
-	// TODO: fix this to read multiple signals
+	// TODO(jan): fix this to read multiple signals
 	if (nbytes != sizeof(struct signalfd_siginfo)) {
 		errno = EINVAL;
 		return -1;

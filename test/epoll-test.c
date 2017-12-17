@@ -1,22 +1,23 @@
 #define _GNU_SOURCE
+
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
-#include <sys/types.h>
-
 #include <sys/epoll.h>
-#include <sys/timerfd.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
+#include <sys/timerfd.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
 #include <fcntl.h>
 #include <pthread.h>
+#include <time.h>
 #include <unistd.h>
 
 #define XSTR(a) STR(a)

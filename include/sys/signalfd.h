@@ -11,6 +11,8 @@ extern "C" {
 #include <fcntl.h>
 #include <signal.h>
 
+#include <stddef.h>
+
 #if 0
 #define __NEED_sigset_t
 
