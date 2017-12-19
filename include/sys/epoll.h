@@ -5,10 +5,11 @@
 extern "C" {
 #endif
 
-#include <stdint.h>
 /* include the same file as musl */
 #include <sys/types.h> /* IWYU pragma: keep */
+
 #include <fcntl.h>
+#include <stdint.h>
 
 #if 0
 #define __NEED_sigset_t
@@ -55,10 +56,12 @@ __attribute__((packed))
 #endif
 ;
 
-int epoll_create(int);
-int epoll_create1(int);
-int epoll_ctl(int, int, int, struct epoll_event *);
-int epoll_wait(int, struct epoll_event *, int, int);
+int epoll_create(int /*size*/);
+int epoll_create1(int /*flags*/);
+int epoll_ctl(
+    int /*fd*/, int /*op*/, int /*fd2*/, struct epoll_event * /*ev*/);
+int epoll_wait(
+    int /*fd*/, struct epoll_event * /*ev*/, int /*cnt*/, int /*to*/);
 #if 0
 int epoll_pwait(int, struct epoll_event *, int, int, const sigset_t *);
 #endif

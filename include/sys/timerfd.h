@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-#include <time.h>
 #include <fcntl.h>
+#include <time.h>
 #include <unistd.h>
 
 #define TFD_NONBLOCK O_NONBLOCK
@@ -16,14 +16,15 @@ extern "C" {
 
 struct itimerspec;
 
-int timerfd_create(int, int);
-int timerfd_settime(int, int, const struct itimerspec *, struct itimerspec *);
+int timerfd_create(int /*clockid*/, int /*flags*/);
+int timerfd_settime(int /*fd*/, int /*flags*/,
+    const struct itimerspec * /*new*/, struct itimerspec * /*old*/);
 #if 0
 int timerfd_gettime(int, struct itimerspec *);
 #endif
 
-extern int epoll_shim_close(int fd);
-extern ssize_t epoll_shim_read(int fd, void *buf, size_t nbytes);
+extern int epoll_shim_close(int /*fd*/);
+extern ssize_t epoll_shim_read(int /*fd*/, void * /*buf*/, size_t /*nbytes*/);
 #define read epoll_shim_read
 #define close epoll_shim_close
 
