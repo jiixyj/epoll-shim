@@ -15,6 +15,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#include <err.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <time.h>
@@ -50,6 +51,8 @@ fd_domain_socket(int fds[3])
 	return 0;
 }
 
+static int connector_epfd = -1;
+
 static void *
 connector_client(void *arg)
 {
@@ -58,6 +61,31 @@ connector_client(void *arg)
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock < 0) {
 		return NULL;
+	}
+
+	if (connector_epfd >= 0) {
+		int ep = connector_epfd;
+
+		struct epoll_event event;
+		event.events = EPOLLOUT | EPOLLIN;
+		event.data.fd = sock;
+
+		if (epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) < 0) {
+			return NULL;
+		}
+
+		int ret;
+
+		for (int i = 0; i < 3; ++i) {
+			ret = epoll_wait(ep, &event, 1, 100);
+			if (ret != 1) {
+				return NULL;
+			}
+
+			if (event.events != EPOLLHUP) {
+				return NULL;
+			}
+		}
 	}
 
 	struct sockaddr_in addr = {0};
@@ -854,14 +882,21 @@ test17()
 		return -1;
 	}
 
-	int ret = epoll_wait(ep, &event, 1, 100);
-	if (!(ret == 0 || ret == 1)) {
-		return -1;
-	}
+	int ret;
 
-	// TODO(jan): Linux returns EPOLLHUP, FreeBSD times out
-	if (!(event.events == EPOLLHUP || ret == 0)) {
-		return -1;
+	for (int i = 0; i < 3; ++i) {
+		ret = epoll_wait(ep, &event, 1, 100);
+		if (ret != 1) {
+			fprintf(stderr, "ret not 1\n");
+			return -1;
+		}
+
+		if (event.events != EPOLLHUP) {
+			fprintf(stderr, "ret events: %u\n", (unsigned) event.events);
+			return -1;
+		}
+
+		usleep(100000);
 	}
 
 	close(ep);
@@ -932,24 +967,28 @@ test20(int (*fd_fun)(int fds[3]))
 		return -1;
 	}
 
+	connector_epfd = ep;
+
 	int fds[3];
 	if (fd_fun(fds) < 0) {
 		return -1;
 	}
 
-	shutdown(fds[0], SHUT_WR);
+	connector_epfd = -1;
+
+	int counter = 0;
+	char c = 42;
+	write(fds[0], &c, 1);
 
 	struct epoll_event event;
-	event.events = EPOLLOUT;
+	event.events = EPOLLOUT | EPOLLIN;
 	event.data.fd = fds[1];
-
-	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event) < 0) {
-		return -1;
-	}
+	epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event);
 
 	for (;;) {
 		struct epoll_event event_result;
 		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+			warn("read");
 			return -1;
 		}
 
@@ -960,7 +999,30 @@ test20(int (*fd_fun)(int fds[3]))
 			return -1;
 		}
 
-		if (event_result.events == EPOLLOUT) {
+		if (event_result.events & EPOLLIN) {
+			if (read(fds[1], &c, 1) != 1) {
+				warn("read");
+				return -1;
+			}
+
+			++counter;
+
+			if (counter <= 5) {
+				write(fds[0], &c, 1);
+			} else if (counter == 6) {
+				write(fds[0], &c, 1);
+				shutdown(fds[0], SHUT_WR);
+				usleep(100000);
+			} else {
+				uint8_t data[512] = {0};
+				write(fds[1], &data, sizeof(data));
+
+				close(fds[0]);
+				usleep(100000);
+			}
+
+			// fprintf(stderr, "got %d\n", (int)c);
+		} else if (event_result.events == EPOLLOUT) {
 			// continue
 		} else if (fd_fun == fd_domain_socket &&
 		    (event_result.events & (EPOLLOUT | EPOLLHUP)) ==
@@ -989,12 +1051,6 @@ test20(int (*fd_fun)(int fds[3]))
 		} else {
 			return -1;
 		}
-
-		uint8_t data[512] = {0};
-		write(fds[1], &data, sizeof(data));
-
-		close(fds[0]);
-		usleep(100000);
 	}
 
 	close(fds[1]);
