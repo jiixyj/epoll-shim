@@ -60,6 +60,7 @@ connector_client(void *arg)
 
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock < 0) {
+		warnx("exiting connector_client 1");
 		return NULL;
 	}
 
@@ -71,18 +72,21 @@ connector_client(void *arg)
 		event.data.fd = sock;
 
 		if (epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) < 0) {
+			warnx("exiting connector_client 2");
 			return NULL;
 		}
 
 		int ret;
 
 		for (int i = 0; i < 3; ++i) {
-			ret = epoll_wait(ep, &event, 1, 100);
+			ret = epoll_wait(ep, &event, 1, 300);
 			if (ret != 1) {
+				warnx("exiting connector_client 3");
 				return NULL;
 			}
 
-			if (event.events != EPOLLHUP) {
+			if (event.events != (EPOLLOUT | EPOLLHUP)) {
+				warnx("exiting connector_client 4");
 				return NULL;
 			}
 		}
@@ -102,49 +106,57 @@ connector_client(void *arg)
 	return (void *)(intptr_t)sock;
 }
 
+#define return(x) do { \
+		if (x != 0) { \
+			fprintf(stderr, "return error, line %d\n", __LINE__); \
+			return x; \
+		} \
+	} while (0);
+
 static int
 fd_tcp_socket(int fds[3])
 {
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (sock < 0) {
-		return -1;
+		return (-1);
 	}
 
 	int enable = 1;
 	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, /**/
 		&enable, sizeof(int)) < 0) {
-		return -1;
+		return (-1);
 	}
 
 	struct sockaddr_in addr = {0};
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(1337);
 	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
-		return -1;
+		return (-1);
 	}
 
 	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
-		return -1;
+		err(1, "bind");
+		return (-1);
 	}
 
 	if (listen(sock, 5) < 0) {
-		return -1;
+		return (-1);
 	}
 
 	pthread_t client_thread;
 	if (pthread_create(&client_thread, NULL, connector_client, NULL) < 0) {
-		return -1;
+		return (-1);
 	}
 
 	int conn = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
 	if (conn < 0) {
-		return -1;
+		return (-1);
 	}
 
 	void *client_socket = NULL;
 
 	if (pthread_join(client_thread, &client_socket) < 0) {
-		return -1;
+		return (-1);
 	}
 
 	fds[0] = conn;
@@ -804,6 +816,7 @@ test16(bool specify_rdhup) {
 
 	int fds[3];
 	if (fd_tcp_socket(fds) < 0) {
+fprintf(stderr, "failret 1\n");
 		return -1;
 	}
 
@@ -985,22 +998,26 @@ test20(int (*fd_fun)(int fds[3]))
 	event.data.fd = fds[1];
 	epoll_ctl(ep, EPOLL_CTL_ADD, fds[1], &event);
 
+	errno = 0;
+
 	for (;;) {
 		struct epoll_event event_result;
-		if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+		int n;
+		if ((n = epoll_wait(ep, &event_result, 1, -1)) != 1) {
 			warn("read");
+			return -1;
+		}
+
+		if (event_result.data.fd != fds[1]) {
 			return -1;
 		}
 
 		// fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
 		//     (int)event_result.events);
 
-		if (event_result.data.fd != fds[1]) {
-			return -1;
-		}
-
 		if (event_result.events & EPOLLIN) {
-			if (read(fds[1], &c, 1) != 1) {
+			if ((n = read(fds[1], &c, 1)) != 1) {
+				fprintf(stderr, "read: %d\n", n);
 				warn("read");
 				return -1;
 			}
@@ -1018,6 +1035,14 @@ test20(int (*fd_fun)(int fds[3]))
 				write(fds[1], &data, sizeof(data));
 
 				close(fds[0]);
+
+				event.events = EPOLLOUT;
+				event.data.fd = fds[1];
+				if (epoll_ctl(ep, EPOLL_CTL_MOD, /**/
+				    fds[1], &event) < 0) {
+					return -1;
+				}
+
 				usleep(100000);
 			}
 
@@ -1310,7 +1335,7 @@ test24(int (*fd_fun)(int fds[3]))
 
 	fprintf(stderr, "got events: %x\n", (unsigned)event_result.events);
 
-	if (event_result.events != (EPOLLOUT | EPOLLHUP)) {
+	if (event_result.events != EPOLLOUT) {
 		return -1;
 	}
 
