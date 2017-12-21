@@ -992,8 +992,8 @@ test20(int (*fd_fun)(int fds[3]))
 			return -1;
 		}
 
-		fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
-		    (int)event_result.events);
+		// fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
+		//     (int)event_result.events);
 
 		if (event_result.data.fd != fds[1]) {
 			return -1;
