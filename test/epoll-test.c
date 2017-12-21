@@ -109,7 +109,7 @@ connector_client(void *arg)
 /* clang-format off */
 #define return(x)                                                             \
 	do {                                                                  \
-		if (x != 0) {                                                 \
+		if ((x) != 0) {                                               \
 			fprintf(stderr, "return error, line %d\n", __LINE__); \
 			return x;                                             \
 		}                                                             \
