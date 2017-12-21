@@ -826,14 +826,14 @@ test16(bool specify_rdhup)
 	int rdhup_flag = specify_rdhup ? EPOLLRDHUP : 0;
 
 	struct epoll_event event;
-	event.events = EPOLLIN | (specify_rdhup ? 0 : EPOLLRDHUP);
+	event.events = EPOLLOUT | EPOLLIN | (specify_rdhup ? 0 : EPOLLRDHUP);
 	event.data.fd = fds[0];
 
 	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
 		return -1;
 	}
 
-	event.events = EPOLLIN | rdhup_flag;
+	event.events = EPOLLOUT | EPOLLIN | rdhup_flag;
 	if (epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) < 0) {
 		return -1;
 	}
@@ -847,7 +847,7 @@ test16(bool specify_rdhup)
 
 		fprintf(stderr, "got event: %x\n", (int)event.events);
 
-		if (event.events == (EPOLLIN | rdhup_flag)) {
+		if (event.events == (EPOLLOUT | EPOLLIN | rdhup_flag)) {
 			uint8_t buf;
 			ssize_t ret = read(fds[0], &buf, 1);
 
@@ -856,7 +856,7 @@ test16(bool specify_rdhup)
 			}
 
 			shutdown(fds[0], SHUT_RDWR);
-		} else if (event.events == (EPOLLIN | rdhup_flag | EPOLLHUP)) {
+		} else if (event.events == (EPOLLOUT | EPOLLIN | rdhup_flag | EPOLLHUP)) {
 			close(fds[0]);
 			break;
 		} else {
