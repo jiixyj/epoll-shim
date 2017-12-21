@@ -487,25 +487,46 @@ again:;
 					return -1;
 				}
 
-				struct pollfd pfd = {
-				    .fd = evlist[i].ident, .events = POLLHUP};
+				struct pollfd pfd = {.fd = evlist[i].ident,
+				    .events = POLLIN | POLLOUT | POLLHUP};
 
-				if (poll(&pfd, 1, 0) == 1 &&
-				    (pfd.revents & POLLHUP)) {
-					/* We need to set these flags so that
-					 * readers still have a chance to read
-					 * the last data from the socket. This
-					 * is very important to preserve
-					 * poll/epoll semantics when coming
-					 * from an EVFILT_WRITE event. */
-					if (flags & KQUEUE_STATE_EPOLLIN) {
+				if (poll(&pfd, 1, 0) == 1) {
+					if (pfd.revents & POLLHUP) {
+						/*
+						 * We need to set these flags
+						 * so that readers still have a
+						 * chance to read the last data
+						 * from the socket. This is
+						 * very important to preserve
+						 * Linux poll/epoll semantics
+						 * when coming from an
+						 * EVFILT_WRITE event.
+						 */
+						if (flags &
+						    KQUEUE_STATE_EPOLLIN) {
+							epoll_event |= EPOLLIN;
+						}
+						if (flags &
+						    KQUEUE_STATE_EPOLLRDHUP) {
+							epoll_event |=
+							    EPOLLRDHUP;
+						}
+
+						epoll_event |= EPOLLHUP;
+					}
+
+					/* might as well steal flags from the
+					 * poll call while we're here */
+
+					if ((pfd.revents & POLLIN) &&
+					    (flags & KQUEUE_STATE_EPOLLIN)) {
 						epoll_event |= EPOLLIN;
 					}
-					if (flags & KQUEUE_STATE_EPOLLRDHUP) {
-						epoll_event |= EPOLLRDHUP;
-					}
 
-					epoll_event |= EPOLLHUP;
+					if ((pfd.revents & POLLOUT) &&
+					    (flags & KQUEUE_STATE_EPOLLOUT)) {
+						epoll_event |= EPOLLOUT;
+					}
 				}
 			} else {
 				epoll_event = EPOLLHUP;
