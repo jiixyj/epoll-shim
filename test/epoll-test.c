@@ -106,12 +106,15 @@ connector_client(void *arg)
 	return (void *)(intptr_t)sock;
 }
 
-#define return(x) do { \
-		if (x != 0) { \
+/* clang-format off */
+#define return(x)                                                             \
+	do {                                                                  \
+		if (x != 0) {                                                 \
 			fprintf(stderr, "return error, line %d\n", __LINE__); \
-			return x; \
-		} \
+			return x;                                             \
+		}                                                             \
 	} while (0);
+/* clang-format on */
 
 static int
 fd_tcp_socket(int fds[3])
@@ -621,8 +624,7 @@ test13()
 		return -1;
 	}
 
-	if (event_result.data.fd != fds[0] ||
-	    event_result.events != EPOLLIN) {
+	if (event_result.data.fd != fds[0] || event_result.events != EPOLLIN) {
 		return -1;
 	}
 
@@ -808,7 +810,8 @@ connector(void *arg)
 }
 
 static int
-test16(bool specify_rdhup) {
+test16(bool specify_rdhup)
+{
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	if (ep < 0) {
 		return -1;
@@ -816,7 +819,7 @@ test16(bool specify_rdhup) {
 
 	int fds[3];
 	if (fd_tcp_socket(fds) < 0) {
-fprintf(stderr, "failret 1\n");
+		fprintf(stderr, "failret 1\n");
 		return -1;
 	}
 
@@ -842,8 +845,7 @@ fprintf(stderr, "failret 1\n");
 			return -1;
 		}
 
-		fprintf(stderr, "got event: %x\n",
-		    (int)event.events);
+		fprintf(stderr, "got event: %x\n", (int)event.events);
 
 		if (event.events == (EPOLLIN | rdhup_flag)) {
 			uint8_t buf;
@@ -905,7 +907,8 @@ test17()
 		}
 
 		if (event.events != EPOLLHUP) {
-			fprintf(stderr, "ret events: %u\n", (unsigned) event.events);
+			fprintf(stderr, "ret events: %u\n",
+			    (unsigned)event.events);
 			return -1;
 		}
 
@@ -1012,7 +1015,8 @@ test20(int (*fd_fun)(int fds[3]))
 			return -1;
 		}
 
-		// fprintf(stderr, "got event: %x %d\n", (int)event_result.events,
+		// fprintf(stderr, "got event: %x %d\n",
+		// (int)event_result.events,
 		//     (int)event_result.events);
 
 		if (event_result.events & EPOLLIN) {
@@ -1039,7 +1043,7 @@ test20(int (*fd_fun)(int fds[3]))
 				event.events = EPOLLOUT;
 				event.data.fd = fds[1];
 				if (epoll_ctl(ep, EPOLL_CTL_MOD, /**/
-				    fds[1], &event) < 0) {
+					fds[1], &event) < 0) {
 					return -1;
 				}
 
