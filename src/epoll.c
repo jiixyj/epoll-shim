@@ -118,6 +118,8 @@ kqueue_load_state(int kq, uint32_t key, uint16_t *val)
 #define KQUEUE_STATE_EPOLLOUT 0x4u
 #define KQUEUE_STATE_EPOLLRDHUP 0x8u
 #define KQUEUE_STATE_NYCSS 0x10u
+#define KQUEUE_STATE_ISFIFO 0x20u
+#define KQUEUE_STATE_ISSOCK 0x40u
 
 static int
 is_not_yet_connected_stream_socket(int s)
@@ -295,6 +297,17 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		flags |= KQUEUE_STATE_NYCSS;
 	}
 
+	struct stat statbuf;
+	if (fstat(fd2, &statbuf) < 0) {
+		return -1;
+	}
+
+	if (S_ISFIFO(statbuf.st_mode)) {
+		flags |= KQUEUE_STATE_ISFIFO;
+	} else if (S_ISSOCK(statbuf.st_mode)) {
+		flags |= KQUEUE_STATE_ISSOCK;
+	}
+
 	if ((e = kqueue_save_state(fd, fd2, flags)) < 0) {
 		errno = e;
 		return (-1);
@@ -379,6 +392,10 @@ again:;
 						evlist[i].ident)) {
 
 						events = EPOLLHUP;
+						if (flags &
+						    KQUEUE_STATE_EPOLLOUT) {
+							events |= EPOLLOUT;
+						}
 
 						struct kevent nkev[2];
 						EV_SET(&nkev[0],
@@ -428,20 +445,16 @@ again:;
 		}
 
 		if (evlist[i].flags & EV_EOF) {
-			// fprintf(stderr, "got fflags: %d\n",
-			// evlist[i].fflags);
 			if (evlist[i].fflags) {
 				events |= EPOLLERR;
 			}
 
+			uint16_t flags = 0;
+			kqueue_load_state(fd, evlist[i].ident, &flags);
+
 			int epoll_event;
 
-			struct stat statbuf;
-			if (fstat(evlist[i].ident, &statbuf) < 0) {
-				return -1;
-			}
-
-			if (S_ISFIFO(statbuf.st_mode)) {
+			if (flags & KQUEUE_STATE_ISFIFO) {
 				if (evlist[i].filter == EVFILT_READ) {
 					epoll_event = EPOLLHUP;
 					if (evlist[i].data == 0) {
@@ -453,27 +466,45 @@ again:;
 					/* should not happen */
 					return -1;
 				}
-			} else if (S_ISSOCK(statbuf.st_mode) &&
-			    evlist[i].filter == EVFILT_READ) {
-				/* do some special EPOLLRDHUP handling for
-				 * sockets */
-				uint16_t flags = 0;
+			} else if (flags & KQUEUE_STATE_ISSOCK) {
+				if (evlist[i].filter == EVFILT_READ) {
+					/* do some special EPOLLRDHUP handling
+					 * for sockets */
 
-				/* if we are reading, we just know for
-				 * sure that we can't receive any more,
-				 * so use EPOLLIN/EPOLLRDHUP per
-				 * default */
-				epoll_event = EPOLLIN;
+					/* if we are reading, we just know for
+					 * sure that we can't receive any more,
+					 * so use EPOLLIN/EPOLLRDHUP per
+					 * default */
+					epoll_event = EPOLLIN;
 
-				kqueue_load_state(fd, evlist[i].ident, &flags);
-				if (flags & KQUEUE_STATE_EPOLLRDHUP) {
-					epoll_event |= EPOLLRDHUP;
+					if (flags & KQUEUE_STATE_EPOLLRDHUP) {
+						epoll_event |= EPOLLRDHUP;
+					}
+				} else if (evlist[i].filter == EVFILT_WRITE) {
+					epoll_event = EPOLLOUT;
+				} else {
+					/* should not happen */
+					return -1;
 				}
 
-				/* only set EPOLLHUP if the stat says
-				 * that writing is also impossible */
-				if (!(statbuf.st_mode &
-					(S_IWUSR | S_IWGRP | S_IWOTH))) {
+				struct pollfd pfd = {
+				    .fd = evlist[i].ident, .events = POLLHUP};
+
+				if (poll(&pfd, 1, 0) == 1 &&
+				    (pfd.revents & POLLHUP)) {
+					/* We need to set these flags so that
+					 * readers still have a chance to read
+					 * the last data from the socket. This
+					 * is very important to preserve
+					 * poll/epoll semantics when coming
+					 * from an EVFILT_WRITE event. */
+					if (flags & KQUEUE_STATE_EPOLLIN) {
+						epoll_event |= EPOLLIN;
+					}
+					if (flags & KQUEUE_STATE_EPOLLRDHUP) {
+						epoll_event |= EPOLLRDHUP;
+					}
+
 					epoll_event |= EPOLLHUP;
 				}
 			} else {
