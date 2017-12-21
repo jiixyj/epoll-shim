@@ -434,7 +434,7 @@ again:;
 				events |= EPOLLERR;
 			}
 
-			int epoll_event = EPOLLHUP;
+			int epoll_event;
 
 			struct stat statbuf;
 			if (fstat(evlist[i].ident, &statbuf) < 0) {
@@ -442,18 +442,22 @@ again:;
 			}
 
 			if (S_ISFIFO(statbuf.st_mode)) {
-				if (evlist[i].filter == EVFILT_READ &&
-				    evlist[i].data == 0) {
-					events &= ~EPOLLIN;
+				if (evlist[i].filter == EVFILT_READ) {
+					epoll_event = EPOLLHUP;
+					if (evlist[i].data == 0) {
+						events &= ~EPOLLIN;
+					}
 				} else if (evlist[i].filter == EVFILT_WRITE) {
 					epoll_event = EPOLLERR;
+				} else {
+					/* should not happen */
+					return -1;
 				}
 			} else if (S_ISSOCK(statbuf.st_mode) &&
 			    evlist[i].filter == EVFILT_READ) {
 				/* do some special EPOLLRDHUP handling for
 				 * sockets */
 				uint16_t flags = 0;
-				kqueue_load_state(fd, evlist[i].ident, &flags);
 
 				/* if we are reading, we just know for
 				 * sure that we can't receive any more,
@@ -461,6 +465,7 @@ again:;
 				 * default */
 				epoll_event = EPOLLIN;
 
+				kqueue_load_state(fd, evlist[i].ident, &flags);
 				if (flags & KQUEUE_STATE_EPOLLRDHUP) {
 					epoll_event |= EPOLLRDHUP;
 				}
@@ -471,6 +476,8 @@ again:;
 					(S_IWUSR | S_IWGRP | S_IWOTH))) {
 					epoll_event |= EPOLLHUP;
 				}
+			} else {
+				epoll_event = EPOLLHUP;
 			}
 
 			events |= epoll_event;
