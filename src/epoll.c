@@ -13,9 +13,7 @@ int
 epoll_create(int size)
 {
 	(void)size;
-	fprintf(stderr,
-	    "ERROR: epoll_create() is deprecated, use "
-	    "epoll_create1(EPOLL_CLOEXEC).\n");
+
 	errno = EINVAL;
 	return -1;
 }
@@ -24,10 +22,10 @@ int
 epoll_create1(int flags)
 {
 	if (flags != EPOLL_CLOEXEC) {
-		fprintf(stderr, "ERROR: Use epoll_create1(EPOLL_CLOEXEC).\n");
 		errno = EINVAL;
 		return -1;
 	}
+
 	return kqueue();
 }
 
