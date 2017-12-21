@@ -1275,6 +1275,52 @@ test23()
 	return 0;
 }
 
+static int
+test24(int (*fd_fun)(int fds[3]))
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep < 0) {
+		return -1;
+	}
+
+	int fds[3];
+	if (fd_fun(fds) < 0) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLOUT;
+	event.data.fd = fds[0];
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
+		return -1;
+	}
+
+	shutdown(fds[0], SHUT_WR);
+	usleep(100000);
+
+	struct epoll_event event_result;
+	if (epoll_wait(ep, &event_result, 1, -1) != 1) {
+		return -1;
+	}
+
+	if (event_result.data.fd != fds[0]) {
+		return -1;
+	}
+
+	fprintf(stderr, "got events: %x\n", (unsigned)event_result.events);
+
+	if (event_result.events != (EPOLLOUT | EPOLLHUP)) {
+		return -1;
+	}
+
+	close(fds[0]);
+	close(fds[1]);
+	close(fds[2]);
+	close(ep);
+	return 0;
+}
+
 int
 main()
 {
@@ -1307,6 +1353,7 @@ main()
 	TEST(test21());
 	// TEST(test22());
 	TEST(test23());
+	TEST(test24(fd_tcp_socket));
 
 	TEST(testxx());
 	return 0;
