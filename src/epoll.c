@@ -169,8 +169,6 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 	}
 
 	if (op == EPOLL_CTL_ADD) {
-		/* Check if the fd already has been registered in this kqueue.
-		 * See below for an explanation of this 'cookie' mechanism. */
 		if (flags & KQUEUE_STATE_REGISTERED) {
 			errno = EEXIST;
 			return (-1);
