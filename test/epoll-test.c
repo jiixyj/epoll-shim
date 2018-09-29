@@ -929,6 +929,67 @@ test17()
 }
 
 static int
+test17_with_listen()
+{
+	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (sock < 0) {
+		return -1;
+	}
+
+	int enable = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, /**/
+		&enable, sizeof(int)) < 0) {
+		return (-1);
+	}
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1337);
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+		return (-1);
+	}
+
+	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
+		err(1, "bind");
+		return (-1);
+	}
+
+	if (listen(sock, 5) < 0) {
+		return (-1);
+	}
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep < 0) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLIN;
+	event.data.fd = sock;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) < 0) {
+		return -1;
+	}
+
+	int ret;
+
+	for (int i = 0; i < 3; ++i) {
+		ret = epoll_wait(ep, &event, 1, 100);
+		if (ret != 0) {
+			fprintf(stderr, "ret not 0\n");
+			return -1;
+		}
+
+		usleep(100000);
+	}
+
+	close(ep);
+	close(sock);
+
+	return 0;
+}
+
+static int
 test18()
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -1383,6 +1444,7 @@ main()
 	TEST(test16(true));
 	TEST(test16(false));
 	TEST(test17());
+	TEST(test17_with_listen());
 	TEST(test18());
 	TEST(test20(fd_tcp_socket));
 	TEST(test20(fd_domain_socket));

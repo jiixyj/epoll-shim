@@ -124,15 +124,30 @@ kqueue_load_state(int kq, uint32_t key, uint16_t *val)
 static int
 is_not_yet_connected_stream_socket(int s)
 {
-	int type;
-	socklen_t length = sizeof(int);
 
-	if (getsockopt(s, SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
-	    (type == SOCK_STREAM || type == SOCK_SEQPACKET)) {
-		struct sockaddr name;
-		socklen_t namelen = 0;
-		if (getpeername(s, &name, &namelen) < 0 && errno == ENOTCONN) {
-			return 1;
+	{
+		int val;
+		socklen_t length = sizeof(int);
+
+		if (getsockopt(s, SOL_SOCKET, SO_ACCEPTCONN, /**/
+			&val, &length) == 0 &&
+		    val) {
+			return 0;
+		}
+	}
+
+	{
+		int type;
+		socklen_t length = sizeof(int);
+
+		if (getsockopt(s, SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
+		    (type == SOCK_STREAM || type == SOCK_SEQPACKET)) {
+			struct sockaddr name;
+			socklen_t namelen = 0;
+			if (getpeername(s, &name, &namelen) < 0 &&
+			    errno == ENOTCONN) {
+				return 1;
+			}
 		}
 	}
 
