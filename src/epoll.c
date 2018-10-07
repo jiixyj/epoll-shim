@@ -288,9 +288,15 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			return 0;
 		}
 
-		/* ignore EVFILT_WRITE registration EINVAL errors (some fd
-		 * types such as kqueues themselves don't support it) */
-		if (i == 1 && kev[i].data == EINVAL) {
+		/*
+		 * Ignore EVFILT_WRITE registration EINVAL errors (some fd
+		 * types such as kqueues themselves don't support it).
+		 * Also ignore ENOENT -- this happens when trying to remove a
+		 * previously added fd where the EVFILT_WRITE registration
+		 * failed.
+		 */
+		if (i == 1 &&
+		    (kev[i].data == EINVAL || kev[i].data == ENOENT)) {
 			continue;
 		}
 
