@@ -1418,6 +1418,39 @@ test24(int (*fd_fun)(int fds[3]))
 	return 0;
 }
 
+static int
+test_recursive_register()
+{
+	/* TODO: Check that this test works the same under Linux. */
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep < 0) {
+		return -1;
+	}
+
+	int ep_inner = epoll_create1(EPOLL_CLOEXEC);
+	if (ep_inner < 0) {
+		return -1;
+	}
+
+	struct epoll_event event;
+	event.events = EPOLLOUT;
+	event.data.fd = ep_inner;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, ep_inner, &event) < 0) {
+		return -1;
+	}
+
+	if (epoll_ctl(ep, EPOLL_CTL_DEL, ep_inner, NULL) < 0) {
+		return -1;
+	}
+
+	close(ep_inner);
+	close(ep);
+
+	return 0;
+}
+
 int
 main()
 {
@@ -1452,6 +1485,7 @@ main()
 	// TEST(test22());
 	TEST(test23());
 	TEST(test24(fd_tcp_socket));
+	TEST(test_recursive_register());
 
 	TEST(testxx());
 	return 0;
