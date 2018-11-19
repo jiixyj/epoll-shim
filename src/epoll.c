@@ -113,6 +113,31 @@ kqueue_load_state(int kq, uint32_t key, uint16_t *val)
 	return (0);
 }
 
+static int
+kqueue_cleanup_closed(int fd, int fd2)
+{
+	int oe, e;
+	struct kevent kev;
+	EV_SET(&kev, fd2, EVFILT_READ, EV_RECEIPT, 0, 0, 0);
+
+	oe = errno;
+	if (kevent(fd, &kev, 1, &kev, 1, NULL) == -1) {
+		e = errno;
+		errno = oe;
+		return (-e);
+	}
+
+	if (!(kev.flags & EV_ERROR)) {
+		return (-EINVAL);
+	}
+
+	if (kev.data == ENOENT) {
+		kqueue_save_state(fd, fd2, 0);
+	}
+
+	return (0);
+}
+
 #define KQUEUE_STATE_REGISTERED 0x1u
 #define KQUEUE_STATE_EPOLLIN 0x2u
 #define KQUEUE_STATE_EPOLLOUT 0x4u
@@ -160,6 +185,11 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 	struct kevent kev[2];
 	uint16_t flags;
 	int e;
+
+	if ((e = kqueue_cleanup_closed(fd, fd2)) < 0) {
+		errno = e;
+		return (-1);
+	}
 
 	if ((!ev && op != EPOLL_CTL_DEL) ||
 	    (ev &&
