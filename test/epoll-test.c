@@ -1451,6 +1451,93 @@ test_recursive_register()
 	return 0;
 }
 
+static int
+test_remove_closed()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep < 0) {
+		return -1;
+	}
+
+	int fds[3];
+	if (fd_pipe(fds) < 0) {
+		return -1;
+	}
+
+	struct epoll_event event = {0};
+	event.events = EPOLLIN;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
+		return -1;
+	}
+
+	close(fds[0]);
+	close(fds[1]);
+
+	// Trying to delete an event that was already deleted by closing the
+	// associated fd should fail.
+	if (epoll_ctl(ep, EPOLL_CTL_DEL, fds[0], &event) != -1) {
+		return -1;
+	}
+
+	close(ep);
+	return 0;
+}
+
+static int
+test_same_fd_value()
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	if (ep < 0) {
+		return -1;
+	}
+
+	int fds[3];
+	if (fd_pipe(fds) < 0) {
+		return -1;
+	}
+
+	struct epoll_event event = {0};
+	event.events = EPOLLIN;
+
+	if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0) {
+		return -1;
+	}
+
+	int ret;
+	close(fds[0]);
+	close(fds[1]);
+
+	// Creating new pipe. The file descriptors will have the same numerical
+	// values as the previous ones.
+	if (fd_pipe(fds) < 0) {
+		return -1;
+	}
+
+	// If status of closed fds would not be cleared, adding an event with the fd
+	// that has the same numerical value as the closed one would fail.
+	struct epoll_event event2 = {0};
+	event2.events = EPOLLIN;
+	if ((ret = epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event2)) < 0) {
+		return -1;
+	}
+
+	pthread_t writer_thread;
+	pthread_create(&writer_thread, NULL, sleep_then_write,
+	    (void *)(intptr_t)(fds[1]));
+
+	if ((ret = epoll_wait(ep, &event, 1, 300)) != 1) {
+		return -1;
+	}
+
+	pthread_join(writer_thread, NULL);
+
+	close(ep);
+	close(fds[0]);
+	close(fds[1]);
+	return 0;
+}
+
 int
 main()
 {
@@ -1486,6 +1573,8 @@ main()
 	TEST(test23());
 	TEST(test24(fd_tcp_socket));
 	TEST(test_recursive_register());
+	TEST(test_remove_closed());
+	TEST(test_same_fd_value());
 
 	TEST(testxx());
 	return 0;
