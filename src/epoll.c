@@ -301,6 +301,10 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		}
 
 		if (kev[i].data != 0) {
+			if (i == 0 &&
+			    (kev[i].data == ENOENT || kev[i].data == EBADF)) {
+				kqueue_save_state(fd, fd2, 0);
+			}
 			errno = kev[i].data;
 			return (-1);
 		}
