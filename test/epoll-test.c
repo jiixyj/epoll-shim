@@ -1511,6 +1511,15 @@ test_same_fd_value()
 	close(fds[0]);
 	close(fds[1]);
 
+	// Note: This wouldn't be needed under Linux as the close() calls above
+	// properly removes the descriptor from the epoll instance. However, in
+	// our epoll emulation we cannot (yet?) reliably detect if a descriptor
+	// has been closed before it is deleted from the epoll instance.
+	// See also: https://github.com/jiixyj/epoll-shim/pull/7
+	if (epoll_ctl(ep, EPOLL_CTL_DEL, fds[0], &event) != -1) {
+		return -1;
+	}
+
 	// Creating new pipe. The file descriptors will have the same numerical
 	// values as the previous ones.
 	if (fd_pipe(fds) < 0) {
