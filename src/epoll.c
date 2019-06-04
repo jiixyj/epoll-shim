@@ -216,7 +216,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			poll_fd = -1;
 			poll_epoll_fd = -1;
 			poll_ptr = NULL;
-			return 0;
+			return (0);
 		}
 
 		if (!(flags & KQUEUE_STATE_REGISTERED)) {
@@ -267,25 +267,25 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 
 	int ret = kevent(fd, kev, 2, kev, 2, NULL);
 	if (ret < 0) {
-		return -1;
+		return (-1);
 	}
 
 	if (ret != 2) {
 		errno = EINVAL;
-		return -1;
+		return (-1);
 	}
 
 	for (int i = 0; i < 2; ++i) {
 		if (!(kev[i].flags & EV_ERROR)) {
 			errno = EINVAL;
-			return -1;
+			return (-1);
 		}
 
 		if (kev[i].data == ENODEV && poll_fd < 0) {
 			poll_fd = fd2;
 			poll_epoll_fd = fd;
 			poll_ptr = ev->data.ptr;
-			return 0;
+			return (0);
 		}
 
 		/*
@@ -302,7 +302,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 
 		if (kev[i].data != 0) {
 			errno = kev[i].data;
-			return -1;
+			return (-1);
 		}
 	}
 
@@ -310,7 +310,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		EV_SET(&kev[0], fd2, EVFILT_READ, EV_ENABLE | EV_FORCEONESHOT,
 		    0, 0, ev->data.ptr);
 		if (kevent(fd, kev, 1, NULL, 0, NULL) < 0) {
-			return -1;
+			return (-1);
 		}
 
 		flags |= KQUEUE_STATE_NYCSS;
@@ -318,7 +318,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 
 	struct stat statbuf;
 	if (fstat(fd2, &statbuf) < 0) {
-		return -1;
+		return (-1);
 	}
 
 	if (S_ISFIFO(statbuf.st_mode)) {
@@ -332,7 +332,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		return (-1);
 	}
 
-	return 0;
+	return (0);
 }
 
 #undef VAL_BITS
