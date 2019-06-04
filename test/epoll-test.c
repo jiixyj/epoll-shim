@@ -21,6 +21,9 @@
 #include <time.h>
 #include <unistd.h>
 
+/* Uncomment this if you want the interactive test. */
+/* #define INTERACTIVE_TESTS */
+
 #define XSTR(a) STR(a)
 #define STR(a) #a
 
@@ -1570,7 +1573,9 @@ main()
 	TEST(test20(fd_domain_socket));
 	TEST(test21());
 	// TEST(test22());
+#ifdef INTERACTIVE_TESTS
 	TEST(test23());
+#endif
 	TEST(test24(fd_tcp_socket));
 	TEST(test_recursive_register());
 	TEST(test_remove_closed());
