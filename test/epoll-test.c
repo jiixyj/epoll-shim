@@ -29,9 +29,14 @@
 
 #define TEST(fun)                                                             \
 	if ((fun) != 0) {                                                     \
-		printf(STR((fun)) " failed\n");                               \
+		fprintf(stderr, STR((fun)) " failed\n");                      \
+		r = 1;                                                        \
 	} else {                                                              \
-		printf(STR((fun)) " successful\n");                           \
+		fprintf(stderr, STR((fun)) " successful\n");                  \
+		if (check_for_fd_leaks() != 0) {                              \
+			fprintf(stderr, "but there was a fd leak...\n");      \
+			r = 1;                                                \
+		};                                                            \
 	}
 
 static int
@@ -762,9 +767,12 @@ test15()
 	return 0;
 }
 
+static int fd_leak_test_a;
+static int fd_leak_test_b;
 static int
-testxx()
+check_for_fd_leaks()
 {
+	int r = 0;
 	/* test that all fds of previous tests have been closed successfully */
 
 	int fds[3];
@@ -772,13 +780,14 @@ testxx()
 		return -1;
 	}
 
-	if (fds[0] != 3 || fds[1] != 4) {
-		return -1;
+	if (fds[0] != fd_leak_test_a || fds[1] != fd_leak_test_b) {
+		r = -1;
 	}
 
 	close(fds[0]);
 	close(fds[1]);
-	return 0;
+
+	return r;
 }
 
 static void *
@@ -1526,8 +1535,9 @@ test_same_fd_value()
 		return -1;
 	}
 
-	// If status of closed fds would not be cleared, adding an event with the fd
-	// that has the same numerical value as the closed one would fail.
+	// If status of closed fds would not be cleared, adding an event with
+	// the fd that has the same numerical value as the closed one would
+	// fail.
 	struct epoll_event event2 = {0};
 	event2.events = EPOLLIN;
 	if ((ret = epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event2)) < 0) {
@@ -1553,6 +1563,21 @@ test_same_fd_value()
 int
 main()
 {
+	int r = 0;
+
+	/* We check for fd leaks after each test. Remember fd numbers for
+	 * checking here. */
+	{
+		int fds[3];
+		if (fd_pipe(fds) < 0) {
+			return 1;
+		}
+		fd_leak_test_a = fds[0];
+		fd_leak_test_b = fds[1];
+		close(fds[0]);
+		close(fds[1]);
+	}
+
 	TEST(test1());
 	TEST(test2());
 	TEST(test3());
@@ -1590,6 +1615,5 @@ main()
 	TEST(test_remove_closed());
 	TEST(test_same_fd_value());
 
-	TEST(testxx());
-	return 0;
+	return r;
 }
