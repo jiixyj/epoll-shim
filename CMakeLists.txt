@@ -29,9 +29,9 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
           DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/libepoll-shim/sys")
 
   if(BUILD_SHARED_LIBS)
-    configure_file("${PROJECT_SOURCE_DIR}/libepoll-shim.pc.cmakein"
-                   "${PROJECT_BINARY_DIR}/libepoll-shim.pc" @ONLY)
-    install(FILES "${PROJECT_BINARY_DIR}/libepoll-shim.pc"
+    configure_file("${PROJECT_SOURCE_DIR}/epoll-shim.pc.cmakein"
+                   "${PROJECT_BINARY_DIR}/epoll-shim.pc" @ONLY)
+    install(FILES "${PROJECT_BINARY_DIR}/epoll-shim.pc"
             DESTINATION "${CMAKE_INSTALL_PKGCONFIGDIR}")
   endif()
 endif()
