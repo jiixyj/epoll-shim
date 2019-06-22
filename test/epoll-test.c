@@ -1132,6 +1132,7 @@ test20(int (*fd_fun)(int fds[3]))
 
 			// fprintf(stderr, "got %d\n", (int)c);
 		} else if (event_result.events == EPOLLOUT) {
+			write(event.data.fd, &c, 1);
 			// continue
 		} else if (fd_fun == fd_domain_socket &&
 		    (event_result.events & (EPOLLOUT | EPOLLHUP)) ==
