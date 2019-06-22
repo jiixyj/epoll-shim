@@ -1,5 +1,8 @@
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 add_executable(epoll-test epoll-test.c)
-target_link_libraries(epoll-test PRIVATE epoll-shim)
+target_link_libraries(epoll-test PRIVATE epoll-shim Threads::Threads)
 add_test(NAME epoll-test COMMAND epoll-test)
 
 add_executable(expire-five expire-five.c)
