@@ -10,3 +10,7 @@ add_executable(kqueue-state kqueue-state.c)
 target_include_directories(kqueue-state PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 add_test(NAME kqueue-state COMMAND kqueue-state)
+
+add_executable(many-timers many-timers.c)
+target_link_libraries(many-timers PRIVATE epoll-shim)
+add_test(NAME many-timers COMMAND many-timers)
