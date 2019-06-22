@@ -332,7 +332,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 	}
 
 	if ((e = kqueue_save_state(fd, fd2, flags)) < 0) {
-		errno = e;
+		errno = -e;
 		return (-1);
 	}
 
