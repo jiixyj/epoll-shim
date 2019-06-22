@@ -23,3 +23,22 @@ example:
    not supported by kqueue under FreeBSD. This includes graphics or sound
    devices under `/dev`. You can only have one of them throughout all epoll
    instances in your process!
+
+
+Installation
+------------
+
+Run the following commands to build libepoll-shim:
+
+    $ mkdir build
+    $ cd build
+    $ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    $ cmake --build .
+
+To run the tests:
+
+    $ ctest --output-on-failure
+
+To install (as root):
+
+    # cmake --build . --target install
