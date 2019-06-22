@@ -11,7 +11,12 @@ set(CMAKE_C_EXTENSIONS ON)
 add_subdirectory(src)
 
 if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  set(_namespace "${PROJECT_NAME}")
+
   if(BUILD_TESTING)
+    file(WRITE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
+         "add_library(${_namespace}::epoll-shim ALIAS epoll-shim)\n")
+    set(${PROJECT_NAME}_DIR "${PROJECT_BINARY_DIR}")
     add_subdirectory(test)
   endif()
 
@@ -21,15 +26,35 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
       "libdata/pkgconfig"
       CACHE PATH "Installation directory for pkgconfig (.pc) files")
   mark_as_advanced(CMAKE_INSTALL_PKGCONFIGDIR)
+  set(CMAKE_INSTALL_CMAKEBASEDIR
+      "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}"
+      CACHE PATH "Installation directory for CMake config (.cmake) files")
+  mark_as_advanced(CMAKE_INSTALL_CMAKEBASEDIR)
 
-  install(TARGETS epoll-shim LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-  install(FILES "${PROJECT_SOURCE_DIR}/include/sys/epoll.h" #
-                "${PROJECT_SOURCE_DIR}/include/sys/signalfd.h"
-                "${PROJECT_SOURCE_DIR}/include/sys/timerfd.h"
-          DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/libepoll-shim/sys")
+  set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/libepoll-shim")
+  install(TARGETS epoll-shim
+          EXPORT ${PROJECT_NAME}-targets
+          LIBRARY
+          INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+  install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/" TYPE INCLUDE)
 
-  configure_file("${PROJECT_SOURCE_DIR}/epoll-shim.pc.cmakein"
-                 "${PROJECT_BINARY_DIR}/epoll-shim.pc" @ONLY)
-  install(FILES "${PROJECT_BINARY_DIR}/epoll-shim.pc"
+  configure_file("${PROJECT_SOURCE_DIR}/${PROJECT_NAME}.pc.cmakein"
+                 "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.pc" @ONLY)
+  install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.pc"
           DESTINATION "${CMAKE_INSTALL_PKGCONFIGDIR}")
+
+  install(EXPORT ${PROJECT_NAME}-targets
+          NAMESPACE "${_namespace}::"
+          DESTINATION "${CMAKE_INSTALL_CMAKEBASEDIR}")
+  if(NOT BUILD_SHARED_LIBS)
+    set(_deps "include(CMakeFindDependencyMacro)\n"
+              "set(THREADS_PREFER_PTHREAD_FLAG ON)\n"
+              "find_dependency(Threads)\n")
+  endif()
+  file(
+    WRITE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
+    ${_deps}
+    "include(\"\${CMAKE_CURRENT_LIST_DIR}/${PROJECT_NAME}-targets.cmake\")\n")
+  install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
+          DESTINATION "${CMAKE_INSTALL_CMAKEBASEDIR}")
 endif()

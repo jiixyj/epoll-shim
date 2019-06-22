@@ -7,7 +7,9 @@ add_library(epoll-shim
             signalfd.c
             common.c)
 target_link_libraries(epoll-shim PRIVATE Threads::Threads rt)
-target_include_directories(epoll-shim PUBLIC "${PROJECT_SOURCE_DIR}/include")
+target_include_directories(
+  epoll-shim
+  PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 
 target_link_options(epoll-shim PRIVATE
                     "LINKER:--version-script=${PROJECT_SOURCE_DIR}/Version.map")
