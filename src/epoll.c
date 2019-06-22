@@ -320,15 +320,21 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		flags |= KQUEUE_STATE_NYCSS;
 	}
 
-	struct stat statbuf;
-	if (fstat(fd2, &statbuf) < 0) {
-		return (-1);
-	}
+	if (op == EPOLL_CTL_ADD) {
+		struct stat statbuf;
+		if (fstat(fd2, &statbuf) < 0) {
+			/* If the fstat fails for some reason we must clear
+			 * internal state to avoid EEXIST errors in future
+			 * calls to epoll_ctl. */
+			(void)kqueue_save_state(fd, fd2, 0);
+			return (-1);
+		}
 
-	if (S_ISFIFO(statbuf.st_mode)) {
-		flags |= KQUEUE_STATE_ISFIFO;
-	} else if (S_ISSOCK(statbuf.st_mode)) {
-		flags |= KQUEUE_STATE_ISSOCK;
+		if (S_ISFIFO(statbuf.st_mode)) {
+			flags |= KQUEUE_STATE_ISFIFO;
+		} else if (S_ISSOCK(statbuf.st_mode)) {
+			flags |= KQUEUE_STATE_ISSOCK;
+		}
 	}
 
 	if ((e = kqueue_save_state(fd, fd2, flags)) < 0) {
