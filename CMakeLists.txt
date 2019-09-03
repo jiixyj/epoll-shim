@@ -31,17 +31,17 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
       CACHE PATH "Installation directory for CMake config (.cmake) files")
   mark_as_advanced(CMAKE_INSTALL_CMAKEBASEDIR)
 
+  configure_file("${PROJECT_SOURCE_DIR}/${PROJECT_NAME}.pc.cmakein"
+                 "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.pc" @ONLY)
+  install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.pc"
+          DESTINATION "${CMAKE_INSTALL_PKGCONFIGDIR}")
+
   set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/libepoll-shim")
   install(TARGETS epoll-shim
           EXPORT ${PROJECT_NAME}-targets
           LIBRARY
           INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
   install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/" TYPE INCLUDE)
-
-  configure_file("${PROJECT_SOURCE_DIR}/${PROJECT_NAME}.pc.cmakein"
-                 "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.pc" @ONLY)
-  install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.pc"
-          DESTINATION "${CMAKE_INSTALL_PKGCONFIGDIR}")
 
   install(EXPORT ${PROJECT_NAME}-targets
           NAMESPACE "${_namespace}::"
