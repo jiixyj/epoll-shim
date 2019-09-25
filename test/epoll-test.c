@@ -506,7 +506,8 @@ test11()
 
 	int fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
 	if (fd < 0) {
-		return -1;
+		// Don't fail the test when there is no graphics card.
+		goto out;
 	}
 
 	struct epoll_event event;
@@ -527,6 +528,7 @@ test11()
 	}
 
 	close(fd);
+out:
 	close(ep);
 	return 0;
 }
