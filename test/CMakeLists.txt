@@ -28,3 +28,9 @@ add_executable(tst-eventfd tst-eventfd.c)
 target_link_libraries(tst-eventfd
                       PRIVATE epoll-shim::epoll-shim Threads::Threads)
 add_test(NAME tst-eventfd COMMAND tst-eventfd)
+
+add_executable(eventfd-ctx-test eventfd-ctx-test.c)
+target_link_libraries(eventfd-ctx-test PRIVATE Threads::Threads)
+target_include_directories(eventfd-ctx-test
+                           PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../src")
+add_test(NAME eventfd-ctx-test COMMAND eventfd-ctx-test)
