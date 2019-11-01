@@ -12,13 +12,13 @@ can be used to verify proper epoll behavior.
 
 However, this library contains some very ugly hacks and workarounds. For
 example:
- - When using timerfd or signalfd, `read` and `close` are redefined as macros
-   to internal helper functions. This is needed as there is some internal
-   context that has to be free'd properly. This means that you shouldn't create
-   a timerfd/signalfd in one part of a program and close it in a different part
-   where `sys/timerfd.h` isn't included. The context would leak. Luckily,
-   software such as `libinput` behaves very nicely and puts all timerfd related
-   code in a single source file.
+ - When using timerfd, signalfd or eventfd, `read`, `write` and `close` are
+   redefined as macros to internal helper functions. This is needed as there
+   is some internal context that has to be free'd properly. This means that
+   you shouldn't create a timerfd/signalfd in one part of a program and close
+   it in a different part where `sys/timerfd.h` isn't included. The context
+   would leak. Luckily, software such as `libinput` behaves very nicely and
+   puts all timerfd related code in a single source file.
  - There is exactly one static int reserved for fds that can be polled but are
    not supported by kqueue under FreeBSD. This includes graphics or sound
    devices under `/dev`. You can only have one of them throughout all epoll
