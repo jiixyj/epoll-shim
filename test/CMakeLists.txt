@@ -23,3 +23,8 @@ add_test(NAME kqueue-state COMMAND kqueue-state)
 add_executable(many-timers many-timers.c)
 target_link_libraries(many-timers PRIVATE epoll-shim::epoll-shim)
 add_test(NAME many-timers COMMAND many-timers)
+
+add_executable(tst-eventfd tst-eventfd.c)
+target_link_libraries(tst-eventfd
+                      PRIVATE epoll-shim::epoll-shim Threads::Threads)
+add_test(NAME tst-eventfd COMMAND tst-eventfd)
