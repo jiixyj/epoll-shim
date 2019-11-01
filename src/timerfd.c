@@ -342,6 +342,7 @@ timerfd_read(struct timerfd_context *ctx, void *buf, size_t nbytes)
 {
 	int fd = ctx->fd;
 	int flags = ctx->flags;
+	enum timerfd_kind kind = ctx->kind;
 	pthread_mutex_unlock(&timerfd_context_mtx);
 
 	if (nbytes < sizeof(uint64_t)) {
@@ -349,27 +350,44 @@ timerfd_read(struct timerfd_context *ctx, void *buf, size_t nbytes)
 		return -1;
 	}
 
-	struct timespec timeout = {0, 0};
-	struct kevent kev;
-	int ret = kevent(fd, NULL, 0, &kev, 1,
-	    (flags & TFD_NONBLOCK) ? &timeout : NULL);
-	if (ret < 0) {
-		return -1;
-	}
-
-	if (ret == 0) {
-		errno = EAGAIN;
-		return -1;
-	}
-
 	uint64_t nr_expired;
-	if (ctx->kind == TIMERFD_KIND_COMPLEX) {
-		uint64_t expired_new = (uint64_t)kev.udata;
-		nr_expired = expired_new - ctx->complex.current_expirations;
-		ctx->complex.current_expirations = expired_new;
-	} else {
-		nr_expired = kev.data;
+	for (;;) {
+		struct timespec timeout = {0, 0};
+		struct kevent kev;
+		int ret = kevent(fd, NULL, 0, &kev, 1,
+		    (flags & TFD_NONBLOCK) ? &timeout : NULL);
+		if (ret < 0) {
+			return -1;
+		}
+
+		if (ret == 0) {
+			errno = EAGAIN;
+			return -1;
+		}
+
+		if (kind == TIMERFD_KIND_COMPLEX) {
+			uint64_t expired_new = (uint64_t)kev.udata;
+
+			/* TODO(jan): Should replace this with a
+			 * per-timerfd_context mutex. */
+			pthread_mutex_lock(&timerfd_context_mtx);
+			if (expired_new > ctx->complex.current_expirations) {
+				nr_expired = expired_new -
+				    ctx->complex.current_expirations;
+				ctx->complex.current_expirations = expired_new;
+			} else {
+				nr_expired = 0;
+			}
+			pthread_mutex_unlock(&timerfd_context_mtx);
+		} else {
+			nr_expired = kev.data;
+		}
+
+		if (nr_expired != 0) {
+			break;
+		}
 	}
+
 	memcpy(buf, &nr_expired, sizeof(uint64_t));
 
 	return sizeof(uint64_t);
