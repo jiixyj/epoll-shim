@@ -13,8 +13,7 @@ static_assert(sizeof(unsigned int) < sizeof(uint64_t), "");
 errno_t
 eventfd_ctx_init(EventFDCtx *eventfd, unsigned int counter, int flags)
 {
-	if (flags &
-	    ~(EVENTFD_CTX_FLAG_SEMAPHORE | EVENTFD_CTX_FLAG_NONBLOCK)) {
+	if (flags & ~(EVENTFD_CTX_FLAG_SEMAPHORE)) {
 		return (EINVAL);
 	}
 
@@ -106,18 +105,7 @@ eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 	for (;;) {
 		current_value = atomic_load(&eventfd->counter_);
 		if (current_value == 0) {
-			if (eventfd->flags_ & EVENTFD_CTX_FLAG_NONBLOCK) {
-				return (EAGAIN);
-			}
-
-			struct kevent kevs[32];
-			int n = kevent(eventfd->kq_, NULL, 0, /**/
-			    kevs, nitems(kevs), NULL);
-			if (n < 0) {
-				return (errno);
-			}
-
-			continue;
+			return (EAGAIN);
 		}
 
 		uint_least64_t new_value =

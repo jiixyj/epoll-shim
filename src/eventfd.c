@@ -5,6 +5,9 @@
 
 #include <sys/types.h>
 
+#include <sys/event.h>
+#include <sys/param.h>
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -17,6 +20,7 @@
 
 struct eventfd_context {
 	int fd;
+	int flags;
 	EventFDCtx ctx;
 	struct eventfd_context *next;
 };
@@ -72,9 +76,6 @@ eventfd_impl(unsigned int initval, int flags)
 	if (flags & EFD_SEMAPHORE) {
 		ctx_flags |= EVENTFD_CTX_FLAG_SEMAPHORE;
 	}
-	if (flags & EFD_NONBLOCK) {
-		ctx_flags |= EVENTFD_CTX_FLAG_NONBLOCK;
-	}
 
 	errno_t ec;
 	if ((ec = eventfd_ctx_init(&ctx->ctx, initval, ctx_flags)) != 0) {
@@ -83,6 +84,7 @@ eventfd_impl(unsigned int initval, int flags)
 	}
 
 	ctx->fd = eventfd_ctx_fd(&ctx->ctx);
+	ctx->flags = flags;
 
 	return ctx->fd;
 }
@@ -96,10 +98,30 @@ eventfd(unsigned int initval, int flags)
 	return ret;
 }
 
+static errno_t
+eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
+    bool nonblock)
+{
+	for (;;) {
+		errno_t ec = eventfd_ctx_read(eventfd_ctx, value);
+		if (nonblock || ec != EAGAIN) {
+			return (ec);
+		}
+
+		struct kevent kevs[32];
+		int n = kevent(eventfd_ctx->kq_, NULL, 0, /**/
+		    kevs, nitems(kevs), NULL);
+		if (n < 0) {
+			return (errno);
+		}
+	}
+}
+
 ssize_t
 eventfd_helper_read(struct eventfd_context *ctx, void *buf, size_t nbytes)
 {
 	EventFDCtx *efd_ctx = &ctx->ctx;
+	int flags = ctx->flags;
 	pthread_mutex_unlock(&eventfd_context_mtx);
 
 	if (nbytes != sizeof(uint64_t)) {
@@ -108,7 +130,8 @@ eventfd_helper_read(struct eventfd_context *ctx, void *buf, size_t nbytes)
 	}
 
 	errno_t ec;
-	if ((ec = eventfd_ctx_read(efd_ctx, buf)) != 0) {
+	if ((ec = eventfd_ctx_read_or_block(efd_ctx, buf,
+		 flags & EFD_NONBLOCK)) != 0) {
 		errno = ec;
 		return -1;
 	}
@@ -169,7 +192,8 @@ eventfd_read(int fd, eventfd_t *value)
 	}
 
 	errno_t ec;
-	if ((ec = eventfd_ctx_read(&ctx->ctx, value)) != 0) {
+	if ((ec = eventfd_ctx_read_or_block(&ctx->ctx, value,
+		 ctx->flags & EFD_NONBLOCK)) != 0) {
 		errno = ec;
 		return -1;
 	}

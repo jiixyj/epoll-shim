@@ -7,7 +7,6 @@
 #include <stdint.h>
 
 #define EVENTFD_CTX_FLAG_SEMAPHORE (1 << 0)
-#define EVENTFD_CTX_FLAG_NONBLOCK (1 << 1)
 
 typedef struct {
 	int kq_;

@@ -26,8 +26,7 @@ tc_init_terminate(void)
 	EventFDCtx eventfd;
 
 	REQUIRE(/**/
-	    eventfd_ctx_init(&eventfd, 0,
-		EVENTFD_CTX_FLAG_SEMAPHORE | EVENTFD_CTX_FLAG_NONBLOCK) == 0);
+	    eventfd_ctx_init(&eventfd, 0, EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
 	{
 		struct pollfd pfd = {
 		    .fd = eventfd_ctx_fd(&eventfd),
@@ -38,8 +37,7 @@ tc_init_terminate(void)
 	eventfd_ctx_terminate(&eventfd);
 
 	REQUIRE(/**/
-	    eventfd_ctx_init(&eventfd, 1,
-		EVENTFD_CTX_FLAG_SEMAPHORE | EVENTFD_CTX_FLAG_NONBLOCK) == 0);
+	    eventfd_ctx_init(&eventfd, 1, EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
 	{
 		struct pollfd pfd = {
 		    .fd = eventfd_ctx_fd(&eventfd),
@@ -56,7 +54,7 @@ tc_simple_write(void)
 {
 	EventFDCtx eventfd;
 
-	REQUIRE(eventfd_ctx_init(&eventfd, 0, EVENTFD_CTX_FLAG_NONBLOCK) == 0);
+	REQUIRE(eventfd_ctx_init(&eventfd, 0, 0) == 0);
 	{
 		REQUIRE(eventfd_ctx_write(&eventfd, UINT64_MAX) == EINVAL);
 		REQUIRE(eventfd_ctx_write(&eventfd, UINT64_MAX - 1) == 0);
@@ -86,8 +84,7 @@ tc_simple_read(void)
 	uint64_t value;
 
 	REQUIRE(/**/
-	    eventfd_ctx_init(&eventfd, 3,
-		EVENTFD_CTX_FLAG_SEMAPHORE | EVENTFD_CTX_FLAG_NONBLOCK) == 0);
+	    eventfd_ctx_init(&eventfd, 3, EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
 	{
 		struct pollfd pfd = {
 		    .fd = eventfd_ctx_fd(&eventfd),
@@ -116,8 +113,7 @@ tc_simple_write_read(void)
 	uint64_t value;
 
 	REQUIRE(/**/
-	    eventfd_ctx_init(&eventfd, 0,
-		EVENTFD_CTX_FLAG_SEMAPHORE | EVENTFD_CTX_FLAG_NONBLOCK) == 0);
+	    eventfd_ctx_init(&eventfd, 0, EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
 	{
 		struct pollfd pfd = {
 		    .fd = eventfd_ctx_fd(&eventfd),
@@ -201,8 +197,7 @@ tc_threads_read(void)
 	for (int i = 0; i < 1000; ++i) {
 		read_counter = 0;
 		REQUIRE(eventfd_ctx_init(&eventfd, 0,
-			    EVENTFD_CTX_FLAG_SEMAPHORE |
-				EVENTFD_CTX_FLAG_NONBLOCK) == 0);
+			    EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
 
 		uint64_t counter_val = 100;
 
