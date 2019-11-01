@@ -8,8 +8,9 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#include "eventfd_ctx.c"
 #include "eventfd_ctx.h"
+
+#include "eventfd_ctx.c"
 
 #define REQUIRE(x)                                                            \
 	do {                                                                  \
