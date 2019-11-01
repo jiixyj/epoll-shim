@@ -5,6 +5,8 @@ add_library(epoll-shim
             epoll.c
             timerfd.c
             signalfd.c
+            eventfd.c
+            eventfd_ctx.c
             common.c)
 target_link_libraries(epoll-shim PRIVATE Threads::Threads rt)
 target_include_directories(

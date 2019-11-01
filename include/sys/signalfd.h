@@ -45,15 +45,19 @@ struct signalfd_siginfo {
 	uint8_t   pad[128-12*4-4*8-2];
 };
 
+
 #ifndef SHIM_SYS_SHIM_HELPERS
 #define SHIM_SYS_SHIM_HELPERS
 #include <unistd.h> /* IWYU pragma: keep */
 
-extern int epoll_shim_close(int /*fd*/);
-extern ssize_t epoll_shim_read(int /*fd*/, void * /*buf*/, size_t /*nbytes*/);
-#define read epoll_shim_read
+extern int epoll_shim_close(int);
+extern ssize_t epoll_shim_read(int, void *, size_t);
+extern ssize_t epoll_shim_write(int, void const*, size_t);
 #define close epoll_shim_close
+#define read epoll_shim_read
+#define write epoll_shim_write
 #endif
+
 
 #ifdef __cplusplus
 }

@@ -1,26 +1,22 @@
-#ifndef SHIM_SYS_TIMERFD_H
-#define SHIM_SYS_TIMERFD_H
+#ifndef SHIM_SYS_EVENTFD_H
+#define SHIM_SYS_EVENTFD_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#include <stdint.h>
 #include <fcntl.h>
-#include <time.h>
 
-#define TFD_NONBLOCK O_NONBLOCK
-#define TFD_CLOEXEC O_CLOEXEC
+typedef uint64_t eventfd_t;
 
-#define TFD_TIMER_ABSTIME 1
+#define EFD_SEMAPHORE 1
+#define EFD_CLOEXEC O_CLOEXEC
+#define EFD_NONBLOCK O_NONBLOCK
 
-struct itimerspec;
-
-int timerfd_create(int /*clockid*/, int /*flags*/);
-int timerfd_settime(int /*fd*/, int /*flags*/,
-    const struct itimerspec * /*new*/, struct itimerspec * /*old*/);
-#if 0
-int timerfd_gettime(int, struct itimerspec *);
-#endif
+int eventfd(unsigned int, int);
+int eventfd_read(int, eventfd_t *);
+int eventfd_write(int, eventfd_t);
 
 
 #ifndef SHIM_SYS_SHIM_HELPERS
@@ -40,4 +36,4 @@ extern ssize_t epoll_shim_write(int, void const*, size_t);
 }
 #endif
 
-#endif
+#endif /* sys/eventfd.h */

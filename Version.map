@@ -2,6 +2,7 @@
   global:
     epoll_shim_close;
     epoll_shim_read;
+    epoll_shim_write;
     epoll_create;
     epoll_create1;
     epoll_ctl;
@@ -9,5 +10,8 @@
     signalfd;
     timerfd_create;
     timerfd_settime;
+    eventfd;
+    eventfd_read;
+    eventfd_write;
   local: *;
 };
