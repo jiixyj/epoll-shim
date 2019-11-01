@@ -11,12 +11,17 @@
 static_assert(sizeof(unsigned int) < sizeof(uint64_t), "");
 
 errno_t
-eventfd_ctx_init(EventFDCtx *eventfd, unsigned int counter, bool is_semaphore)
+eventfd_ctx_init(EventFDCtx *eventfd, unsigned int counter, int flags)
 {
+	if (flags &
+	    ~(EVENTFD_CTX_FLAG_SEMAPHORE | EVENTFD_CTX_FLAG_NONBLOCK)) {
+		return (EINVAL);
+	}
+
 	*eventfd = (EventFDCtx){
 	    .kq_ = kqueue(),
+	    .flags_ = flags,
 	    .counter_ = counter,
-	    .is_semaphore_ = is_semaphore,
 	};
 	if (eventfd->kq_ < 0) {
 		return (errno);
@@ -101,19 +106,32 @@ eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 	for (;;) {
 		current_value = atomic_load(&eventfd->counter_);
 		if (current_value == 0) {
-			return (EAGAIN);
+			if (eventfd->flags_ & EVENTFD_CTX_FLAG_NONBLOCK) {
+				return (EAGAIN);
+			}
+
+			struct kevent kevs[32];
+			int n = kevent(eventfd->kq_, NULL, 0, /**/
+			    kevs, nitems(kevs), NULL);
+			if (n < 0) {
+				return (errno);
+			}
+
+			continue;
 		}
 
 		uint_least64_t new_value =
-		    eventfd->is_semaphore_ ? current_value - 1 : 0;
+		    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE)
+		    ? current_value - 1
+		    : 0;
 
 		if (new_value == 0) {
 			struct timespec zero_timeout = {0, 0};
 			struct kevent kevs[32];
 			int n;
 
-			while ((n = kevent(eventfd->kq_, NULL, 0, kevs,
-				    nitems(kevs), &zero_timeout)) > 0) {
+			while ((n = kevent(eventfd->kq_, NULL, 0, /**/
+				    kevs, nitems(kevs), &zero_timeout)) > 0) {
 			}
 			if (n < 0) {
 				return (errno);
@@ -137,6 +155,7 @@ eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 		}
 	}
 
-	*value = eventfd->is_semaphore_ ? 1 : current_value;
+	*value =
+	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? 1 : current_value;
 	return (0);
 }

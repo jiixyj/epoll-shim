@@ -56,12 +56,10 @@ eventfd_impl(unsigned int initval, int flags)
 		return -1;
 	}
 
-	/* Only EFD_CLOEXEC and EFD_NONBLOCK eventfds are supported for now. */
-	if ((flags & (EFD_CLOEXEC | EFD_NONBLOCK)) !=
-	    (EFD_CLOEXEC | EFD_NONBLOCK)) {
-		errno = EINVAL;
-		return -1;
-	}
+	/*
+	 * Don't check that EFD_CLOEXEC is set -- but our kqueue based eventfd
+	 * will always be CLOEXEC.
+	 */
 
 	struct eventfd_context *ctx = get_eventfd_context(-1, true);
 	if (!ctx) {
@@ -69,9 +67,16 @@ eventfd_impl(unsigned int initval, int flags)
 		return -1;
 	}
 
+	int ctx_flags = 0;
+	if (flags & EFD_SEMAPHORE) {
+		ctx_flags |= EVENTFD_CTX_FLAG_SEMAPHORE;
+	}
+	if (flags & EFD_NONBLOCK) {
+		ctx_flags |= EVENTFD_CTX_FLAG_NONBLOCK;
+	}
+
 	errno_t ec;
-	if ((ec = eventfd_ctx_init(&ctx->ctx, initval,
-		 flags & EFD_SEMAPHORE)) != 0) {
+	if ((ec = eventfd_ctx_init(&ctx->ctx, initval, ctx_flags)) != 0) {
 		errno = ec;
 		return -1;
 	}

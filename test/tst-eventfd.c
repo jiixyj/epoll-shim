@@ -566,7 +566,7 @@ int main(void)
 {
     simple_test();
     semaphore_test();
-    // threaded_test();
+    threaded_test();
     poll_test();
     api_test();
     return (0);
