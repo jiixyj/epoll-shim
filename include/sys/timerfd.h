@@ -28,11 +28,13 @@ int timerfd_gettime(int, struct itimerspec *);
 #include <unistd.h> /* IWYU pragma: keep */
 
 extern int epoll_shim_close(int);
-extern ssize_t epoll_shim_read(int, void *, size_t);
-extern ssize_t epoll_shim_write(int, void const*, size_t);
 #define close epoll_shim_close
+#endif
+
+#ifndef SHIM_SYS_SHIM_HELPERS_READ
+#define SHIM_SYS_SHIM_HELPERS_READ
+extern ssize_t epoll_shim_read(int, void *, size_t);
 #define read epoll_shim_read
-#define write epoll_shim_write
 #endif
 
 

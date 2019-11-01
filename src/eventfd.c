@@ -1,5 +1,6 @@
 #include <sys/eventfd.h>
 #undef read
+#undef write
 #undef close
 
 #include <sys/types.h>
