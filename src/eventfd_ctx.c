@@ -99,12 +99,12 @@ eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 		    : 0;
 
 		if (new_value == 0) {
-			struct timespec zero_timeout = {0, 0};
 			struct kevent kevs[32];
 			int n;
 
 			while ((n = kevent(eventfd->kq_, NULL, 0, /**/
-				    kevs, nitems(kevs), &zero_timeout)) > 0) {
+				    kevs, nitems(kevs),
+				    &(struct timespec){0, 0})) > 0) {
 			}
 			if (n < 0) {
 				return (errno);

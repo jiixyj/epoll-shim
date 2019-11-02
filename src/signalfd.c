@@ -116,14 +116,15 @@ signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 		return -1;
 	}
 
-	struct timespec timeout = {0, 0};
 	struct kevent kev;
-	int ret = kevent(
-	    fd, NULL, 0, &kev, 1, (flags & SFD_NONBLOCK) ? &timeout : NULL);
-	if (ret == -1) {
+
+	int n = kevent(fd, NULL, 0, &kev, 1,
+	    (flags & SFD_NONBLOCK) ? &(struct timespec){0, 0} : NULL);
+	if (n < 0) {
 		return -1;
 	}
-	if (ret == 0) {
+
+	if (n == 0) {
 		errno = EAGAIN;
 		return -1;
 	}

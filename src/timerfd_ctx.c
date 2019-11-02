@@ -246,15 +246,15 @@ timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
 	uint64_t nr_expired;
 
 	for (;;) {
-		struct timespec timeout = {0, 0};
 		struct kevent kev;
 
-		int ret = kevent(timerfd->kq, NULL, 0, &kev, 1, &timeout);
-		if (ret < 0) {
+		int n = kevent(timerfd->kq, NULL, 0, &kev, 1,
+		    &(struct timespec){0, 0});
+		if (n < 0) {
 			return errno;
 		}
 
-		if (ret == 0) {
+		if (n == 0) {
 			return EAGAIN;
 		}
 
