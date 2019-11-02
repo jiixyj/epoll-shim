@@ -36,7 +36,7 @@ worker_function(void *arg)
 		if (sigwaitinfo(&rt_set, &info) != SIGRTMIN) {
 			break;
 		}
-		total_expirations += 1 + timer_getoverrun(ctx->complex.timer);
+		total_expirations += 1 + timer_getoverrun(ctx->complx.timer);
 		EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
 		    (void *)(uintptr_t)total_expirations);
 		(void)kevent(ctx->kq, &kev, 1, NULL, 0, NULL);
@@ -71,7 +71,7 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 		return errno;
 	}
 
-	if ((ec = pthread_create(&ctx->complex.worker, /**/
+	if ((ec = pthread_create(&ctx->complx.worker, /**/
 		 NULL, worker_function, ctx)) != 0) {
 		return ec;
 	}
@@ -88,19 +88,19 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 	    .sigev_notify_thread_id = tid,
 	};
 
-	if (timer_create(clockid, &sigev, &ctx->complex.timer) < 0) {
+	if (timer_create(clockid, &sigev, &ctx->complx.timer) < 0) {
 		goto out;
 	}
 
-	ctx->complex.current_expirations = 0;
+	ctx->complx.current_expirations = 0;
 	ctx->kind = TIMERFD_KIND_COMPLEX;
 	return 0;
 
 out:
 	ec = errno;
 	assert(ec != 0);
-	pthread_kill(ctx->complex.worker, SIGRTMIN + 1);
-	pthread_join(ctx->complex.worker, NULL);
+	pthread_kill(ctx->complx.worker, SIGRTMIN + 1);
+	pthread_join(ctx->complx.worker, NULL);
 	return ec;
 }
 
@@ -137,12 +137,12 @@ timerfd_ctx_terminate(TimerFDCtx *timerfd)
 	errno_t ec_local = 0;
 
 	if (timerfd->kind == TIMERFD_KIND_COMPLEX) {
-		if (timer_delete(timerfd->complex.timer) < 0 && ec == 0) {
+		if (timer_delete(timerfd->complx.timer) < 0 && ec == 0) {
 			ec = errno;
 		}
-		ec_local = pthread_kill(timerfd->complex.worker, SIGRTMIN + 1);
+		ec_local = pthread_kill(timerfd->complx.worker, SIGRTMIN + 1);
 		ec = ec ? ec : ec_local;
-		ec_local = pthread_join(timerfd->complex.worker, NULL);
+		ec_local = pthread_join(timerfd->complx.worker, NULL);
 		ec = ec ? ec : ec_local;
 	}
 
@@ -173,7 +173,7 @@ timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
 	}
 
 	if (timerfd->kind == TIMERFD_KIND_COMPLEX) {
-		if (timer_settime(timerfd->complex.timer, /**/
+		if (timer_settime(timerfd->complx.timer, /**/
 			flags, new, old) < 0) {
 			return errno;
 		}
@@ -266,10 +266,10 @@ timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
 			assert(expired_new && kev.filter == EVFILT_USER);
 
 			if (expired_new >
-			    timerfd->complex.current_expirations) {
+			    timerfd->complx.current_expirations) {
 				nr_expired = expired_new -
-				    timerfd->complex.current_expirations;
-				timerfd->complex.current_expirations =
+				    timerfd->complx.current_expirations;
+				timerfd->complx.current_expirations =
 				    expired_new;
 			}
 		} else {

@@ -29,7 +29,7 @@ typedef struct {
 			pthread_t worker;
 			timer_t timer;
 			uint64_t current_expirations;
-		} complex;
+		} complx;
 	};
 } TimerFDCtx;
 
