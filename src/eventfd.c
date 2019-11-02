@@ -9,6 +9,7 @@
 #include <sys/param.h>
 
 #include <errno.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -108,10 +109,8 @@ eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
 			return (ec);
 		}
 
-		struct kevent kevs[32];
-		int n = kevent(eventfd_ctx->kq_, NULL, 0, /**/
-		    kevs, nitems(kevs), NULL);
-		if (n < 0) {
+		struct pollfd pfd = {.fd = eventfd_ctx->kq_, .events = POLLIN};
+		if (poll(&pfd, 1, -1) < 0) {
 			return (errno);
 		}
 	}
