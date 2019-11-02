@@ -11,27 +11,22 @@
 static_assert(sizeof(unsigned int) < sizeof(uint64_t), "");
 
 errno_t
-eventfd_ctx_init(EventFDCtx *eventfd, unsigned int counter, int flags)
+eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 {
 	if (flags & ~(EVENTFD_CTX_FLAG_SEMAPHORE)) {
 		return (EINVAL);
 	}
 
 	*eventfd = (EventFDCtx){
-	    .kq_ = kqueue(),
 	    .flags_ = flags,
 	    .counter_ = counter,
 	};
-	if (eventfd->kq_ < 0) {
-		return (errno);
-	}
 
 	struct kevent kevs[1];
 
 	EV_SET(&kevs[0], 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
-	if (kevent(eventfd->kq_, kevs, nitems(kevs), NULL, 0, NULL) < 0) {
+	if (kevent(kq, kevs, nitems(kevs), NULL, 0, NULL) < 0) {
 		errno_t err = errno;
-		close(eventfd->kq_);
 		return (err);
 	}
 
@@ -39,9 +34,8 @@ eventfd_ctx_init(EventFDCtx *eventfd, unsigned int counter, int flags)
 		struct kevent kevs[1];
 		EV_SET(&kevs[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
 
-		if (kevent(eventfd->kq_, kevs, nitems(kevs), /**/
+		if (kevent(kq, kevs, nitems(kevs), /**/
 			NULL, 0, NULL) < 0) {
-			close(eventfd->kq_);
 			return (errno);
 		}
 	}
@@ -52,21 +46,11 @@ eventfd_ctx_init(EventFDCtx *eventfd, unsigned int counter, int flags)
 errno_t
 eventfd_ctx_terminate(EventFDCtx *eventfd)
 {
-	if (close(eventfd->kq_) < 0) {
-		return (errno);
-	}
-
 	return (0);
 }
 
-int
-eventfd_ctx_fd(EventFDCtx *eventfd)
-{
-	return (eventfd->kq_);
-}
-
 errno_t
-eventfd_ctx_write(EventFDCtx *eventfd, uint64_t value)
+eventfd_ctx_write(EventFDCtx *eventfd, int kq, uint64_t value)
 {
 	if (value == UINT64_MAX) {
 		return (EINVAL);
@@ -90,7 +74,7 @@ eventfd_ctx_write(EventFDCtx *eventfd, uint64_t value)
 	struct kevent kevs[1];
 	EV_SET(&kevs[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
 
-	if (kevent(eventfd->kq_, kevs, nitems(kevs), NULL, 0, NULL) < 0) {
+	if (kevent(kq, kevs, nitems(kevs), NULL, 0, NULL) < 0) {
 		return (errno);
 	}
 
@@ -98,7 +82,7 @@ eventfd_ctx_write(EventFDCtx *eventfd, uint64_t value)
 }
 
 errno_t
-eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
+eventfd_ctx_read(EventFDCtx *eventfd, int kq, uint64_t *value)
 {
 	uint_least64_t current_value;
 
@@ -118,7 +102,7 @@ eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 			struct kevent kevs[32];
 			int n;
 
-			while ((n = kevent(eventfd->kq_, NULL, 0, /**/
+			while ((n = kevent(kq, NULL, 0, /**/
 				    kevs, nitems(kevs), &zero_timeout)) > 0) {
 			}
 			if (n < 0) {
@@ -136,7 +120,7 @@ eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 			EV_SET(&kevs[0], 0, EVFILT_USER, /**/
 			    0, NOTE_TRIGGER, 0, 0);
 
-			if (kevent(eventfd->kq_, kevs, nitems(kevs), /**/
+			if (kevent(kq, kevs, nitems(kevs), /**/
 				NULL, 0, NULL) < 0) {
 				return (errno);
 			}

@@ -73,18 +73,23 @@ eventfd_impl(unsigned int initval, int flags)
 		return -1;
 	}
 
+	ctx->fd = kqueue();
+	if (ctx->fd < 0) {
+		return -1;
+	}
+
 	int ctx_flags = 0;
 	if (flags & EFD_SEMAPHORE) {
 		ctx_flags |= EVENTFD_CTX_FLAG_SEMAPHORE;
 	}
 
 	errno_t ec;
-	if ((ec = eventfd_ctx_init(&ctx->ctx, initval, ctx_flags)) != 0) {
+	if ((ec = eventfd_ctx_init(&ctx->ctx, /**/
+		 ctx->fd, initval, ctx_flags)) != 0) {
 		errno = ec;
 		return -1;
 	}
 
-	ctx->fd = eventfd_ctx_fd(&ctx->ctx);
 	ctx->flags = flags;
 
 	return ctx->fd;
@@ -100,16 +105,16 @@ eventfd(unsigned int initval, int flags)
 }
 
 static errno_t
-eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
+eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, int kq, uint64_t *value,
     bool nonblock)
 {
 	for (;;) {
-		errno_t ec = eventfd_ctx_read(eventfd_ctx, value);
+		errno_t ec = eventfd_ctx_read(eventfd_ctx, kq, value);
 		if (nonblock || ec != EAGAIN) {
 			return (ec);
 		}
 
-		struct pollfd pfd = {.fd = eventfd_ctx->kq_, .events = POLLIN};
+		struct pollfd pfd = {.fd = kq, .events = POLLIN};
 		if (poll(&pfd, 1, -1) < 0) {
 			return (errno);
 		}
@@ -119,6 +124,7 @@ eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
 ssize_t
 eventfd_helper_read(struct eventfd_context *ctx, void *buf, size_t nbytes)
 {
+	int fd = ctx->fd;
 	EventFDCtx *efd_ctx = &ctx->ctx;
 	int flags = ctx->flags;
 	pthread_mutex_unlock(&eventfd_context_mtx);
@@ -129,7 +135,7 @@ eventfd_helper_read(struct eventfd_context *ctx, void *buf, size_t nbytes)
 	}
 
 	errno_t ec;
-	if ((ec = eventfd_ctx_read_or_block(efd_ctx, buf,
+	if ((ec = eventfd_ctx_read_or_block(efd_ctx, fd, buf,
 		 flags & EFD_NONBLOCK)) != 0) {
 		errno = ec;
 		return -1;
@@ -142,6 +148,7 @@ ssize_t
 eventfd_helper_write(struct eventfd_context *ctx, void const *buf,
     size_t nbytes)
 {
+	int fd = ctx->fd;
 	EventFDCtx *efd_ctx = &ctx->ctx;
 	pthread_mutex_unlock(&eventfd_context_mtx);
 
@@ -154,7 +161,7 @@ eventfd_helper_write(struct eventfd_context *ctx, void const *buf,
 	memcpy(&value, buf, sizeof(uint64_t));
 
 	errno_t ec;
-	if ((ec = eventfd_ctx_write(efd_ctx, value)) != 0) {
+	if ((ec = eventfd_ctx_write(efd_ctx, fd, value)) != 0) {
 		errno = ec;
 		return -1;
 	}
@@ -165,10 +172,14 @@ eventfd_helper_write(struct eventfd_context *ctx, void const *buf,
 int
 eventfd_close(struct eventfd_context *ctx)
 {
+	errno_t ec = eventfd_ctx_terminate(&ctx->ctx);
+
+	if (close(ctx->fd) < 0) {
+		ec = ec ? ec : errno;
+	}
 	ctx->fd = -1;
 
-	errno_t ec;
-	if ((ec = eventfd_ctx_terminate(&ctx->ctx)) != 0) {
+	if (ec) {
 		errno = ec;
 		return -1;
 	}
@@ -191,7 +202,7 @@ eventfd_read(int fd, eventfd_t *value)
 	}
 
 	errno_t ec;
-	if ((ec = eventfd_ctx_read_or_block(&ctx->ctx, value,
+	if ((ec = eventfd_ctx_read_or_block(&ctx->ctx, fd, value,
 		 ctx->flags & EFD_NONBLOCK)) != 0) {
 		errno = ec;
 		return -1;
@@ -215,7 +226,7 @@ eventfd_write(int fd, eventfd_t value)
 	}
 
 	errno_t ec;
-	if ((ec = eventfd_ctx_write(&ctx->ctx, value)) != 0) {
+	if ((ec = eventfd_ctx_write(&ctx->ctx, fd, value)) != 0) {
 		errno = ec;
 		return -1;
 	}
