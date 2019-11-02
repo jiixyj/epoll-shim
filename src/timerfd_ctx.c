@@ -48,7 +48,7 @@ worker_function(void *arg)
 static errno_t
 upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 {
-	errno_t err;
+	errno_t ec;
 
 	if (ctx->kind == TIMERFD_KIND_COMPLEX) {
 		return 0;
@@ -71,9 +71,9 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 		return errno;
 	}
 
-	if ((err = pthread_create(&ctx->complex.worker, /**/
+	if ((ec = pthread_create(&ctx->complex.worker, /**/
 		 NULL, worker_function, ctx)) != 0) {
-		return err;
+		return ec;
 	}
 
 	if (kevent(ctx->kq, NULL, 0, &kev, 1, NULL) < 0) {
@@ -82,9 +82,11 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 
 	int tid = (int)(intptr_t)kev.udata;
 
-	struct sigevent sigev = {.sigev_notify = SIGEV_THREAD_ID,
+	struct sigevent sigev = {
+	    .sigev_notify = SIGEV_THREAD_ID,
 	    .sigev_signo = SIGRTMIN,
-	    .sigev_notify_thread_id = tid};
+	    .sigev_notify_thread_id = tid,
+	};
 
 	if (timer_create(clockid, &sigev, &ctx->complex.timer) < 0) {
 		goto out;
@@ -95,17 +97,17 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 	return 0;
 
 out:
-	err = errno;
-	assert(err != 0);
+	ec = errno;
+	assert(ec != 0);
 	pthread_kill(ctx->complex.worker, SIGRTMIN + 1);
 	pthread_join(ctx->complex.worker, NULL);
-	return err;
+	return ec;
 }
 
 errno_t
 timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 {
-	errno_t err;
+	errno_t ec;
 
 	if (clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME) {
 		return EINVAL;
@@ -113,10 +115,15 @@ timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 
 	*timerfd = (TimerFDCtx){.kq = kq, .kind = TIMERFD_KIND_UNDETERMINED};
 
+	if ((ec = pthread_mutex_init(&timerfd->mutex, NULL)) != 0) {
+		return ec;
+	}
+
 	if (clockid == CLOCK_REALTIME) {
-		if ((err = upgrade_to_complex_timer(timerfd, /**/
+		if ((ec = upgrade_to_complex_timer(timerfd, /**/
 			 CLOCK_REALTIME)) != 0) {
-			return err;
+			(void)pthread_mutex_destroy(&timerfd->mutex);
+			return ec;
 		}
 	}
 
@@ -126,20 +133,30 @@ timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 errno_t
 timerfd_ctx_terminate(TimerFDCtx *timerfd)
 {
+	errno_t ec = 0;
+	errno_t ec_local = 0;
+
 	if (timerfd->kind == TIMERFD_KIND_COMPLEX) {
-		timer_delete(timerfd->complex.timer);
-		pthread_kill(timerfd->complex.worker, SIGRTMIN + 1);
-		pthread_join(timerfd->complex.worker, NULL);
+		if (timer_delete(timerfd->complex.timer) < 0 && ec == 0) {
+			ec = errno;
+		}
+		ec_local = pthread_kill(timerfd->complex.worker, SIGRTMIN + 1);
+		ec = ec ? ec : ec_local;
+		ec_local = pthread_join(timerfd->complex.worker, NULL);
+		ec = ec ? ec : ec_local;
 	}
 
-	return (0);
+	ec_local = pthread_mutex_destroy(&timerfd->mutex);
+	ec = ec ? ec : ec_local;
+
+	return (ec);
 }
 
-errno_t
-timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
+static errno_t
+timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
     const struct itimerspec *new, struct itimerspec *old)
 {
-	errno_t err;
+	errno_t ec;
 
 	if (flags & ~(TIMER_ABSTIME)) {
 		return EINVAL;
@@ -149,9 +166,9 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
 	    ((new->it_interval.tv_sec != 0 || new->it_interval.tv_nsec != 0) &&
 		(new->it_interval.tv_sec != new->it_value.tv_sec ||
 		    new->it_interval.tv_nsec != new->it_value.tv_nsec))) {
-		if ((err = upgrade_to_complex_timer(timerfd, /**/
+		if ((ec = upgrade_to_complex_timer(timerfd, /**/
 			 CLOCK_MONOTONIC)) != 0) {
-			return err;
+			return ec;
 		}
 	}
 
@@ -211,13 +228,27 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
 }
 
 errno_t
-timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
+timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
+    const struct itimerspec *new, struct itimerspec *old)
+{
+	errno_t ec;
+
+	(void)pthread_mutex_lock(&timerfd->mutex);
+	ec = timerfd_ctx_settime_impl(timerfd, flags, new, old);
+	(void)pthread_mutex_unlock(&timerfd->mutex);
+
+	return ec;
+}
+
+static errno_t
+timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
 {
 	uint64_t nr_expired;
 
 	for (;;) {
 		struct timespec timeout = {0, 0};
 		struct kevent kev;
+
 		int ret = kevent(timerfd->kq, NULL, 0, &kev, 1, &timeout);
 		if (ret < 0) {
 			return errno;
@@ -227,23 +258,23 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 			return EAGAIN;
 		}
 
+		nr_expired = 0;
+
 		if (timerfd->kind == TIMERFD_KIND_COMPLEX) {
 			uint64_t expired_new = (uint64_t)kev.udata;
 
-			/* TODO(jan): Should replace this with a
-			 * per-timerfd_context mutex. */
-			// pthread_mutex_lock(&timerfd_context_mtx);
+			assert(expired_new && kev.filter == EVFILT_USER);
+
 			if (expired_new >
 			    timerfd->complex.current_expirations) {
 				nr_expired = expired_new -
 				    timerfd->complex.current_expirations;
 				timerfd->complex.current_expirations =
 				    expired_new;
-			} else {
-				nr_expired = 0;
 			}
-			// pthread_mutex_unlock(&timerfd_context_mtx);
 		} else {
+			assert(!kev.udata && kev.filter == EVFILT_TIMER);
+
 			nr_expired = kev.data;
 		}
 
@@ -254,4 +285,16 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 
 	*value = nr_expired;
 	return 0;
+}
+
+errno_t
+timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
+{
+	errno_t ec;
+
+	(void)pthread_mutex_lock(&timerfd->mutex);
+	ec = timerfd_ctx_read_impl(timerfd, value);
+	(void)pthread_mutex_unlock(&timerfd->mutex);
+
+	return (ec);
 }

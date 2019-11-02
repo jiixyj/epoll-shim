@@ -19,6 +19,7 @@ enum timerfd_kind {
 typedef struct {
 	int kq; // non owning
 	int flags;
+	pthread_mutex_t mutex;
 	enum timerfd_kind kind;
 	union {
 		struct {
