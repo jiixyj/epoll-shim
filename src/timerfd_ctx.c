@@ -38,7 +38,8 @@ worker_function(void *arg)
 		if (sigwaitinfo(&rt_set, &info) != SIGRTMIN) {
 			break;
 		}
-		total_expirations += 1 + timer_getoverrun(ctx->complx.timer);
+		int overrun = timer_getoverrun(ctx->complx.timer);
+		total_expirations += 1 + (uint64_t)MAX(0, overrun);
 		EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
 		    (void *)(uintptr_t)total_expirations);
 		(void)kevent(ctx->kq, &kev, 1, NULL, 0, NULL);
@@ -275,9 +276,10 @@ timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
 				    expired_new;
 			}
 		} else {
-			assert(!kev.udata && kev.filter == EVFILT_TIMER);
+			assert(!kev.udata && kev.filter == EVFILT_TIMER &&
+			    kev.data >= 0);
 
-			nr_expired = kev.data;
+			nr_expired = (uint64_t)kev.data;
 		}
 
 		if (nr_expired != 0) {

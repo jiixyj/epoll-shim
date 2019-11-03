@@ -54,6 +54,6 @@ signalfd_ctx_read(SignalFDCtx *signalfd, uint32_t *ident)
 		return EAGAIN;
 	}
 
-	*ident = kev.ident;
+	*ident = (uint32_t)kev.ident;
 	return 0;
 }

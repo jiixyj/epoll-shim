@@ -2,10 +2,23 @@ cmake_minimum_required(VERSION 3.14)
 project(epoll-shim LANGUAGES C)
 
 option(BUILD_SHARED_LIBS "build libepoll-shim as shared lib" ON)
+option(ENABLE_COMPILER_WARNINGS "enable compiler warnings" OFF)
+
+if(ENABLE_COMPILER_WARNINGS)
+  add_compile_options("-Wall"
+                      "-Wextra"
+                      "-Wconversion"
+                      "-Wsign-conversion"
+                      "-Wmissing-prototypes"
+                      "-pedantic"
+                      "-Werror=implicit-function-declaration"
+                      "-Werror=return-type"
+                      "-Werror=incompatible-pointer-types")
+endif()
 
 include(CTest)
 
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_EXTENSIONS ON)
 
 add_subdirectory(src)
@@ -17,6 +30,9 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     file(WRITE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
          "add_library(${_namespace}::epoll-shim ALIAS epoll-shim)\n")
     set(${PROJECT_NAME}_DIR "${PROJECT_BINARY_DIR}")
+    if(ENABLE_COMPILER_WARNINGS)
+      add_compile_options("-w")
+    endif()
     add_subdirectory(test)
   endif()
 

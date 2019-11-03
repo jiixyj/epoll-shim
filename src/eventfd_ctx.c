@@ -49,6 +49,7 @@ eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 errno_t
 eventfd_ctx_terminate(EventFDCtx *eventfd)
 {
+	(void)eventfd;
 	return (0);
 }
 

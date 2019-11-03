@@ -54,6 +54,10 @@ errno_t
 fd_context_default_write(FDContextMapNode *node, /**/
     const void *buf, size_t nbytes, size_t *bytes_transferred)
 {
+	(void)node;
+	(void)buf;
+	(void)nbytes;
+	(void)bytes_transferred;
 	/* TODO(jan): Verify this. */
 	return EBADF;
 }

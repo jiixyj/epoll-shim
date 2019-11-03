@@ -164,7 +164,8 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 	if ((!ev && op != EPOLL_CTL_DEL) ||
 	    (ev &&
 		((ev->events &
-		    ~(EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLERR))
+		    ~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLHUP /**/
+			| EPOLLRDHUP | EPOLLERR))
 		    /* the user should really set one of EPOLLIN or EPOLLOUT
 		     * so that EPOLLHUP and EPOLLERR work. Don't make this a
 		     * hard error for now, though. */
@@ -178,7 +179,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		return (-1);
 	}
 
-	if ((e = kqueue_load_state(fd, fd2, &flags)) < 0) {
+	if ((e = kqueue_load_state(fd, (uint32_t)fd2, &flags)) < 0) {
 		errno = -e;
 		return (-1);
 	}
@@ -303,9 +304,9 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		if (kev[i].data != 0) {
 			if (i == 0 &&
 			    (kev[i].data == ENOENT || kev[i].data == EBADF)) {
-				kqueue_save_state(fd, fd2, 0);
+				kqueue_save_state(fd, (uint32_t)fd2, 0);
 			}
-			errno = kev[i].data;
+			errno = (int)kev[i].data;
 			return (-1);
 		}
 	}
@@ -326,7 +327,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			/* If the fstat fails for some reason we must clear
 			 * internal state to avoid EEXIST errors in future
 			 * calls to epoll_ctl. */
-			(void)kqueue_save_state(fd, fd2, 0);
+			(void)kqueue_save_state(fd, (uint32_t)fd2, 0);
 			return (-1);
 		}
 
@@ -337,7 +338,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		}
 	}
 
-	if ((e = kqueue_save_state(fd, fd2, flags)) < 0) {
+	if ((e = kqueue_save_state(fd, (uint32_t)fd2, flags)) < 0) {
 		errno = -e;
 		return (-1);
 	}
@@ -414,11 +415,12 @@ again:;
 			events |= EPOLLIN;
 			if (evlist[i].flags & EV_ONESHOT) {
 				uint16_t flags = 0;
-				kqueue_load_state(fd, evlist[i].ident, &flags);
+				kqueue_load_state(fd,
+				    (uint32_t)evlist[i].ident, &flags);
 
 				if (flags & KQUEUE_STATE_NYCSS) {
 					if (is_not_yet_connected_stream_socket(
-						evlist[i].ident)) {
+						(int)evlist[i].ident)) {
 
 						events = EPOLLHUP;
 						if (flags &
@@ -459,7 +461,8 @@ again:;
 						kevent(fd, nkev, 2, NULL, 0,
 						    NULL);
 						kqueue_save_state(fd,
-						    evlist[i].ident, flags);
+						    (uint32_t)evlist[i].ident,
+						    flags);
 
 						continue;
 					}
@@ -479,7 +482,8 @@ again:;
 			}
 
 			uint16_t flags = 0;
-			kqueue_load_state(fd, evlist[i].ident, &flags);
+			kqueue_load_state(fd, (uint32_t)evlist[i].ident,
+			    &flags);
 
 			int epoll_event;
 
@@ -516,8 +520,10 @@ again:;
 					return -1;
 				}
 
-				struct pollfd pfd = {.fd = evlist[i].ident,
-				    .events = POLLIN | POLLOUT | POLLHUP};
+				struct pollfd pfd = {
+				    .fd = (int)evlist[i].ident,
+				    .events = POLLIN | POLLOUT | POLLHUP,
+				};
 
 				if (poll(&pfd, 1, 0) == 1) {
 					if (pfd.revents & POLLHUP) {
@@ -563,7 +569,7 @@ again:;
 
 			events |= epoll_event;
 		}
-		ev[j].events = events;
+		ev[j].events = (uint32_t)events;
 		ev[j].data.ptr = evlist[i].udata;
 		++j;
 	}
