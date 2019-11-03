@@ -58,8 +58,8 @@ fd_context_default_write(FDContextMapNode *node, /**/
 	(void)buf;
 	(void)nbytes;
 	(void)bytes_transferred;
-	/* TODO(jan): Verify this. */
-	return EBADF;
+
+	return EINVAL;
 }
 
 /**/
