@@ -9,24 +9,81 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "epoll_shim_ctx.h"
+
+static errno_t
+epollfd_close(FDContextMapNode *node)
+{
+	return epollfd_ctx_terminate(&node->ctx.epollfd);
+}
+
+static FDContextVTable const epollfd_vtable = {
+    .read_fun = fd_context_default_read,
+    .write_fun = fd_context_default_write,
+    .close_fun = epollfd_close,
+};
+
+static FDContextMapNode *
+epoll_create_impl(errno_t *ec)
+{
+	FDContextMapNode *node;
+
+	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec);
+	if (!node) {
+		return NULL;
+	}
+
+	node->flags = 0;
+
+	if ((*ec = epollfd_ctx_init(&node->ctx.epollfd, /**/
+		 node->fd)) != 0) {
+		goto fail;
+	}
+
+	node->vtable = &epollfd_vtable;
+	return node;
+
+fail:
+	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
+	(void)fd_context_map_node_destroy(node);
+	return NULL;
+}
+
+static int
+epoll_create_common(void)
+{
+	FDContextMapNode *node;
+	errno_t ec;
+
+	node = epoll_create_impl(&ec);
+	if (!node) {
+		errno = ec;
+		return -1;
+	}
+
+	return node->fd;
+}
+
 int
 epoll_create(int size)
 {
-	(void)size;
+	if (size <= 0) {
+		errno = EINVAL;
+		return -1;
+	}
 
-	errno = EINVAL;
-	return -1;
+	return epoll_create_common();
 }
 
 int
 epoll_create1(int flags)
 {
-	if (flags != EPOLL_CLOEXEC) {
+	if (flags & ~EPOLL_CLOEXEC) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	return kqueue();
+	return epoll_create_common();
 }
 
 static int poll_fd = -1;

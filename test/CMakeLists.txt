@@ -39,6 +39,8 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_executable(kqueue-state kqueue-state.c)
   target_include_directories(kqueue-state
                              PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../include")
+  target_link_options(kqueue-state PRIVATE
+                      "LINKER:--unresolved-symbols=ignore-all")
   add_test(NAME kqueue-state COMMAND kqueue-state)
 
   add_executable(eventfd-ctx-test eventfd-ctx-test.c)

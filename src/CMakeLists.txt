@@ -4,6 +4,7 @@ find_package(Threads REQUIRED)
 add_library(epoll-shim
             epoll_shim_ctx.c
             epoll.c
+            epollfd_ctx.c
             timerfd.c
             timerfd_ctx.c
             signalfd.c

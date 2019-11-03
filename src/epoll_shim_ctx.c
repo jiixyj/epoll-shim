@@ -51,8 +51,20 @@ fd_context_map_node_destroy(FDContextMapNode *node)
 /**/
 
 errno_t
+fd_context_default_read(FDContextMapNode *node, /**/
+    void *buf, size_t nbytes, size_t *bytes_transferred)
+{
+	(void)node;
+	(void)buf;
+	(void)nbytes;
+	(void)bytes_transferred;
+
+	return EINVAL;
+}
+
+errno_t
 fd_context_default_write(FDContextMapNode *node, /**/
-    const void *buf, size_t nbytes, size_t *bytes_transferred)
+    void const *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	(void)node;
 	(void)buf;

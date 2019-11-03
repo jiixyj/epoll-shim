@@ -5,6 +5,7 @@
 
 #include <unistd.h>
 
+#include "epollfd_ctx.h"
 #include "eventfd_ctx.h"
 #include "signalfd_ctx.h"
 #include "timerfd_ctx.h"
@@ -24,14 +25,17 @@ typedef struct {
 	fd_context_close_fun close_fun;
 } FDContextVTable;
 
+errno_t fd_context_default_read(FDContextMapNode *node, /**/
+    void *buf, size_t nbytes, size_t *bytes_transferred);
 errno_t fd_context_default_write(FDContextMapNode *node, /**/
-    const void *buf, size_t nbytes, size_t *bytes_transferred);
+    void const *buf, size_t nbytes, size_t *bytes_transferred);
 
 struct fd_context_map_node_ {
 	RB_ENTRY(fd_context_map_node_) entry;
 	int fd;
 	int flags;
 	union {
+		EpollFDCtx epollfd;
 		EventFDCtx eventfd;
 		TimerFDCtx timerfd;
 		SignalFDCtx signalfd;
