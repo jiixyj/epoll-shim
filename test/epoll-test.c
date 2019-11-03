@@ -1563,6 +1563,53 @@ test_same_fd_value()
 	return 0;
 }
 
+static int
+test_invalid_writes()
+{
+	sigset_t mask;
+	int fd;
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+
+	if (sigprocmask(SIG_BLOCK, &mask, NULL) < 0) {
+		return -1;
+	}
+
+	fd = signalfd(-1, &mask, 0);
+	if (fd < 0) {
+		return -1;
+	}
+
+	char dummy = 0;
+	if (write(fd, &dummy, 1) >= 0) {
+		return -1;
+	}
+
+	if (errno != EINVAL) {
+		return -1;
+	}
+
+	close(fd);
+
+	fd = timerfd_create(CLOCK_MONOTONIC, 0);
+	if (fd < 0) {
+		return -1;
+	}
+
+	if (write(fd, &dummy, 1) >= 0) {
+		return -1;
+	}
+
+	if (errno != EINVAL) {
+		return -1;
+	}
+
+	close(fd);
+
+	return 0;
+}
+
 int
 main()
 {
@@ -1617,6 +1664,7 @@ main()
 	TEST(test_recursive_register());
 	TEST(test_remove_closed());
 	TEST(test_same_fd_value());
+	TEST(test_invalid_writes());
 
 	return r;
 }
