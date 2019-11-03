@@ -29,11 +29,11 @@ fd_context_map_node_create(int kq, errno_t *ec)
 }
 
 static errno_t
-fd_context_map_node_terminate(FDContextMapNode *node)
+fd_context_map_node_terminate(FDContextMapNode *node, bool close_fd)
 {
 	errno_t ec = node->vtable ? node->vtable->close_fun(node) : 0;
 
-	if (close(node->fd) < 0) {
+	if (close_fd && close(node->fd) < 0) {
 		ec = ec ? ec : errno;
 	}
 
@@ -43,7 +43,7 @@ fd_context_map_node_terminate(FDContextMapNode *node)
 errno_t
 fd_context_map_node_destroy(FDContextMapNode *node)
 {
-	errno_t ec = fd_context_map_node_terminate(node);
+	errno_t ec = fd_context_map_node_terminate(node, true);
 	free(node);
 	return ec;
 }
@@ -105,7 +105,15 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 	}
 
 	if (node) {
-		(void)fd_context_map_node_terminate(node);
+		/*
+		 * If we get here, someone must have already closed the old fd
+		 * with a normal 'close()' call, i.e. not with our
+		 * 'epoll_shim_close()' wrapper. The fd inside the node
+		 * refers now to the new kq we are currently creating. We
+		 * must not close it, but we must clean up the old context
+		 * object!
+		 */
+		(void)fd_context_map_node_terminate(node, false);
 		fd_context_map_node_init(node, kq);
 	} else {
 		node = fd_context_map_node_create(kq, ec);
