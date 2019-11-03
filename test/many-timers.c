@@ -1,16 +1,23 @@
 #include <sys/types.h>
 
+#ifndef __linux__
 #include <sys/event.h>
+#include <sys/timespec.h>
+#endif
+
 #include <sys/param.h>
 #include <sys/select.h>
 #include <sys/time.h>
-#include <sys/timespec.h>
+
+#include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 #include <err.h>
 #include <poll.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <unistd.h>
 
 #include <sys/timerfd.h>
 
@@ -37,6 +44,11 @@
 	} while (0)
 #endif
 
+#ifndef nitems
+#define        nitems(x)       (sizeof((x)) / sizeof((x)[0]))
+#endif
+
+#ifndef __linux__
 static bool
 is_fast_timer(int fd)
 {
@@ -47,6 +59,7 @@ is_fast_timer(int fd)
 	close(fd);
 	return (is_fast);
 }
+#endif
 
 int
 main()
@@ -82,7 +95,9 @@ main()
 		REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 100000000 &&
 		    e.tv_nsec < 150000000);
 
+#ifndef __linux__
 		REQUIRE(is_fast_timer(timerfd));
+#endif
 	}
 
 	{
@@ -117,7 +132,9 @@ main()
 		    (ssize_t)sizeof(timeouts));
 		REQUIRE(timeouts == 2);
 
+#ifndef __linux__
 		REQUIRE(is_fast_timer(timerfd));
+#endif
 	}
 
 	{
@@ -152,7 +169,9 @@ main()
 		    (ssize_t)sizeof(timeouts));
 		REQUIRE(timeouts == 2);
 
+#ifndef __linux__
 		REQUIRE(!is_fast_timer(timerfd));
+#endif
 	}
 
 	{
@@ -192,7 +211,9 @@ main()
 		REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
 		    e.tv_nsec < 200000000);
 
+#ifndef __linux__
 		REQUIRE(is_fast_timer(timerfd));
+#endif
 	}
 
 	{
@@ -240,6 +261,8 @@ main()
 		};
 		REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
+#ifndef __linux__
 		REQUIRE(is_fast_timer(timerfd));
+#endif
 	}
 }
