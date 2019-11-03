@@ -86,10 +86,6 @@ epoll_create1(int flags)
 	return epoll_create_common();
 }
 
-static int poll_fd = -1;
-static int poll_epoll_fd = -1;
-static void *poll_ptr;
-
 #define KEY_BITS (20)
 #define VAL_BITS (32 - KEY_BITS)
 static errno_t
@@ -270,12 +266,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 #undef SET_FLAG
 
 	} else if (op == EPOLL_CTL_DEL) {
-		if (poll_fd == fd2 && fd == poll_epoll_fd) {
-			poll_fd = -1;
-			poll_epoll_fd = -1;
-			poll_ptr = NULL;
-			return (0);
-		}
+		/* Removed poll fd here. */
 
 		if (!(flags & KQUEUE_STATE_REGISTERED)) {
 			errno = ENOENT;
@@ -339,12 +330,8 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 			return (-1);
 		}
 
-		if (kev[i].data == ENODEV && poll_fd < 0) {
-			poll_fd = fd2;
-			poll_epoll_fd = fd;
-			poll_ptr = ev->data.ptr;
-			return (0);
-		}
+		/* Checked for 'kev[i].data == ENODEV' here (for fds that only
+		 * support poll). */
 
 		/*
 		 * Ignore EVFILT_WRITE registration EINVAL errors (some fd
@@ -428,23 +415,8 @@ epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 		return -1;
 	}
 
-	if (poll_fd != -1 && fd == poll_epoll_fd) {
-		struct pollfd pfds[2];
-		pfds[0].fd = poll_fd;
-		pfds[0].events = POLLIN;
-		pfds[1].fd = fd;
-		pfds[1].events = POLLIN;
-		int ret = poll(pfds, 2, to);
-		if (ret <= 0) {
-			return ret;
-		}
-		if (pfds[0].revents & POLLIN) {
-			ev[0].events = EPOLLIN;
-			ev[0].data.ptr = poll_ptr;
-			return 1;
-		}
-		to = 0;
-	}
+	/* Top level poll call was here (to support registered fd's that only
+	 * support poll). */
 
 	struct timespec timeout = {0, 0};
 	if (to > 0) {

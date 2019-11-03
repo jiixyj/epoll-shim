@@ -506,14 +506,14 @@ test11()
 		return -1;
 	}
 
-	int fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
+	int fd = open("/dev/dsp", O_WRONLY | O_CLOEXEC);
 	if (fd < 0) {
-		// Don't fail the test when there is no graphics card.
+		// Don't fail the test when there is no sound card.
 		goto out;
 	}
 
 	struct epoll_event event;
-	event.events = EPOLLIN | EPOLLOUT;
+	event.events = EPOLLOUT;
 	event.data.fd = fd;
 
 	if (epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) < 0) {
