@@ -1,5 +1,7 @@
 #include "timerfd_ctx.h"
 
+#include <sys/types.h>
+
 #include <sys/event.h>
 #include <sys/param.h>
 
