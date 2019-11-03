@@ -34,3 +34,7 @@ target_link_libraries(eventfd-ctx-test PRIVATE Threads::Threads)
 target_include_directories(eventfd-ctx-test
                            PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../src")
 add_test(NAME eventfd-ctx-test COMMAND eventfd-ctx-test)
+
+add_executable(perf-many-fds perf-many-fds.c)
+target_link_libraries(perf-many-fds PRIVATE epoll-shim::epoll-shim)
+add_test(NAME perf-many-fds COMMAND perf-many-fds)
