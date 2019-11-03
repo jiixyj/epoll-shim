@@ -130,7 +130,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 	}
 
 	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node) {
+	if (!node || node->vtable != &timerfd_vtable) {
 		return EINVAL;
 	}
 
