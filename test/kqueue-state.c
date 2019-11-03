@@ -14,7 +14,7 @@ int
 main()
 {
 	int kq;
-	int e;
+	errno_t ec;
 	uint16_t retval;
 
 	kq = kqueue();
@@ -22,30 +22,30 @@ main()
 		err(1, "kqueue");
 	}
 
-	if ((e = kqueue_save_state(kq, 42, 0xfffu)) < 0) {
-		errno = -e;
+	if ((ec = kqueue_save_state(kq, 42, 0xfffu)) != 0) {
+		errno = ec;
 		err(1, "kqueue_save_state");
 	}
 
-	if ((e = kqueue_save_state(kq, 42, 0xf0fu)) < 0) {
-		errno = -e;
+	if ((ec = kqueue_save_state(kq, 42, 0xf0fu)) != 0) {
+		errno = ec;
 		err(1, "kqueue_save_state");
 	}
 
-	if ((e = kqueue_save_state(kq, 41, 0x123u)) < 0) {
-		errno = -e;
+	if ((ec = kqueue_save_state(kq, 41, 0x123u)) != 0) {
+		errno = ec;
 		err(1, "kqueue_save_state");
 	}
 
-	if ((e = kqueue_load_state(kq, 42, &retval)) < 0) {
-		errno = -e;
+	if ((ec = kqueue_load_state(kq, 42, &retval)) != 0) {
+		errno = ec;
 		err(1, "kqueue_load_state");
 	}
 
 	fprintf(stderr, "got %x, expected %x\n", (unsigned)retval, 0xf0fu);
 
-	if ((e = kqueue_load_state(kq, 41, &retval)) < 0) {
-		errno = -e;
+	if ((ec = kqueue_load_state(kq, 41, &retval)) != 0) {
+		errno = ec;
 		err(1, "kqueue_load_state");
 	}
 

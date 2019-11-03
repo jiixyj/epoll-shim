@@ -92,17 +92,17 @@ static void *poll_ptr;
 
 #define KEY_BITS (20)
 #define VAL_BITS (32 - KEY_BITS)
-static int
+static errno_t
 kqueue_save_state(int kq, uint32_t key, uint16_t val)
 {
 	struct kevent kev[VAL_BITS * 2];
 	int n = 0;
 	int i;
-	int oe, e;
+	int oe, ec;
 
 	if ((key & ~(((uint32_t)1 << KEY_BITS) - 1)) ||
 	    (val & ~(((uint16_t)1 << VAL_BITS) - 1))) {
-		return (-EINVAL);
+		return (EINVAL);
 	}
 
 	for (i = 0; i < VAL_BITS; ++i) {
@@ -119,25 +119,25 @@ kqueue_save_state(int kq, uint32_t key, uint16_t val)
 
 	oe = errno;
 	if ((n = kevent(kq, kev, n, NULL, 0, NULL)) < 0) {
-		e = errno;
+		ec = errno;
 		errno = oe;
-		return (-e);
+		return (ec);
 	}
 
 	return (0);
 }
 
-static int
+static errno_t
 kqueue_load_state(int kq, uint32_t key, uint16_t *val)
 {
 	struct kevent kev[VAL_BITS];
 	int n = 0;
 	int i;
 	uint16_t nval = 0;
-	int oe, e;
+	int oe, ec;
 
 	if ((key & ~(((uint32_t)1 << KEY_BITS) - 1))) {
-		return (-EINVAL);
+		return (EINVAL);
 	}
 
 	for (i = 0; i < VAL_BITS; ++i) {
@@ -148,20 +148,20 @@ kqueue_load_state(int kq, uint32_t key, uint16_t *val)
 
 	oe = errno;
 	if ((n = kevent(kq, kev, VAL_BITS, kev, VAL_BITS, NULL)) < 0) {
-		e = errno;
+		ec = errno;
 		errno = oe;
-		return (-e);
+		return (ec);
 	}
 
 	for (i = 0; i < n; ++i) {
 		if (!(kev[i].flags & EV_ERROR)) {
-			return (-EINVAL);
+			return (EINVAL);
 		}
 
 		if (kev[i].data == 0) {
 			nval |= (uint32_t)1 << i;
 		} else if (kev[i].data != ENOENT) {
-			return (-EINVAL);
+			return (EINVAL);
 		}
 	}
 
@@ -216,7 +216,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
 	struct kevent kev[2];
 	uint16_t flags;
-	int e;
+	errno_t ec;
 
 	if ((!ev && op != EPOLL_CTL_DEL) ||
 	    (ev &&
@@ -236,8 +236,8 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		return (-1);
 	}
 
-	if ((e = kqueue_load_state(fd, (uint32_t)fd2, &flags)) < 0) {
-		errno = -e;
+	if ((ec = kqueue_load_state(fd, (uint32_t)fd2, &flags)) != 0) {
+		errno = ec;
 		return (-1);
 	}
 
@@ -395,8 +395,8 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 		}
 	}
 
-	if ((e = kqueue_save_state(fd, (uint32_t)fd2, flags)) < 0) {
-		errno = -e;
+	if ((ec = kqueue_save_state(fd, (uint32_t)fd2, flags)) != 0) {
+		errno = ec;
 		return (-1);
 	}
 
