@@ -6,6 +6,7 @@ add_library(epoll-shim
             timerfd.c
             timerfd_ctx.c
             signalfd.c
+            signalfd_ctx.c
             eventfd.c
             eventfd_ctx.c
             common.c)

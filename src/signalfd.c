@@ -7,6 +7,7 @@
 #include <sys/event.h>
 
 #include <errno.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -15,9 +16,12 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "signalfd_ctx.h"
+
 struct signalfd_context {
 	int fd;
 	int flags;
+	SignalFDCtx ctx;
 	struct signalfd_context *next;
 };
 
@@ -75,19 +79,12 @@ signalfd_impl(int fd, const sigset_t *sigs, int flags)
 
 	ctx->flags = flags;
 
-	struct kevent kevs[_SIG_MAXSIG];
-	int n = 0;
+	errno_t err;
 
-	for (int i = 1; i <= _SIG_MAXSIG; ++i) {
-		if (sigismember(sigs, i)) {
-			EV_SET(&kevs[n++], i, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
-		}
-	}
-
-	int ret = kevent(ctx->fd, kevs, n, NULL, 0, NULL);
-	if (ret < 0) {
-		close(ctx->fd);
+	if ((err = signalfd_ctx_init(&ctx->ctx, ctx->fd, sigs)) != 0) {
+		(void)close(ctx->fd);
 		ctx->fd = -1;
+		errno = err;
 		return -1;
 	}
 
@@ -103,6 +100,23 @@ signalfd(int fd, const sigset_t *sigs, int flags)
 	return ret;
 }
 
+static errno_t
+signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx, uint32_t *value,
+    bool nonblock)
+{
+	for (;;) {
+		errno_t ec = signalfd_ctx_read(signalfd_ctx, value);
+		if (nonblock || ec != EAGAIN) {
+			return (ec);
+		}
+
+		struct pollfd pfd = {.fd = signalfd_ctx->kq, .events = POLLIN};
+		if (poll(&pfd, 1, -1) < 0) {
+			return (errno);
+		}
+	}
+}
+
 ssize_t
 signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 {
@@ -116,29 +130,36 @@ signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 		return -1;
 	}
 
-	struct kevent kev;
+	uint32_t signo;
+	errno_t err;
 
-	int n = kevent(fd, NULL, 0, &kev, 1,
-	    (flags & SFD_NONBLOCK) ? &(struct timespec){0, 0} : NULL);
-	if (n < 0) {
-		return -1;
-	}
-
-	if (n == 0) {
-		errno = EAGAIN;
-		return -1;
+	if ((err = signalfd_ctx_read_or_block(&ctx->ctx, &signo,
+		 flags & SFD_NONBLOCK)) != 0) {
+		errno = err;
+		return (-1);
 	}
 
 	memset(buf, '\0', nbytes);
 	struct signalfd_siginfo *sig_buf = buf;
-	sig_buf->ssi_signo = (uint32_t)kev.ident;
+	sig_buf->ssi_signo = signo;
+
 	return (ssize_t)nbytes;
 }
 
 int
 signalfd_close(struct signalfd_context *ctx)
 {
-	int ret = close(ctx->fd);
+	errno_t ec = signalfd_ctx_terminate(&ctx->ctx);
+
+	if (close(ctx->fd) < 0) {
+		ec = ec ? ec : errno;
+	}
 	ctx->fd = -1;
-	return ret;
+
+	if (ec) {
+		errno = ec;
+		return -1;
+	}
+
+	return 0;
 }
