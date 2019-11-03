@@ -13,7 +13,7 @@
 		}                                                             \
 	} while (0)
 
-#define NR_EVENTFDS (50000)
+#define NR_EVENTFDS (20000)
 
 int
 main()
@@ -31,7 +31,7 @@ main()
 		REQUIRE(eventfds[i] >= 0);
 	}
 
-	for (long i = 0; i < 1000000; ++i) {
+	for (long i = 0; i < 2000000; ++i) {
 		REQUIRE(eventfd_write(eventfds[0], 1) == 0);
 		if (i % 10000 == 0) {
 			fprintf(stderr, ".");
