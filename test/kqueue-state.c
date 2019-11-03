@@ -8,7 +8,7 @@
 
 #include <err.h>
 
-#include "../src/epoll.c"
+#include "../src/epollfd_ctx.c"
 
 int
 main()
