@@ -1578,36 +1578,66 @@ test_invalid_writes()
 		return -1;
 	}
 
-	fd = signalfd(-1, &mask, 0);
-	if (fd < 0) {
-		return -1;
-	}
-
 	char dummy = 0;
-	if (write(fd, &dummy, 1) >= 0) {
-		return -1;
+
+	{
+		fd = signalfd(-1, &mask, 0);
+		if (fd < 0) {
+			return -1;
+		}
+
+		if (write(fd, &dummy, 1) >= 0) {
+			return -1;
+		}
+
+		if (errno != EINVAL) {
+			return -1;
+		}
+
+		close(fd);
 	}
 
-	if (errno != EINVAL) {
-		return -1;
+	{
+		fd = timerfd_create(CLOCK_MONOTONIC, 0);
+		if (fd < 0) {
+			return -1;
+		}
+
+		if (write(fd, &dummy, 1) >= 0) {
+			return -1;
+		}
+
+		if (errno != EINVAL) {
+			return -1;
+		}
+
+		close(fd);
 	}
 
-	close(fd);
+	{
+		fd = epoll_create1(EPOLL_CLOEXEC);
+		if (fd < 0) {
+			return -1;
+		}
 
-	fd = timerfd_create(CLOCK_MONOTONIC, 0);
-	if (fd < 0) {
-		return -1;
+		if (write(fd, &dummy, 1) >= 0) {
+			return -1;
+		}
+
+		if (errno != EINVAL) {
+			return -1;
+		}
+
+		if (read(fd, &dummy, 1) >= 0) {
+			return -1;
+		}
+
+		if (errno != EINVAL) {
+			return -1;
+		}
+
+		close(fd);
 	}
-
-	if (write(fd, &dummy, 1) >= 0) {
-		return -1;
-	}
-
-	if (errno != EINVAL) {
-		return -1;
-	}
-
-	close(fd);
 
 	return 0;
 }
