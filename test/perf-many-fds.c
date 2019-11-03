@@ -39,5 +39,5 @@ main()
 	}
 
 	REQUIRE(clock_gettime(CLOCK_MONOTONIC, &time2) == 0);
-	REQUIRE(time2.tv_sec - time1.tv_sec < 10);
+	REQUIRE(time2.tv_sec - time1.tv_sec < 15);
 }
