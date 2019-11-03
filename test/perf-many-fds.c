@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define REQUIRE(x)                                                            \
 	do {                                                                  \
@@ -17,6 +18,11 @@
 int
 main()
 {
+	struct timespec time1;
+	struct timespec time2;
+
+	REQUIRE(clock_gettime(CLOCK_MONOTONIC, &time1) == 0);
+
 	int *eventfds = malloc(NR_EVENTFDS * sizeof(int));
 	REQUIRE(eventfds);
 
@@ -31,4 +37,7 @@ main()
 			fprintf(stderr, ".");
 		}
 	}
+
+	REQUIRE(clock_gettime(CLOCK_MONOTONIC, &time2) == 0);
+	REQUIRE(time2.tv_sec - time1.tv_sec < 10);
 }
