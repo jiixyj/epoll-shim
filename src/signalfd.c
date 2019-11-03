@@ -136,14 +136,12 @@ signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
 	if ((err = signalfd_ctx_read_or_block(&ctx->ctx, &signo,
 		 flags & SFD_NONBLOCK)) != 0) {
 		errno = err;
-		return (-1);
+		return -1;
 	}
 
-	memset(buf, '\0', nbytes);
-	struct signalfd_siginfo *sig_buf = buf;
-	sig_buf->ssi_signo = signo;
-
-	return (ssize_t)nbytes;
+	struct signalfd_siginfo siginfo = {.ssi_signo = signo};
+	memcpy(buf, &siginfo, sizeof(siginfo));
+	return (ssize_t)sizeof(siginfo);
 }
 
 int
