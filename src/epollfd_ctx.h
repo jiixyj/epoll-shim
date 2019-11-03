@@ -3,8 +3,11 @@
 
 #include <errno.h>
 
+#include <pthread.h>
+
 typedef struct {
 	int kq; // non owning
+	pthread_mutex_t mutex;
 } EpollFDCtx;
 
 errno_t epollfd_ctx_init(EpollFDCtx *signalfd, int kq);

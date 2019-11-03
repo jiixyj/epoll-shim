@@ -152,7 +152,7 @@ timerfd_ctx_terminate(TimerFDCtx *timerfd)
 	ec_local = pthread_mutex_destroy(&timerfd->mutex);
 	ec = ec ? ec : ec_local;
 
-	return (ec);
+	return ec;
 }
 
 static errno_t
@@ -300,5 +300,5 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 	ec = timerfd_ctx_read_impl(timerfd, value);
 	(void)pthread_mutex_unlock(&timerfd->mutex);
 
-	return (ec);
+	return ec;
 }
