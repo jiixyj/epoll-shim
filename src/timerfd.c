@@ -16,157 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "timerfd_ctx.h"
-
-struct timerfd_context {
-	int fd;
-	int flags;
-	TimerFDCtx ctx;
-	struct timerfd_context *next;
-};
-
-static struct timerfd_context *timerfd_contexts;
-pthread_mutex_t timerfd_context_mtx = PTHREAD_MUTEX_INITIALIZER;
-
-struct timerfd_context *
-get_timerfd_context(int fd, bool create_new)
-{
-	for (struct timerfd_context *ctx = timerfd_contexts; ctx;
-	     ctx = ctx->next) {
-		if (fd == ctx->fd) {
-			return ctx;
-		}
-	}
-
-	if (create_new) {
-		struct timerfd_context *new_ctx =
-		    malloc(sizeof(struct timerfd_context));
-		if (!new_ctx) {
-			return NULL;
-		}
-
-		*new_ctx = (struct timerfd_context){
-		    .fd = -1,
-		    .next = timerfd_contexts,
-		};
-		timerfd_contexts = new_ctx;
-
-		return new_ctx;
-	}
-
-	return NULL;
-}
-
-static errno_t
-timerfd_create_impl(int clockid, int flags, int *fd)
-{
-	errno_t err;
-
-	if (clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME) {
-		return EINVAL;
-	}
-
-	if (flags & ~(TFD_CLOEXEC | TFD_NONBLOCK)) {
-		return EINVAL;
-	}
-
-	struct timerfd_context *ctx = get_timerfd_context(-1, true);
-	if (!ctx) {
-		return ENOMEM;
-	}
-
-	ctx->fd = kqueue();
-	if (ctx->fd < 0) {
-		assert(errno != 0);
-		return errno;
-	}
-
-	if ((err = timerfd_ctx_init(&ctx->ctx, ctx->fd, clockid)) != 0) {
-		goto out;
-	}
-
-	ctx->flags = flags;
-
-	*fd = ctx->fd;
-	return 0;
-
-out:
-	close(ctx->fd);
-	ctx->fd = -1;
-	return err;
-}
-
-int
-timerfd_create(int clockid, int flags)
-{
-	int fd;
-	errno_t err;
-
-	pthread_mutex_lock(&timerfd_context_mtx);
-	err = timerfd_create_impl(clockid, flags, &fd);
-	pthread_mutex_unlock(&timerfd_context_mtx);
-
-	if (err != 0) {
-		errno = err;
-		return -1;
-	}
-
-	return fd;
-}
-
-static errno_t
-timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
-    struct itimerspec *old)
-{
-	errno_t err;
-	struct timerfd_context *ctx;
-
-	if (!new) {
-		return EFAULT;
-	}
-
-	ctx = get_timerfd_context(fd, false);
-	if (!ctx) {
-		return EINVAL;
-	}
-
-	if (flags & ~(TFD_TIMER_ABSTIME)) {
-		return EINVAL;
-	}
-
-	if ((err = timerfd_ctx_settime(&ctx->ctx,
-		 (flags & TFD_TIMER_ABSTIME) ? TIMER_ABSTIME : 0, /**/
-		 new, old)) != 0) {
-		return err;
-	}
-
-	return 0;
-}
-
-int
-timerfd_settime(int fd, int flags, const struct itimerspec *new,
-    struct itimerspec *old)
-{
-	errno_t err;
-
-	pthread_mutex_lock(&timerfd_context_mtx);
-	err = timerfd_settime_impl(fd, flags, new, old);
-	pthread_mutex_unlock(&timerfd_context_mtx);
-
-	if (err != 0) {
-		errno = err;
-		return -1;
-	}
-
-	return 0;
-}
-
-#if 0
-int timerfd_gettime(int fd, struct itimerspec *cur)
-{
-	return syscall(SYS_timerfd_gettime, fd, cur);
-}
-#endif
+#include "epoll_shim_ctx.h"
 
 static errno_t
 timerfd_ctx_read_or_block(TimerFDCtx *timerfd, uint64_t *value, bool nonblock)
@@ -184,43 +34,135 @@ timerfd_ctx_read_or_block(TimerFDCtx *timerfd, uint64_t *value, bool nonblock)
 	}
 }
 
-ssize_t
-timerfd_read(struct timerfd_context *ctx, void *buf, size_t nbytes)
+static errno_t
+timerfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
+    size_t *bytes_transferred)
 {
-	pthread_mutex_unlock(&timerfd_context_mtx);
-
 	if (nbytes < sizeof(uint64_t)) {
-		errno = EINVAL;
-		return -1;
+		return EINVAL;
 	}
 
-	errno_t err;
+	errno_t ec;
 	uint64_t nr_expired;
-	if ((err = timerfd_ctx_read_or_block(&ctx->ctx, &nr_expired,
-		 ctx->flags & TFD_NONBLOCK)) != 0) {
-		errno = err;
-		return -1;
+	if ((ec = timerfd_ctx_read_or_block(&node->ctx.timerfd, &nr_expired,
+		 node->flags & TFD_NONBLOCK)) != 0) {
+		return ec;
 	}
 
 	memcpy(buf, &nr_expired, sizeof(uint64_t));
 
-	return sizeof(uint64_t);
+	*bytes_transferred = sizeof(uint64_t);
+	return 0;
+}
+
+static errno_t
+timerfd_close(FDContextMapNode *node)
+{
+	return timerfd_ctx_terminate(&node->ctx.timerfd);
+}
+
+static FDContextVTable const timerfd_vtable = {
+    .read_fun = timerfd_read,
+    .write_fun = fd_context_default_write,
+    .close_fun = timerfd_close,
+};
+
+static FDContextMapNode *
+timerfd_create_impl(int clockid, int flags, errno_t *ec)
+{
+	FDContextMapNode *node;
+
+	if (clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME) {
+		*ec = EINVAL;
+		return NULL;
+	}
+
+	if (flags & ~(TFD_CLOEXEC | TFD_NONBLOCK)) {
+		*ec = EINVAL;
+		return NULL;
+	}
+
+	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec);
+	if (!node) {
+		return NULL;
+	}
+
+	node->flags = flags;
+
+	if ((*ec = timerfd_ctx_init(&node->ctx.timerfd, /**/
+		 node->fd, clockid)) != 0) {
+		goto fail;
+	}
+
+	node->vtable = &timerfd_vtable;
+	return node;
+
+fail:
+	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
+	(void)fd_context_map_node_destroy(node);
+	return NULL;
 }
 
 int
-timerfd_close(struct timerfd_context *ctx)
+timerfd_create(int clockid, int flags)
 {
-	errno_t ec = timerfd_ctx_terminate(&ctx->ctx);
+	FDContextMapNode *node;
+	errno_t ec;
 
-	if (close(ctx->fd) < 0) {
-		ec = ec ? ec : errno;
+	node = timerfd_create_impl(clockid, flags, &ec);
+	if (!node) {
+		errno = ec;
+		return -1;
 	}
-	ctx->fd = -1;
 
-	if (ec) {
+	return node->fd;
+}
+
+static errno_t
+timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
+    struct itimerspec *old)
+{
+	errno_t ec;
+	FDContextMapNode *node;
+
+	if (!new) {
+		return EFAULT;
+	}
+
+	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	if (!node) {
+		return EINVAL;
+	}
+
+	if (flags & ~(TFD_TIMER_ABSTIME)) {
+		return EINVAL;
+	}
+
+	if ((ec = timerfd_ctx_settime(&node->ctx.timerfd,
+		 (flags & TFD_TIMER_ABSTIME) ? TIMER_ABSTIME : 0, /**/
+		 new, old)) != 0) {
+		return ec;
+	}
+
+	return 0;
+}
+
+int
+timerfd_settime(int fd, int flags, const struct itimerspec *new,
+    struct itimerspec *old)
+{
+	errno_t ec = timerfd_settime_impl(fd, flags, new, old);
+	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
 	return 0;
 }
+
+#if 0
+int timerfd_gettime(int fd, struct itimerspec *cur)
+{
+	return syscall(SYS_timerfd_gettime, fd, cur);
+}
+#endif

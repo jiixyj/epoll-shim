@@ -17,92 +17,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "eventfd_ctx.h"
-
-struct eventfd_context {
-	int fd;
-	int flags;
-	EventFDCtx ctx;
-	struct eventfd_context *next;
-};
-
-static struct eventfd_context *eventfd_contexts;
-pthread_mutex_t eventfd_context_mtx = PTHREAD_MUTEX_INITIALIZER;
-
-struct eventfd_context *
-get_eventfd_context(int fd, bool create_new)
-{
-	for (struct eventfd_context *ctx = eventfd_contexts; ctx;
-	     ctx = ctx->next) {
-		if (fd == ctx->fd) {
-			return ctx;
-		}
-	}
-
-	if (create_new) {
-		struct eventfd_context *new_ctx =
-		    malloc(sizeof(struct eventfd_context));
-		if (!new_ctx) {
-			return NULL;
-		}
-		new_ctx->fd = -1;
-		new_ctx->next = eventfd_contexts;
-		eventfd_contexts = new_ctx;
-		return new_ctx;
-	}
-
-	return NULL;
-}
-
-static int
-eventfd_impl(unsigned int initval, int flags)
-{
-	if (flags & ~(EFD_SEMAPHORE | EFD_CLOEXEC | EFD_NONBLOCK)) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	/*
-	 * Don't check that EFD_CLOEXEC is set -- but our kqueue based eventfd
-	 * will always be CLOEXEC.
-	 */
-
-	struct eventfd_context *ctx = get_eventfd_context(-1, true);
-	if (!ctx) {
-		errno = EMFILE;
-		return -1;
-	}
-
-	ctx->fd = kqueue();
-	if (ctx->fd < 0) {
-		return -1;
-	}
-
-	int ctx_flags = 0;
-	if (flags & EFD_SEMAPHORE) {
-		ctx_flags |= EVENTFD_CTX_FLAG_SEMAPHORE;
-	}
-
-	errno_t ec;
-	if ((ec = eventfd_ctx_init(&ctx->ctx, /**/
-		 ctx->fd, initval, ctx_flags)) != 0) {
-		errno = ec;
-		return -1;
-	}
-
-	ctx->flags = flags;
-
-	return ctx->fd;
-}
-
-int
-eventfd(unsigned int initval, int flags)
-{
-	pthread_mutex_lock(&eventfd_context_mtx);
-	int ret = eventfd_impl(initval, flags);
-	pthread_mutex_unlock(&eventfd_context_mtx);
-	return ret;
-}
+#include "epoll_shim_ctx.h"
 
 static errno_t
 eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
@@ -121,89 +36,129 @@ eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
 	}
 }
 
-ssize_t
-eventfd_helper_read(struct eventfd_context *ctx, void *buf, size_t nbytes)
+static errno_t
+eventfd_helper_read(FDContextMapNode *node, void *buf, size_t nbytes,
+    size_t *bytes_transferred)
 {
-	int fd = ctx->fd;
-	EventFDCtx *efd_ctx = &ctx->ctx;
-	int flags = ctx->flags;
-	pthread_mutex_unlock(&eventfd_context_mtx);
-
 	if (nbytes != sizeof(uint64_t)) {
-		errno = EINVAL;
-		return -1;
+		return EINVAL;
 	}
 
+	uint64_t value;
 	errno_t ec;
-	if ((ec = eventfd_ctx_read_or_block(efd_ctx, buf,
-		 flags & EFD_NONBLOCK)) != 0) {
-		errno = ec;
-		return -1;
+	if ((ec = eventfd_ctx_read_or_block(&node->ctx.eventfd, &value,
+		 node->flags & EFD_NONBLOCK)) != 0) {
+		return ec;
 	}
 
-	return (ssize_t)nbytes;
+	memcpy(buf, &value, sizeof(value));
+	*bytes_transferred = sizeof(value);
+	return 0;
 }
 
-ssize_t
-eventfd_helper_write(struct eventfd_context *ctx, void const *buf,
-    size_t nbytes)
+static errno_t
+eventfd_helper_write(FDContextMapNode *node, void const *buf, size_t nbytes,
+    size_t *bytes_transferred)
 {
-	int fd = ctx->fd;
-	EventFDCtx *efd_ctx = &ctx->ctx;
-	pthread_mutex_unlock(&eventfd_context_mtx);
-
 	if (nbytes != sizeof(uint64_t)) {
-		errno = EINVAL;
-		return -1;
+		return EINVAL;
 	}
 
 	uint64_t value;
 	memcpy(&value, buf, sizeof(uint64_t));
 
 	errno_t ec;
-	if ((ec = eventfd_ctx_write(efd_ctx, value)) != 0) {
-		errno = ec;
-		return -1;
+	if ((ec = eventfd_ctx_write(&node->ctx.eventfd, value)) != 0) {
+		return ec;
 	}
 
-	return (ssize_t)sizeof(uint64_t);
+	*bytes_transferred = sizeof(value);
+	return 0;
+}
+
+static errno_t
+eventfd_close(FDContextMapNode *node)
+{
+	return eventfd_ctx_terminate(&node->ctx.eventfd);
+}
+
+static FDContextVTable const eventfd_vtable = {
+    .read_fun = eventfd_helper_read,
+    .write_fun = eventfd_helper_write,
+    .close_fun = eventfd_close,
+};
+
+static FDContextMapNode *
+eventfd_impl(unsigned int initval, int flags, errno_t *ec)
+{
+	FDContextMapNode *node;
+
+	if (flags & ~(EFD_SEMAPHORE | EFD_CLOEXEC | EFD_NONBLOCK)) {
+		*ec = EINVAL;
+		return NULL;
+	}
+
+	/*
+	 * Don't check that EFD_CLOEXEC is set -- but our kqueue based eventfd
+	 * will always be CLOEXEC.
+	 */
+
+	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec);
+	if (!node) {
+		return NULL;
+	}
+
+	node->flags = flags;
+
+	int ctx_flags = 0;
+	if (flags & EFD_SEMAPHORE) {
+		ctx_flags |= EVENTFD_CTX_FLAG_SEMAPHORE;
+	}
+
+	if ((*ec = eventfd_ctx_init(&node->ctx.eventfd, /**/
+		 node->fd, initval, ctx_flags)) != 0) {
+		goto fail;
+	}
+
+	node->vtable = &eventfd_vtable;
+	return node;
+
+fail:
+	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
+	(void)fd_context_map_node_destroy(node);
+	return NULL;
 }
 
 int
-eventfd_close(struct eventfd_context *ctx)
+eventfd(unsigned int initval, int flags)
 {
-	errno_t ec = eventfd_ctx_terminate(&ctx->ctx);
+	FDContextMapNode *node;
+	errno_t ec;
 
-	if (close(ctx->fd) < 0) {
-		ec = ec ? ec : errno;
-	}
-	ctx->fd = -1;
-
-	if (ec) {
+	node = eventfd_impl(initval, flags, &ec);
+	if (!node) {
 		errno = ec;
 		return -1;
 	}
 
-	return 0;
+	return node->fd;
 }
 
 int
 eventfd_read(int fd, eventfd_t *value)
 {
-	struct eventfd_context *ctx;
+	FDContextMapNode *node;
 
-	(void)pthread_mutex_lock(&eventfd_context_mtx);
-	ctx = get_eventfd_context(fd, false);
-	(void)pthread_mutex_unlock(&eventfd_context_mtx);
-
-	if (!ctx) {
+	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	if (!node || node->vtable != &eventfd_vtable) {
 		errno = EBADF;
 		return -1;
 	}
 
+	size_t bytes_transferred;
 	errno_t ec;
-	if ((ec = eventfd_ctx_read_or_block(&ctx->ctx, value,
-		 ctx->flags & EFD_NONBLOCK)) != 0) {
+	if ((ec = eventfd_helper_read(node, value, sizeof(*value),
+		 &bytes_transferred)) != 0) {
 		errno = ec;
 		return -1;
 	}
@@ -214,19 +169,18 @@ eventfd_read(int fd, eventfd_t *value)
 int
 eventfd_write(int fd, eventfd_t value)
 {
-	struct eventfd_context *ctx;
+	FDContextMapNode *node;
 
-	(void)pthread_mutex_lock(&eventfd_context_mtx);
-	ctx = get_eventfd_context(fd, false);
-	(void)pthread_mutex_unlock(&eventfd_context_mtx);
-
-	if (!ctx) {
+	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	if (!node || node->vtable != &eventfd_vtable) {
 		errno = EBADF;
 		return -1;
 	}
 
+	size_t bytes_transferred;
 	errno_t ec;
-	if ((ec = eventfd_ctx_write(&ctx->ctx, value)) != 0) {
+	if ((ec = eventfd_helper_write(node, &value, sizeof(value),
+		 &bytes_transferred)) != 0) {
 		errno = ec;
 		return -1;
 	}

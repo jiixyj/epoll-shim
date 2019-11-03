@@ -67,12 +67,15 @@ int epoll_pwait(int, struct epoll_event *, int, int, const sigset_t *);
 #endif
 
 
+#ifdef notyet
+#error don't include this yet
 #ifndef SHIM_SYS_SHIM_HELPERS
 #define SHIM_SYS_SHIM_HELPERS
 #include <unistd.h> /* IWYU pragma: keep */
 
 extern int epoll_shim_close(int);
 #define close epoll_shim_close
+#endif
 #endif
 
 

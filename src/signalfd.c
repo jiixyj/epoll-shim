@@ -16,89 +16,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "signalfd_ctx.h"
-
-struct signalfd_context {
-	int fd;
-	int flags;
-	SignalFDCtx ctx;
-	struct signalfd_context *next;
-};
-
-static struct signalfd_context *signalfd_contexts;
-pthread_mutex_t signalfd_context_mtx = PTHREAD_MUTEX_INITIALIZER;
-
-struct signalfd_context *
-get_signalfd_context(int fd, bool create_new)
-{
-	for (struct signalfd_context *ctx = signalfd_contexts; ctx;
-	     ctx = ctx->next) {
-		if (fd == ctx->fd) {
-			return ctx;
-		}
-	}
-
-	if (create_new) {
-		struct signalfd_context *new_ctx =
-		    calloc(1, sizeof(struct signalfd_context));
-		if (!new_ctx) {
-			return NULL;
-		}
-		new_ctx->fd = -1;
-		new_ctx->next = signalfd_contexts;
-		signalfd_contexts = new_ctx;
-		return new_ctx;
-	}
-
-	return NULL;
-}
-
-static int
-signalfd_impl(int fd, const sigset_t *sigs, int flags)
-{
-	if (fd != -1) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	if (flags & ~(SFD_NONBLOCK | SFD_CLOEXEC)) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	struct signalfd_context *ctx = get_signalfd_context(-1, true);
-	if (!ctx) {
-		errno = EMFILE;
-		return -1;
-	}
-
-	ctx->fd = kqueue();
-	if (ctx->fd < 0) {
-		return -1;
-	}
-
-	ctx->flags = flags;
-
-	errno_t err;
-
-	if ((err = signalfd_ctx_init(&ctx->ctx, ctx->fd, sigs)) != 0) {
-		(void)close(ctx->fd);
-		ctx->fd = -1;
-		errno = err;
-		return -1;
-	}
-
-	return ctx->fd;
-}
-
-int
-signalfd(int fd, const sigset_t *sigs, int flags)
-{
-	pthread_mutex_lock(&signalfd_context_mtx);
-	int ret = signalfd_impl(fd, sigs, flags);
-	pthread_mutex_unlock(&signalfd_context_mtx);
-	return ret;
-}
+#include "epoll_shim_ctx.h"
 
 static errno_t
 signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx, uint32_t *value,
@@ -117,47 +35,88 @@ signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx, uint32_t *value,
 	}
 }
 
-ssize_t
-signalfd_read(struct signalfd_context *ctx, void *buf, size_t nbytes)
+static errno_t
+signalfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
+    size_t *bytes_transferred)
 {
-	int fd = ctx->fd;
-	int flags = ctx->flags;
-	pthread_mutex_unlock(&signalfd_context_mtx);
-
 	// TODO(jan): fix this to read multiple signals
 	if (nbytes != sizeof(struct signalfd_siginfo)) {
-		errno = EINVAL;
-		return -1;
+		return EINVAL;
 	}
 
 	uint32_t signo;
-	errno_t err;
-
-	if ((err = signalfd_ctx_read_or_block(&ctx->ctx, &signo,
-		 flags & SFD_NONBLOCK)) != 0) {
-		errno = err;
-		return -1;
+	errno_t ec;
+	if ((ec = signalfd_ctx_read_or_block(&node->ctx.signalfd, &signo,
+		 node->flags & SFD_NONBLOCK)) != 0) {
+		return ec;
 	}
 
 	struct signalfd_siginfo siginfo = {.ssi_signo = signo};
 	memcpy(buf, &siginfo, sizeof(siginfo));
-	return (ssize_t)sizeof(siginfo);
+
+	*bytes_transferred = sizeof(siginfo);
+	return 0;
+}
+
+static errno_t
+signalfd_close(FDContextMapNode *node)
+{
+	return signalfd_ctx_terminate(&node->ctx.signalfd);
+}
+
+static FDContextVTable const signalfd_vtable = {
+    .read_fun = signalfd_read,
+    .write_fun = fd_context_default_write,
+    .close_fun = signalfd_close,
+};
+
+static FDContextMapNode *
+signalfd_impl(int fd, const sigset_t *sigs, int flags, errno_t *ec)
+{
+	FDContextMapNode *node;
+
+	if (fd != -1) {
+		*ec = EINVAL;
+		return NULL;
+	}
+
+	if (flags & ~(SFD_NONBLOCK | SFD_CLOEXEC)) {
+		*ec = EINVAL;
+		return NULL;
+	}
+
+	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec);
+	if (!node) {
+		return NULL;
+	}
+
+	node->flags = flags;
+
+	if ((*ec = signalfd_ctx_init(&node->ctx.signalfd, /**/
+		 node->fd, sigs)) != 0) {
+		goto fail;
+	}
+
+	node->vtable = &signalfd_vtable;
+	return node;
+
+fail:
+	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
+	(void)fd_context_map_node_destroy(node);
+	return NULL;
 }
 
 int
-signalfd_close(struct signalfd_context *ctx)
+signalfd(int fd, const sigset_t *sigs, int flags)
 {
-	errno_t ec = signalfd_ctx_terminate(&ctx->ctx);
+	FDContextMapNode *node;
+	errno_t ec;
 
-	if (close(ctx->fd) < 0) {
-		ec = ec ? ec : errno;
-	}
-	ctx->fd = -1;
-
-	if (ec) {
+	node = signalfd_impl(fd, sigs, flags, &ec);
+	if (!node) {
 		errno = ec;
 		return -1;
 	}
 
-	return 0;
+	return node->fd;
 }
