@@ -11,8 +11,8 @@
 
 #include <errno.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <err.h>
@@ -45,7 +45,7 @@
 #endif
 
 #ifndef nitems
-#define        nitems(x)       (sizeof((x)) / sizeof((x)[0]))
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 #endif
 
 #ifndef __linux__
