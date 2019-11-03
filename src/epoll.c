@@ -174,7 +174,7 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 			}
 		}
 
-		assert(to > 0);
+		assert(to != 0);
 
 		struct pollfd pfd = {.fd = epollfd->kq, .events = POLLIN};
 		if (poll(&pfd, 1, to) < 0) {
