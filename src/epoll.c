@@ -1,6 +1,7 @@
 #include <sys/epoll.h>
 
 #include <sys/event.h>
+#include <sys/param.h>
 #include <sys/time.h>
 
 #include <assert.h>
@@ -176,8 +177,17 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 
 		assert(to != 0);
 
-		struct pollfd pfd = {.fd = epollfd->kq, .events = POLLIN};
-		if (poll(&pfd, 1, to) < 0) {
+		/*
+		 * We should add a notification mechanism when a new poll-only
+		 * fd gets registered when this thread sleeps...
+		 */
+		struct pollfd pfds[2];
+		(void)pthread_mutex_lock(&epollfd->mutex);
+		pfds[0] = epollfd->pfds[0];
+		pfds[1] = epollfd->pfds[1];
+		(void)pthread_mutex_unlock(&epollfd->mutex);
+
+		if (poll(pfds, 2, MAX(to, -1)) < 0) {
 			return errno;
 		}
 	}

@@ -521,11 +521,19 @@ test11()
 	}
 
 	struct epoll_event event_result;
-	if (epoll_wait(ep, &event_result, 1, 300) != 0) {
+	if (epoll_wait(ep, &event_result, 1, 300) != 1) {
+		return -1;
+	}
+
+	if (event_result.events != EPOLLOUT || event_result.data.fd != fd) {
 		return -1;
 	}
 
 	if (epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) < 0) {
+		return -1;
+	}
+
+	if (epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) >= 0 || errno != ENOENT) {
 		return -1;
 	}
 

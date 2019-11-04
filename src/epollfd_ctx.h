@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <stdint.h>
 
+#include <poll.h>
 #include <pthread.h>
 
 struct registered_fds_node_;
@@ -25,6 +26,10 @@ typedef RB_HEAD(registered_fds_set_, registered_fds_node_) RegisteredFDsSet;
 typedef struct {
 	int kq; // non owning
 	pthread_mutex_t mutex;
+
+	struct pollfd pfds[2];
+	epoll_data_t pollfd_data;
+
 	RegisteredFDsSet registered_fds;
 } EpollFDCtx;
 

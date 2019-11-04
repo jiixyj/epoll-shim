@@ -28,6 +28,9 @@ epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
 	    .registered_fds = RB_INITIALIZER(&registered_fds),
 	};
 
+	epollfd->pfds[0].fd = -1;
+	epollfd->pfds[1] = (struct pollfd){.fd = kq, .events = POLLIN};
+
 	if ((ec = pthread_mutex_init(&epollfd->mutex, NULL)) != 0) {
 		return ec;
 	}
@@ -225,10 +228,14 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 #undef SET_FLAG
 
 	} else if (op == EPOLL_CTL_DEL) {
-		/* Removed poll fd here. */
-
 		if (!(flags & KQUEUE_STATE_REGISTERED)) {
 			return ENOENT;
+		}
+
+		if (fd2 >= 0 && fd2 == epollfd->pfds[0].fd) {
+			epollfd->pfds[0].fd = -1;
+			kqueue_save_state(epollfd->kq, (uint32_t)fd2, 0);
+			return 0;
 		}
 
 		EV_SET(&kev[0], fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
@@ -284,8 +291,18 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 			return EINVAL;
 		}
 
-		/* Checked for 'kev[i].data == ENODEV' here (for fds that only
-		 * support poll). */
+		/* Check for fds that only support poll. */
+		if (kev[i].data == ENODEV && fd2 >= 0 &&
+		    !(ev->events & ~(uint32_t)(EPOLLIN | EPOLLOUT)) &&
+		    (epollfd->pfds[0].fd < 0 || epollfd->pfds[0].fd == fd2)) {
+			epollfd->pfds[0] = (struct pollfd){
+			    .fd = fd2,
+			    .events = ((ev->events & EPOLLIN) ? POLLIN : 0) |
+				((ev->events & EPOLLOUT) ? POLLOUT : 0),
+			};
+			epollfd->pollfd_data = ev->data;
+			goto out;
+		}
 
 		/*
 		 * Ignore EVFILT_WRITE registration EINVAL errors (some fd
@@ -302,8 +319,8 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		if (kev[i].data != 0) {
 			if (i == 0 &&
 			    (kev[i].data == ENOENT || kev[i].data == EBADF)) {
-				kqueue_save_state(epollfd->kq, (uint32_t)fd2,
-				    0);
+				kqueue_save_state(epollfd->kq, /**/
+				    (uint32_t)fd2, 0);
 			}
 			return (int)kev[i].data;
 		}
@@ -337,6 +354,7 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		}
 	}
 
+out:
 	if ((ec = kqueue_save_state(epollfd->kq, (uint32_t)fd2, flags)) != 0) {
 		return ec;
 	}
@@ -359,6 +377,32 @@ epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2, struct epoll_event *ev)
 	return ec;
 }
 
+#define SUPPORTED_POLLFLAGS (POLLIN | POLLOUT | POLLERR | POLLHUP | POLLNVAL)
+
+static uint32_t
+poll_to_epoll(int flags)
+{
+	uint32_t epoll_flags = 0;
+
+	if (flags & POLLIN) {
+		epoll_flags |= EPOLLIN;
+	}
+	if (flags & POLLOUT) {
+		epoll_flags |= EPOLLOUT;
+	}
+	if (flags & POLLERR) {
+		epoll_flags |= EPOLLERR;
+	}
+	if (flags & POLLHUP) {
+		epoll_flags |= EPOLLHUP;
+	}
+	if (flags & POLLNVAL) {
+		epoll_flags |= EPOLLNVAL;
+	}
+
+	return epoll_flags;
+}
+
 static errno_t
 epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
     int *actual_cnt)
@@ -367,25 +411,25 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		return EINVAL;
 	}
 
-	/* Top level poll call was here (to support registered fd's that only
-	 * support poll). */
-
-#ifdef notyet
-	struct timespec timeout = {0, 0};
-	if (to > 0) {
-		timeout.tv_sec = to / 1000;
-		timeout.tv_nsec = (to % 1000) * 1000 * 1000;
+	int ret = poll(epollfd->pfds, 2, 0);
+	if (ret < 0) {
+		return errno;
+	}
+	if (ret == 0) {
+		*actual_cnt = 0;
+		return 0;
 	}
 
-	struct timespec *ptimeout = NULL;
-	if (to >= 0) {
-		ptimeout = &timeout;
+	if (epollfd->pfds[0].revents & SUPPORTED_POLLFLAGS) {
+		ev[0].events = poll_to_epoll(epollfd->pfds[0].revents);
+		ev[0].data = epollfd->pollfd_data;
+		*actual_cnt = 1;
+		return 0;
 	}
-#endif
 
 again:;
 	struct kevent evlist[32];
-	int ret = kevent(epollfd->kq, NULL, 0, evlist, cnt,
+	ret = kevent(epollfd->kq, NULL, 0, evlist, cnt,
 	    &(struct timespec){0, 0});
 	if (ret < 0) {
 		return errno;
