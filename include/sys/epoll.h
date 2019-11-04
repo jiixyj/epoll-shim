@@ -5,11 +5,9 @@
 extern "C" {
 #endif
 
-/* include the same file as musl */
-#include <sys/types.h> /* IWYU pragma: keep */
-
-#include <fcntl.h>
 #include <stdint.h>
+#include <sys/types.h>
+#include <fcntl.h>
 
 #if 0
 #define __NEED_sigset_t
@@ -25,6 +23,7 @@ enum EPOLL_EVENTS { __EPOLL_DUMMY };
 #define EPOLLPRI 0x002
 #define EPOLLOUT 0x004
 #define EPOLLRDNORM 0x040
+#define EPOLLNVAL 0x020
 #define EPOLLRDBAND 0x080
 #define EPOLLWRNORM 0x100
 #define EPOLLWRBAND 0x200
@@ -32,6 +31,7 @@ enum EPOLL_EVENTS { __EPOLL_DUMMY };
 #define EPOLLERR 0x008
 #define EPOLLHUP 0x010
 #define EPOLLRDHUP 0x2000
+#define EPOLLEXCLUSIVE (1U<<28)
 #define EPOLLWAKEUP (1U<<29)
 #define EPOLLONESHOT (1U<<30)
 #define EPOLLET (1U<<31)
@@ -51,17 +51,16 @@ struct epoll_event {
 	uint32_t events;
 	epoll_data_t data;
 }
-#if defined(__amd64__)
-__attribute__((packed))
+#ifdef __x86_64__
+__attribute__ ((__packed__))
 #endif
 ;
 
-int epoll_create(int /*size*/);
-int epoll_create1(int /*flags*/);
-int epoll_ctl(
-    int /*fd*/, int /*op*/, int /*fd2*/, struct epoll_event * /*ev*/);
-int epoll_wait(
-    int /*fd*/, struct epoll_event * /*ev*/, int /*cnt*/, int /*to*/);
+
+int epoll_create(int);
+int epoll_create1(int);
+int epoll_ctl(int, int, int, struct epoll_event *);
+int epoll_wait(int, struct epoll_event *, int, int);
 #if 0
 int epoll_pwait(int, struct epoll_event *, int, int, const sigset_t *);
 #endif
