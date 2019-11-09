@@ -30,9 +30,6 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     file(WRITE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
          "add_library(${_namespace}::epoll-shim ALIAS epoll-shim)\n")
     set(${PROJECT_NAME}_DIR "${PROJECT_BINARY_DIR}")
-    if(ENABLE_COMPILER_WARNINGS)
-      add_compile_options("-w")
-    endif()
     add_subdirectory(test)
   endif()
 

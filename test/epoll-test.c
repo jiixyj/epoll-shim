@@ -116,16 +116,6 @@ connector_client(void *arg)
 	return (void *)(intptr_t)sock;
 }
 
-/* clang-format off */
-#define return(x)                                                             \
-	do {                                                                  \
-		if ((x) != 0) {                                               \
-			fprintf(stderr, "return error, line %d\n", __LINE__); \
-			return x;                                             \
-		}                                                             \
-	} while (0);
-/* clang-format on */
-
 static int
 fd_tcp_socket(int fds[3])
 {
@@ -802,37 +792,6 @@ check_for_fd_leaks()
 	return r;
 }
 
-static void *
-connector(void *arg)
-{
-	(void)arg;
-
-	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (sock < 0) {
-		return NULL;
-	}
-
-	struct sockaddr_in addr = {0};
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(1337);
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
-		return NULL;
-	}
-
-	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
-		return NULL;
-	}
-
-	fprintf(stderr, "got client\n");
-
-	shutdown(sock, SHUT_WR);
-	usleep(300000);
-
-	close(sock);
-
-	return NULL;
-}
-
 static int
 test16(bool specify_rdhup)
 {
@@ -847,7 +806,7 @@ test16(bool specify_rdhup)
 		return -1;
 	}
 
-	int rdhup_flag = specify_rdhup ? EPOLLRDHUP : 0;
+	uint32_t rdhup_flag = specify_rdhup ? EPOLLRDHUP : 0;
 
 	struct epoll_event event;
 	event.events = EPOLLOUT | EPOLLIN | (specify_rdhup ? 0 : EPOLLRDHUP);
@@ -1112,7 +1071,7 @@ test20(int (*fd_fun)(int fds[3]))
 		//     (int)event_result.events);
 
 		if (event_result.events & EPOLLIN) {
-			if ((n = read(fds[1], &c, 1)) != 1) {
+			if ((n = (int)read(fds[1], &c, 1)) != 1) {
 				fprintf(stderr, "read: %d\n", n);
 				warn("read");
 				return -1;
@@ -1293,80 +1252,6 @@ test22()
 		return -1;
 	}
 
-#define FDS_SIZE 13
-
-	int fds[FDS_SIZE][3];
-
-	for (int i = 0; i < FDS_SIZE; ++i) {
-		if (fd_domain_socket(fds[i]) < 0) {
-			return -1;
-		}
-	}
-
-	uint8_t data = '\0';
-	for (int i = 0; i < FDS_SIZE; ++i) {
-		write(fds[i][1], &data, 1);
-	}
-
-	struct epoll_event event;
-	event.events = EPOLLIN | EPOLLOUT;
-
-	for (int i = 0; i < FDS_SIZE; ++i) {
-		event.data.fd = fds[i][0];
-		if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[i][0], &event) < 0) {
-			return -1;
-		}
-	}
-
-	for (int j = 0; j < 100; ++j) {
-		struct epoll_event event_result[32];
-		int event_size;
-		if ((event_size = epoll_wait(ep, event_result, 32, -1)) < 0) {
-			return -1;
-		}
-
-		for (int i = 0; i < event_size; ++i) {
-			fprintf(stderr, "got event %d: %x %d dat: %d\n", i,
-			    (int)event_result[i].events,
-			    (int)event_result[i].events,
-			    event_result[i].data.fd);
-
-			if ((event_result[i].events & EPOLLIN) && !(i % 4)) {
-				char data;
-				read(event_result[i].data.fd, &data, 1);
-			}
-		}
-
-		fprintf(stderr, "\n");
-
-		usleep(1000000);
-
-		if (!(j % 5)) {
-			for (int i = 0; i < FDS_SIZE; ++i) {
-				write(fds[i][1], &data, 1);
-			}
-		}
-	}
-
-	for (int i = 0; i < FDS_SIZE; ++i) {
-		close(fds[i][0]);
-		close(fds[i][1]);
-	}
-
-#undef FDS_SIZE
-
-	close(ep);
-	return 0;
-}
-
-static int
-test23()
-{
-	int ep = epoll_create1(EPOLL_CLOEXEC);
-	if (ep < 0) {
-		return -1;
-	}
-
 	struct epoll_event event;
 	event.events = EPOLLIN;
 	event.data.fd = 0;
@@ -1398,7 +1283,7 @@ test23()
 }
 
 static int
-test24(int (*fd_fun)(int fds[3]))
+test23(int (*fd_fun)(int fds[3]))
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	if (ep < 0) {
@@ -1696,11 +1581,12 @@ main()
 	TEST(test20(fd_tcp_socket));
 	TEST(test20(fd_domain_socket));
 	TEST(test21());
-	// TEST(test22());
 #ifdef INTERACTIVE_TESTS
-	TEST(test23());
+	TEST(test22());
+#else
+	(void)test22;
 #endif
-	TEST(test24(fd_tcp_socket));
+	TEST(test23(fd_tcp_socket));
 	TEST(test_recursive_register());
 	TEST(test_remove_closed());
 	TEST(test_same_fd_value());

@@ -67,7 +67,7 @@ main()
 	int timer_fds[1024];
 	int i;
 
-	for (i = 0; i < nitems(timer_fds); ++i) {
+	for (i = 0; i < (int)nitems(timer_fds); ++i) {
 		REQUIRE((timer_fds[i] = timerfd_create(CLOCK_MONOTONIC, /**/
 			     TFD_CLOEXEC | TFD_NONBLOCK)) >= 0);
 	}
