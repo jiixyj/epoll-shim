@@ -1650,6 +1650,28 @@ test_invalid_writes()
 	return 0;
 }
 
+static int
+test_timerfd_gettime()
+{
+	struct itimerspec curr_value;
+
+	int fd = timerfd_create(CLOCK_MONOTONIC, 0);
+	if (fd < 0) {
+		return -1;
+	}
+
+	if (timerfd_gettime(fd, &curr_value) >= 0) {
+		return -1;
+	}
+
+	if (errno != ENOSYS) {
+		return -1;
+	}
+
+	close(fd);
+	return 0;
+}
+
 int
 main()
 {
@@ -1705,6 +1727,7 @@ main()
 	TEST(test_remove_closed());
 	TEST(test_same_fd_value());
 	TEST(test_invalid_writes());
+	TEST(test_timerfd_gettime());
 
 	return r;
 }

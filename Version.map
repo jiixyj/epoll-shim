@@ -10,6 +10,7 @@
     signalfd;
     timerfd_create;
     timerfd_settime;
+    timerfd_gettime;
     eventfd;
     eventfd_read;
     eventfd_write;

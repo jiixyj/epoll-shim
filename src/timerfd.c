@@ -160,9 +160,12 @@ timerfd_settime(int fd, int flags, const struct itimerspec *new,
 	return 0;
 }
 
-#if 0
-int timerfd_gettime(int fd, struct itimerspec *cur)
+int
+timerfd_gettime(int fd, struct itimerspec *cur)
 {
-	return syscall(SYS_timerfd_gettime, fd, cur);
+	(void)fd;
+	(void)cur;
+
+	errno = ENOSYS;
+	return -1;
 }
-#endif
