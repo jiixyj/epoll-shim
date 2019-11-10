@@ -208,6 +208,8 @@ main()
 
 		REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 		timespecsub(&e, &b, &e);
+		fprintf(stderr, "line %d: %ld/%ld\n", __LINE__, /**/
+		    (long)e.tv_sec, (long)e.tv_nsec);
 		REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
 		    e.tv_nsec < 200000000);
 
@@ -250,6 +252,9 @@ main()
 
 		REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 		timespecsub(&e, &b, &e);
+
+		fprintf(stderr, "line %d: %ld/%ld\n", __LINE__, /**/
+		    (long)e.tv_sec, (long)e.tv_nsec);
 		REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 300000000 &&
 		    e.tv_nsec < 350000000);
 
