@@ -4,12 +4,10 @@
 
 set(script "set(_counter 1)")
 
-function(add_test_to_script
-         _name
-         _executable
-         _test)
+function(add_test_to_script _name _executable _test)
 
-  set(_testscript "
+  set(_testscript
+      "
 set(_wd \"${BINARY_DIR}/${_name}.\${_counter}\")
 add_test(${_name}.setup    ${CMAKE_COMMAND} -E   make_directory \"\${_wd}\")
 add_test(${_name}.teardown ${CMAKE_COMMAND} -E remove_directory \"\${_wd}\")
@@ -27,7 +25,9 @@ set_tests_properties(${_name}           PROPERTIES FIXTURES_REQUIRED ${_name}.f)
 math(EXPR _counter \"\${_counter}+1\")
 ")
 
-  set(script "${script}${_testscript}" PARENT_SCOPE)
+  set(script
+      "${script}${_testscript}"
+      PARENT_SCOPE)
 endfunction()
 
 if(NOT EXISTS "${TEST_EXECUTABLE}")
@@ -35,35 +35,25 @@ if(NOT EXISTS "${TEST_EXECUTABLE}")
                       "  Path: '${TEST_EXECUTABLE}'")
 endif()
 
-execute_process(COMMAND "${TEST_EXECUTABLE}" -l
-                WORKING_DIRECTORY "${TEST_WORKING_DIR}"
-                OUTPUT_VARIABLE output
-                RESULT_VARIABLE result)
+execute_process(
+  COMMAND "${TEST_EXECUTABLE}" -l
+  WORKING_DIRECTORY "${TEST_WORKING_DIR}"
+  OUTPUT_VARIABLE output
+  RESULT_VARIABLE result)
 
 if(NOT ${result} EQUAL 0)
-  string(REPLACE "\n"
-                 "\n    "
-                 output
-                 "${output}")
-  message(FATAL_ERROR "Error running test executable.\n"
-                      "  Path: '${TEST_EXECUTABLE}'\n"
-                      "  Result: ${result}\n"
-                      "  Output:\n"
-                      "    ${output}\n")
+  string(REPLACE "\n" "\n    " output "${output}")
+  message(
+    FATAL_ERROR
+      "Error running test executable.\n" "  Path: '${TEST_EXECUTABLE}'\n"
+      "  Result: ${result}\n" "  Output:\n" "    ${output}\n")
 endif()
 
-string(REPLACE "\n"
-               ";"
-               output
-               "${output}")
+string(REPLACE "\n" ";" output "${output}")
 
 foreach(line ${output})
   if(line MATCHES "^ident: ")
-    string(REGEX
-           REPLACE "^ident: "
-                   ""
-                   test
-                   "${line}")
+    string(REGEX REPLACE "^ident: " "" test "${line}")
     add_test_to_script("${TEST_TARGET}.${test}" "${TEST_EXECUTABLE}" "${test}")
   endif()
 endforeach()
