@@ -10,7 +10,7 @@ function(add_test_to_script _name _executable _test)
       "
 set(_wd \"${BINARY_DIR}/${_name}.\${_counter}\")
 add_test(${_name}.setup    ${CMAKE_COMMAND} -E   make_directory \"\${_wd}\")
-add_test(${_name}.teardown ${CMAKE_COMMAND} -E remove_directory \"\${_wd}\")
+add_test(${_name}.cleanup  ${CMAKE_COMMAND} -E remove_directory \"\${_wd}\")
 add_test(${_name}          ${CMAKE_COMMAND} -E env
          --unset=LANG --unset=LC_ALL --unset=LC_COLLATE --unset=LC_CTYPE
          --unset=LC_MESSAGES --unset=LC_MONETARY --unset=LC_NUMERIC
@@ -19,7 +19,7 @@ add_test(${_name}          ${CMAKE_COMMAND} -E env
 set_tests_properties(${_name} PROPERTIES WORKING_DIRECTORY \"\${_wd}\")
 
 set_tests_properties(${_name}.setup     PROPERTIES FIXTURES_SETUP    ${_name}.f)
-set_tests_properties(${_name}.teardown  PROPERTIES FIXTURES_CLEANUP  ${_name}.f)
+set_tests_properties(${_name}.cleanup   PROPERTIES FIXTURES_CLEANUP  ${_name}.f)
 set_tests_properties(${_name}           PROPERTIES FIXTURES_REQUIRED ${_name}.f)
 
 math(EXPR _counter \"\${_counter}+1\")
