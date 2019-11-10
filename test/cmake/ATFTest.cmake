@@ -22,6 +22,8 @@ function(atf_discover_tests _target)
                              "TEST_EXECUTABLE=$<TARGET_FILE:${_target}>"
                              -D
                              "CTEST_FILE=${ctest_tests_file}"
+                             -D
+                             "BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
                              -P
                              "${_ATF_DISCOVER_TESTS_SCRIPT}"
                      VERBATIM)

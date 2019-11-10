@@ -12,11 +12,15 @@
 
 #include <unistd.h>
 
+/**/
+
 struct atf_tc_s;
 typedef struct atf_tc_s atf_tc_t;
 struct atf_tc_s {
 	char const *name;
 	void (*test_func)(atf_tc_t const *);
+	char const *variables[128];
+	size_t variables_size;
 	STAILQ_ENTRY(atf_tc_s) entries;
 };
 
@@ -44,6 +48,7 @@ enum microatf_error_code {
 	MICROATF_ERROR_ARGUMENT_PARSING,
 	MICROATF_ERROR_NO_MATCHING_TEST_CASE,
 	MICROATF_ERROR_RESULT_FILE,
+	MICROATF_ERROR_TOO_MANY_VARIABLES,
 };
 
 /**/
@@ -152,10 +157,13 @@ microatf_tp_main(int argc, char **argv,
 
 	bool list_tests = false;
 	char const *test_case_name = NULL;
-	char const *result_file_path = "/dev/stdout";
+	char const *result_file_path = NULL;
+	char const *srcdir_path = NULL;
+	char const *variables[128];
+	size_t variables_size = 0;
 
 	int ch;
-	while ((ch = getopt(argc, argv, "lr:v:")) != -1) {
+	while ((ch = getopt(argc, argv, "lr:s:v:")) != -1) {
 		switch (ch) {
 		case 'l':
 			list_tests = true;
@@ -163,8 +171,16 @@ microatf_tp_main(int argc, char **argv,
 		case 'r':
 			result_file_path = optarg;
 			break;
+		case 's':
+			srcdir_path = optarg;
+			break;
 		case 'v':
-			// Ignore all variables for now.
+			if (variables_size == 128) {
+				ec = MICROATF_ERROR_TOO_MANY_VARIABLES;
+				goto out;
+			}
+			variables[variables_size] = optarg;
+			++variables_size;
 			break;
 		case '?':
 		default:
@@ -235,7 +251,8 @@ microatf_tp_main(int argc, char **argv,
 	bool do_close_result_file = false;
 	FILE *result_file;
 
-	if (strcmp(result_file_path, "/dev/stdout") == 0) {
+	if (!result_file_path ||
+	    strcmp(result_file_path, "/dev/stdout") == 0) {
 		result_file = stdout;
 	} else if (strcmp(result_file_path, "/dev/stderr") == 0) {
 		result_file = stderr;
@@ -256,6 +273,11 @@ microatf_tp_main(int argc, char **argv,
 	    .do_close_result_file = do_close_result_file,
 	    .test_case = matching_tc,
 	};
+
+	for (size_t i = 0; i < variables_size; ++i) {
+		matching_tc->variables[i] = variables[i];
+	}
+	matching_tc->variables_size = variables_size;
 
 	matching_tc->test_func(matching_tc);
 
