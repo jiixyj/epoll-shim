@@ -4,6 +4,7 @@
 #include <sys/queue.h>
 
 #include <errno.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,22 +48,73 @@ enum microatf_error_code {
 
 /**/
 
+typedef struct {
+	FILE *result_file;
+	bool do_close_result_file;
+	atf_tc_t *test_case;
+} microatf_context_t;
+
+static microatf_context_t microatf_context;
+
+static inline void
+microatf_context_write_result(microatf_context_t *context, char const *result,
+    char const *reason, ...)
+{
+	fprintf(context->result_file, "%s", result);
+
+	if (reason) {
+		fprintf(context->result_file, ": ");
+
+		va_list args;
+		va_start(args, reason);
+		vfprintf(context->result_file, reason, args);
+		va_end(args);
+	}
+
+	fprintf(context->result_file, "\n");
+
+	if (context->do_close_result_file) {
+		fclose(context->result_file);
+	}
+}
+
+/**/
+
 #define ATF_REQUIRE(expression)                                               \
 	do {                                                                  \
 		if (!(expression)) {                                          \
-			fprintf(stderr, "%s\n", #expression "not met");       \
-			abort();                                              \
+			microatf_context_write_result(&microatf_context,      \
+			    "failed", "%s:%d: %s", __FILE__, __LINE__,        \
+			    #expression " not met");                          \
+			exit(EXIT_FAILURE);                                   \
+		}                                                             \
+	} while (0)
+
+#define ATF_REQUIRE_EQ(expected, actual)                                      \
+	do {                                                                  \
+		if ((expected) != (actual)) {                                 \
+			microatf_context_write_result(&microatf_context,      \
+			    "failed", "%s:%d: %s != %s", __FILE__, __LINE__,  \
+			    #expected, #actual);                              \
+			exit(EXIT_FAILURE);                                   \
 		}                                                             \
 	} while (0)
 
 #define ATF_REQUIRE_ERRNO(exp_errno, bool_expr)                               \
 	do {                                                                  \
-		ATF_REQUIRE(bool_expr);                                       \
+		if (!(bool_expr)) {                                           \
+			microatf_context_write_result(&microatf_context,      \
+			    "failed", "%s:%d: Expected true value in %s\n",   \
+			    __FILE__, __LINE__, #bool_expr);                  \
+			exit(EXIT_FAILURE);                                   \
+		}                                                             \
 		int ec = errno;                                               \
 		if (ec != (exp_errno)) {                                      \
-			fprintf(stderr, "Expected errno %d, got %d, in %s\n", \
-			    exp_errno, ec, #bool_expr);                       \
-			abort();                                              \
+			microatf_context_write_result(&microatf_context,      \
+			    "failed",                                         \
+			    "%s:%d: Expected errno %d, got %d, in %s\n",      \
+			    __FILE__, __LINE__, exp_errno, ec, #bool_expr);   \
+			exit(EXIT_FAILURE);                                   \
 		}                                                             \
 	} while (0)
 
@@ -199,15 +251,17 @@ microatf_tp_main(int argc, char **argv,
 
 	/* Run the test case. */
 
+	microatf_context = (microatf_context_t){
+	    .result_file = result_file,
+	    .do_close_result_file = do_close_result_file,
+	    .test_case = matching_tc,
+	};
+
 	matching_tc->test_func(matching_tc);
 
 	/**/
 
-	fprintf(result_file, "passed\n");
-
-	if (do_close_result_file) {
-		fclose(result_file);
-	}
+	microatf_context_write_result(&microatf_context, "passed", NULL);
 
 out:
 	return ec ? 1 : 0;
