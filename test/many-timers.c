@@ -211,7 +211,7 @@ main()
 		fprintf(stderr, "line %d: %ld/%ld\n", __LINE__, /**/
 		    (long)e.tv_sec, (long)e.tv_nsec);
 		REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
-		    e.tv_nsec < 400000000);
+		    e.tv_nsec < 200000000);
 
 #ifndef __linux__
 		REQUIRE(is_fast_timer(timerfd));
@@ -256,7 +256,7 @@ main()
 		fprintf(stderr, "line %d: %ld/%ld\n", __LINE__, /**/
 		    (long)e.tv_sec, (long)e.tv_nsec);
 		REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 300000000 &&
-		    e.tv_nsec < 550000000);
+		    e.tv_nsec < 350000000);
 
 		time = (struct itimerspec){
 		    .it_value.tv_sec = 1,
