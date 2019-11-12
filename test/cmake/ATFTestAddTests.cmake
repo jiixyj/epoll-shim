@@ -4,25 +4,28 @@
 
 set(script "set(_counter 1)")
 
-function(add_test_to_script _name _executable _test)
+function(add_test_to_script _name _executable _test _vars)
+
+  # default timeout
+  set(_timeout 300)
+
+  foreach(line IN LISTS _vars)
+    if(line MATCHES "^(.*): (.*)$")
+      if(CMAKE_MATCH_1 STREQUAL "timeout")
+        set(_timeout "${CMAKE_MATCH_2}")
+      endif()
+    endif()
+  endforeach()
 
   set(_testscript
       "
-set(_wd \"${BINARY_DIR}/${_name}.\${_counter}\")
-add_test(${_name}.setup    ${CMAKE_COMMAND} -E   make_directory \"\${_wd}\")
-add_test(${_name}.cleanup  ${CMAKE_COMMAND} -E remove_directory \"\${_wd}\")
-add_test(${_name}          ${CMAKE_COMMAND} -E env
-         --unset=LANG --unset=LC_ALL --unset=LC_COLLATE --unset=LC_CTYPE
-         --unset=LC_MESSAGES --unset=LC_MONETARY --unset=LC_NUMERIC
-         --unset=LC_TIME
-         HOME=\"\${_wd}\" TMPDIR=\"\${_wd}\" TZ=UTC ${_executable} ${_test})
-set_tests_properties(${_name} PROPERTIES WORKING_DIRECTORY \"\${_wd}\")
-
-set_tests_properties(${_name}.setup     PROPERTIES FIXTURES_SETUP    ${_name}.f)
-set_tests_properties(${_name}.cleanup   PROPERTIES FIXTURES_CLEANUP  ${_name}.f)
-set_tests_properties(${_name}           PROPERTIES FIXTURES_REQUIRED ${_name}.f)
-
-math(EXPR _counter \"\${_counter}+1\")
+add_test(${_name} ${CMAKE_COMMAND}
+          -D \"TEST_FOLDER_NAME=${_name}\"
+          -D \"TEST_EXECUTABLE=${_executable}\"
+          -D \"TEST_NAME=${_test}\"
+          -D \"BINARY_DIR=${BINARY_DIR}\"
+          -D \"TIMEOUT=${_timeout}\"
+          -P \"${TEST_RUN_SCRIPT}\")
 ")
 
   set(script
@@ -45,17 +48,34 @@ if(NOT ${result} EQUAL 0)
   string(REPLACE "\n" "\n    " output "${output}")
   message(
     FATAL_ERROR
-      "Error running test executable.\n" "  Path: '${TEST_EXECUTABLE}'\n"
-      "  Result: ${result}\n" "  Output:\n" "    ${output}\n")
+      "Error running test executable.\n" #
+      "  Path: '${TEST_EXECUTABLE}'\n" #
+      "  Result: ${result}\n" #
+      "  Output:\n" #
+      "    ${output}\n")
 endif()
 
 string(REPLACE "\n" ";" output "${output}")
 
+macro(handle_current_tc)
+  if(NOT _current_tc STREQUAL "")
+    add_test_to_script("${TEST_TARGET}.${_current_tc}" "${TEST_EXECUTABLE}"
+                       "${_current_tc}" "${_current_tc_vars}")
+    set(_current_tc_vars "")
+  endif()
+endmacro()
+
+set(_current_tc "")
+set(_current_tc_vars "")
 foreach(line ${output})
-  if(line MATCHES "^ident: ")
-    string(REGEX REPLACE "^ident: " "" test "${line}")
-    add_test_to_script("${TEST_TARGET}.${test}" "${TEST_EXECUTABLE}" "${test}")
+  if(line MATCHES "^ident: (.*)$")
+    handle_current_tc()
+    set(_current_tc "${CMAKE_MATCH_1}")
+  elseif(line MATCHES "^(.*): (.*)$")
+    list(APPEND _current_tc_vars "${line}")
   endif()
 endforeach()
+
+handle_current_tc()
 
 file(WRITE "${CTEST_FILE}" "${script}")

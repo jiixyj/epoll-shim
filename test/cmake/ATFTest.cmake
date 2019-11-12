@@ -2,8 +2,7 @@
 #
 # See `Copyright.txt` for license details.
 
-set(_ATF_DISCOVER_TESTS_SCRIPT
-    "${CMAKE_CURRENT_LIST_DIR}/ATFTestAddTests.cmake")
+set(_ATF_SCRIPT_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
 function(atf_discover_tests _target)
   set(ctest_file_base "${CMAKE_CURRENT_BINARY_DIR}/${_target}")
@@ -19,7 +18,8 @@ function(atf_discover_tests _target)
       -D "TEST_EXECUTABLE=$<TARGET_FILE:${_target}>" #
       -D "CTEST_FILE=${ctest_tests_file}" #
       -D "BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}" #
-      -P "${_ATF_DISCOVER_TESTS_SCRIPT}"
+      -D "TEST_RUN_SCRIPT=${_ATF_SCRIPT_DIR}/ATFRunTest.cmake" #
+      -P "${_ATF_SCRIPT_DIR}/ATFTestAddTests.cmake" #
     VERBATIM)
 
   file(

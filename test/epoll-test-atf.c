@@ -5,6 +5,7 @@
 #include <sys/event.h>
 
 #include <errno.h>
+#include <signal.h>
 #include <stdlib.h>
 
 #include <dirent.h>
@@ -49,6 +50,32 @@ ATF_TC_BODY(atf__environment, tc)
 	ATF_REQUIRE(strcmp(getenv("TZ"), "UTC") == 0);
 }
 
+ATF_TC(atf__timeout);
+ATF_TC_HEAD(atf__timeout, tc)
+{
+	atf_tc_set_md_var(tc, "timeout", "3");
+}
+ATF_TC_BODY(atf__timeout, tc)
+{
+	atf_tc_expect_timeout("sleep should take longer than 3s");
+	sleep(5);
+}
+
+ATF_TC_WITHOUT_HEAD(atf__exit_code);
+ATF_TC_BODY(atf__exit_code, tc)
+{
+	atf_tc_expect_exit(42, "should exit with code 42");
+	sleep(1);
+	exit(42);
+}
+
+ATF_TC_WITHOUT_HEAD(atf__signal);
+ATF_TC_BODY(atf__signal, tc)
+{
+	atf_tc_expect_signal(SIGHUP, "should exit by SIGHUP");
+	kill(getpid(), SIGHUP);
+}
+
 ATF_TC_WITHOUT_HEAD(epoll__simple);
 ATF_TC_BODY(epoll__simple, tc)
 {
@@ -77,6 +104,9 @@ ATF_TC_BODY(epoll__invalid_op, tc)
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, atf__environment);
+	ATF_TP_ADD_TC(tp, atf__timeout);
+	ATF_TP_ADD_TC(tp, atf__exit_code);
+	ATF_TP_ADD_TC(tp, atf__signal);
 	ATF_TP_ADD_TC(tp, epoll__simple);
 	ATF_TP_ADD_TC(tp, epoll__invalid_op);
 
