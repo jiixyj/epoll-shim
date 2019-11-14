@@ -63,6 +63,13 @@ ATF_TC_BODY(atf__timeout, tc)
 	sleep(5);
 }
 
+ATF_TC_WITHOUT_HEAD(atf__checkfail);
+ATF_TC_BODY(atf__checkfail, tc)
+{
+	atf_tc_expect_fail("this should fail");
+	ATF_CHECK(4 == 5);
+}
+
 #ifndef USE_MICROATF
 ATF_TC_WITHOUT_HEAD(atf__exit_code);
 ATF_TC_BODY(atf__exit_code, tc)
@@ -109,6 +116,7 @@ ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, atf__environment);
 	ATF_TP_ADD_TC(tp, atf__timeout);
+	ATF_TP_ADD_TC(tp, atf__checkfail);
 #ifndef USE_MICROATF
 	ATF_TP_ADD_TC(tp, atf__exit_code);
 	ATF_TP_ADD_TC(tp, atf__signal);
