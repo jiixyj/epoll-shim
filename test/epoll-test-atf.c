@@ -10,8 +10,6 @@
 
 #include <dirent.h>
 
-#define USE_MICROATF
-
 static int
 lowest_fd(void)
 {
@@ -70,7 +68,6 @@ ATF_TC_BODY(atf__checkfail, tc)
 	ATF_CHECK(4 == 5);
 }
 
-#ifndef USE_MICROATF
 ATF_TC_WITHOUT_HEAD(atf__exit_code);
 ATF_TC_BODY(atf__exit_code, tc)
 {
@@ -85,7 +82,6 @@ ATF_TC_BODY(atf__signal, tc)
 	atf_tc_expect_signal(SIGHUP, "should exit by SIGHUP");
 	kill(getpid(), SIGHUP);
 }
-#endif
 
 ATF_TC_WITHOUT_HEAD(epoll__simple);
 ATF_TC_BODY(epoll__simple, tc)
@@ -117,10 +113,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, atf__environment);
 	ATF_TP_ADD_TC(tp, atf__timeout);
 	ATF_TP_ADD_TC(tp, atf__checkfail);
-#ifndef USE_MICROATF
 	ATF_TP_ADD_TC(tp, atf__exit_code);
 	ATF_TP_ADD_TC(tp, atf__signal);
-#endif
 	ATF_TP_ADD_TC(tp, epoll__simple);
 	ATF_TP_ADD_TC(tp, epoll__invalid_op);
 
