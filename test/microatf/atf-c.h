@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,15 +15,80 @@
 
 /**/
 
+typedef errno_t atf_error_t;
+
+enum microatf_error_code {
+	MICROATF_SUCCESS,
+	MICROATF_ERROR_ARGUMENT_PARSING,
+	MICROATF_ERROR_NO_MATCHING_TEST_CASE,
+	MICROATF_ERROR_RESULT_FILE,
+	MICROATF_ERROR_TOO_MANY_VARIABLES,
+};
+
+enum microatf_expect_type {
+	EXPECT_PASS,
+	EXPECT_FAIL,
+	EXPECT_EXIT,
+	EXPECT_SIGNAL,
+	EXPECT_DEATH,
+	EXPECT_TIMEOUT,
+};
+
+/**/
+
 struct atf_tc_s;
 typedef struct atf_tc_s atf_tc_t;
 struct atf_tc_s {
 	char const *name;
-	void (*test_func)(atf_tc_t const *);
-	char const *variables[128];
+	void (*head)(atf_tc_t *);
+	void (*body)(atf_tc_t const *);
+	char const *variables_key[128];
+	char const *variables_value[128];
 	size_t variables_size;
+	char const *config_variables_key[128];
+	char const *config_variables_value[128];
+	size_t config_variables_size;
+	enum microatf_expect_type expect;
 	STAILQ_ENTRY(atf_tc_s) entries;
 };
+
+static inline atf_error_t
+atf_tc_set_md_var(atf_tc_t *tc, char const *key, char const *value, ...)
+{
+	size_t key_length = strlen(key);
+
+	for (size_t i = 0; i < tc->variables_size; ++i) {
+		if (strncmp(tc->variables_key[i], key, key_length) == 0) {
+			tc->variables_value[i] = value;
+			return MICROATF_SUCCESS;
+		}
+	}
+
+	if (tc->variables_size == 128) {
+		return MICROATF_ERROR_TOO_MANY_VARIABLES;
+	}
+
+	tc->variables_key[tc->variables_size] = key;
+	tc->variables_value[tc->variables_size] = value;
+
+	++tc->variables_size;
+
+	return MICROATF_SUCCESS;
+}
+
+static inline const char *
+atf_tc_get_md_var(atf_tc_t const *tc, const char *key)
+{
+	size_t key_length = strlen(key);
+
+	for (size_t i = 0; i < tc->variables_size; ++i) {
+		if (strncmp(tc->variables_key[i], key, key_length) == 0) {
+			return tc->variables_value[i];
+		}
+	}
+
+	return NULL;
+}
 
 /**/
 
@@ -41,18 +107,6 @@ atf_tp_init(atf_tp_t *tp)
 
 /**/
 
-typedef errno_t atf_error_t;
-
-enum microatf_error_code {
-	MICROATF_SUCCESS,
-	MICROATF_ERROR_ARGUMENT_PARSING,
-	MICROATF_ERROR_NO_MATCHING_TEST_CASE,
-	MICROATF_ERROR_RESULT_FILE,
-	MICROATF_ERROR_TOO_MANY_VARIABLES,
-};
-
-/**/
-
 typedef struct {
 	FILE *result_file;
 	bool do_close_result_file;
@@ -65,6 +119,15 @@ static inline void
 microatf_context_write_result(microatf_context_t *context, char const *result,
     char const *reason, ...)
 {
+	if (!context->result_file) {
+		return;
+	}
+
+	context->result_file = freopen(NULL, "w", context->result_file);
+	if (!context->result_file) {
+		return;
+	}
+
 	fprintf(context->result_file, "%s", result);
 
 	if (reason) {
@@ -77,10 +140,49 @@ microatf_context_write_result(microatf_context_t *context, char const *result,
 	}
 
 	fprintf(context->result_file, "\n");
+	fflush(context->result_file);
+}
 
-	if (context->do_close_result_file) {
+static inline void
+microatf_context_exit(microatf_context_t *context, int exit_code)
+{
+	if (context->do_close_result_file && context->result_file) {
 		fclose(context->result_file);
+		context->result_file = NULL;
 	}
+
+	exit(exit_code);
+}
+
+/**/
+static inline void
+microatf_context_validate_expect(microatf_context_t *context)
+{
+	if (context->test_case->expect == EXPECT_FAIL) {
+		// TODO(jan): Add fail logic here.
+		microatf_context_write_result(context, "failed",
+		    "Test case continued");
+		microatf_context_exit(context, EXIT_FAILURE);
+	} else if (context->test_case->expect) {
+		microatf_context_write_result(context, "failed",
+		    "Test case continued");
+		microatf_context_exit(context, EXIT_FAILURE);
+	}
+}
+
+/**/
+
+static inline void
+atf_tc_expect_timeout(const char *msg, ...)
+{
+	microatf_context_validate_expect(&microatf_context);
+	microatf_context.test_case->expect = EXPECT_TIMEOUT;
+
+	va_list args;
+	va_start(args, msg);
+	microatf_context_write_result(&microatf_context, "expected_timeout",
+	    msg, args);
+	va_end(args);
 }
 
 /**/
@@ -91,7 +193,8 @@ microatf_context_write_result(microatf_context_t *context, char const *result,
 			microatf_context_write_result(&microatf_context,      \
 			    "failed", "%s:%d: %s", __FILE__, __LINE__,        \
 			    #expression " not met");                          \
-			exit(EXIT_FAILURE);                                   \
+			microatf_context_exit(&microatf_context,              \
+			    EXIT_FAILURE);                                    \
 		}                                                             \
 	} while (0)
 
@@ -101,7 +204,8 @@ microatf_context_write_result(microatf_context_t *context, char const *result,
 			microatf_context_write_result(&microatf_context,      \
 			    "failed", "%s:%d: %s != %s", __FILE__, __LINE__,  \
 			    #expected, #actual);                              \
-			exit(EXIT_FAILURE);                                   \
+			microatf_context_exit(&microatf_context,              \
+			    EXIT_FAILURE);                                    \
 		}                                                             \
 	} while (0)
 
@@ -111,7 +215,8 @@ microatf_context_write_result(microatf_context_t *context, char const *result,
 			microatf_context_write_result(&microatf_context,      \
 			    "failed", "%s:%d: Expected true value in %s\n",   \
 			    __FILE__, __LINE__, #bool_expr);                  \
-			exit(EXIT_FAILURE);                                   \
+			microatf_context_exit(&microatf_context,              \
+			    EXIT_FAILURE);                                    \
 		}                                                             \
 		int ec = errno;                                               \
 		if (ec != (exp_errno)) {                                      \
@@ -119,7 +224,8 @@ microatf_context_write_result(microatf_context_t *context, char const *result,
 			    "failed",                                         \
 			    "%s:%d: Expected errno %d, got %d, in %s\n",      \
 			    __FILE__, __LINE__, exp_errno, ec, #bool_expr);   \
-			exit(EXIT_FAILURE);                                   \
+			microatf_context_exit(&microatf_context,              \
+			    EXIT_FAILURE);                                    \
 		}                                                             \
 	} while (0)
 
@@ -127,8 +233,21 @@ microatf_context_write_result(microatf_context_t *context, char const *result,
 	static void microatf_tc_##tc##_body(atf_tc_t const *);                \
 	static atf_tc_t microatf_tc_##tc = {                                  \
 	    .name = #tc,                                                      \
-	    .test_func = microatf_tc_##tc##_body,                             \
+	    .head = NULL,                                                     \
+	    .body = microatf_tc_##tc##_body,                                  \
 	}
+
+#define ATF_TC(tc)                                                            \
+	static void microatf_tc_##tc##_head(atf_tc_t *);                      \
+	static void microatf_tc_##tc##_body(atf_tc_t const *);                \
+	static atf_tc_t microatf_tc_##tc = {                                  \
+	    .name = #tc,                                                      \
+	    .head = microatf_tc_##tc##_head,                                  \
+	    .body = microatf_tc_##tc##_body,                                  \
+	}
+
+#define ATF_TC_HEAD(tc, tcptr)                                                \
+	static void microatf_tc_##tc##_head(atf_tc_t *tcptr __unused)
 
 #define ATF_TC_BODY(tc, tcptr)                                                \
 	static void microatf_tc_##tc##_body(atf_tc_t const *tcptr __unused)
@@ -146,7 +265,16 @@ microatf_context_write_result(microatf_context_t *context, char const *result,
 
 #define ATF_TP_ADD_TC(tp, tc)                                                 \
 	do {                                                                  \
-		STAILQ_INSERT_TAIL(&tp->tcs, &microatf_tc_##tc, entries);     \
+		atf_tc_t *tst = &microatf_tc_##tc;                            \
+		char const *ident = tst->name;                                \
+		atf_tc_set_md_var(tst, "ident", ident);                       \
+		if (tst->head != NULL) {                                      \
+			tst->head(tst);                                       \
+		}                                                             \
+		if (strcmp(atf_tc_get_md_var(tst, "ident"), ident) != 0) {    \
+			abort();                                              \
+		}                                                             \
+		STAILQ_INSERT_TAIL(&tp->tcs, tst, entries);                   \
 	} while (0)
 
 static inline int
@@ -159,8 +287,8 @@ microatf_tp_main(int argc, char **argv,
 	char const *test_case_name = NULL;
 	char const *result_file_path = NULL;
 	char const *srcdir_path = NULL;
-	char const *variables[128];
-	size_t variables_size = 0;
+	char const *config_variables[128];
+	size_t config_variables_size = 0;
 
 	int ch;
 	while ((ch = getopt(argc, argv, "lr:s:v:")) != -1) {
@@ -175,12 +303,12 @@ microatf_tp_main(int argc, char **argv,
 			srcdir_path = optarg;
 			break;
 		case 'v':
-			if (variables_size == 128) {
+			if (config_variables_size == 128) {
 				ec = MICROATF_ERROR_TOO_MANY_VARIABLES;
 				goto out;
 			}
-			variables[variables_size] = optarg;
-			++variables_size;
+			config_variables[config_variables_size] = optarg;
+			++config_variables_size;
 			break;
 		case '?':
 		default:
@@ -213,8 +341,8 @@ microatf_tp_main(int argc, char **argv,
 	}
 
 	if (list_tests) {
-		printf(
-		    "Content-Type: application/X-atf-tp; version=\"1\"\n\n");
+		printf("Content-Type: application/X-atf-tp; "
+		       "version=\"1\"\n\n");
 
 		bool print_newline = false;
 
@@ -226,7 +354,14 @@ microatf_tp_main(int argc, char **argv,
 			}
 			print_newline = true;
 
-			printf("ident: %s\n", tc->name);
+			for (size_t i = 0; i < tc->variables_size; ++i) {
+				ptrdiff_t key_length =
+				    strchrnul(tc->variables_key[i], '=') -
+				    tc->variables_key[i];
+				printf("%.*s: %s\n", (int)key_length,
+				    tc->variables_key[i],
+				    tc->variables_value[i]);
+			}
 		}
 
 		return 0;
@@ -274,16 +409,26 @@ microatf_tp_main(int argc, char **argv,
 	    .test_case = matching_tc,
 	};
 
-	for (size_t i = 0; i < variables_size; ++i) {
-		matching_tc->variables[i] = variables[i];
+	for (size_t i = 0; i < config_variables_size; ++i) {
+		matching_tc->config_variables_key[i] = config_variables[i];
+		matching_tc->config_variables_value[i] =
+		    strchr(config_variables[i], '=');
+		if (!matching_tc->config_variables_value[i]) {
+			ec = MICROATF_ERROR_ARGUMENT_PARSING;
+			goto out;
+		}
+		++matching_tc->config_variables_value[i];
 	}
-	matching_tc->variables_size = variables_size;
+	matching_tc->config_variables_size = config_variables_size;
 
-	matching_tc->test_func(matching_tc);
+	matching_tc->body(matching_tc);
 
 	/**/
 
+	microatf_context_validate_expect(&microatf_context);
+
 	microatf_context_write_result(&microatf_context, "passed", NULL);
+	microatf_context_exit(&microatf_context, EXIT_SUCCESS);
 
 out:
 	return ec ? 1 : 0;
