@@ -349,8 +349,8 @@ atf_tc_expect_fail(const char *msg, ...)
 	do {                                                                  \
 		if (!(expression)) {                                          \
 			microatf_context_fail_require(&microatf_context,      \
-			    "%s:%d: %s", __FILE__, __LINE__,                  \
-			    #expression " not met");                          \
+			    "%s:%d: %s not met", __FILE__, __LINE__,          \
+			    #expression);                                     \
 		}                                                             \
 	} while (0)
 
@@ -358,8 +358,8 @@ atf_tc_expect_fail(const char *msg, ...)
 	do {                                                                  \
 		if ((expected) != (actual)) {                                 \
 			microatf_context_fail_require(&microatf_context,      \
-			    "%s:%d: %s != %s", __FILE__, __LINE__, #expected, \
-			    #actual);                                         \
+			    "%s:%d: %s != %s", __FILE__, __LINE__, /**/       \
+			    #expected, #actual);                              \
 		}                                                             \
 	} while (0)
 
@@ -375,8 +375,6 @@ atf_tc_expect_fail(const char *msg, ...)
 			microatf_context_fail_require(&microatf_context,      \
 			    "%s:%d: Expected errno %d, got %d, in %s",        \
 			    __FILE__, __LINE__, exp_errno, ec, #bool_expr);   \
-			microatf_context_exit(&microatf_context,              \
-			    EXIT_FAILURE);                                    \
 		}                                                             \
 	} while (0)
 
