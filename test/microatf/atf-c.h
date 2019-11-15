@@ -26,12 +26,12 @@ enum microatf_error_code {
 };
 
 enum microatf_expect_type {
-	EXPECT_PASS,
-	EXPECT_FAIL,
-	EXPECT_EXIT,
-	EXPECT_SIGNAL,
-	EXPECT_DEATH,
-	EXPECT_TIMEOUT,
+	MICROATF_EXPECT_PASS,
+	MICROATF_EXPECT_FAIL,
+	MICROATF_EXPECT_EXIT,
+	MICROATF_EXPECT_SIGNAL,
+	MICROATF_EXPECT_DEATH,
+	MICROATF_EXPECT_TIMEOUT,
 };
 
 /**/
@@ -172,7 +172,7 @@ microatf_context_exit(microatf_context_t *context, int exit_code)
 static inline void
 microatf_context_validate_expect(microatf_context_t *context)
 {
-	if (context->expect == EXPECT_FAIL) {
+	if (context->expect == MICROATF_EXPECT_FAIL) {
 		if (context->expect_fail_count ==
 		    context->expect_previous_fail_count) {
 			microatf_context_write_result(context, "failed", -1,
@@ -190,12 +190,12 @@ microatf_context_validate_expect(microatf_context_t *context)
 static inline void
 microatf_context_pass(microatf_context_t *context)
 {
-	if (context->expect == EXPECT_FAIL) {
+	if (context->expect == MICROATF_EXPECT_FAIL) {
 		microatf_context_write_result(context, "failed", -1,
 		    "Test case was expecting a failure but got a pass "
 		    "instead");
 		microatf_context_exit(context, EXIT_FAILURE);
-	} else if (context->expect == EXPECT_PASS) {
+	} else if (context->expect == MICROATF_EXPECT_PASS) {
 		microatf_context_write_result(&microatf_context, "passed", -1,
 		    NULL);
 		microatf_context_exit(&microatf_context, EXIT_SUCCESS);
@@ -211,7 +211,7 @@ static inline void
 microatf_context_fail_check(microatf_context_t *context, /**/
     char const *msg, ...)
 {
-	if (context->expect == EXPECT_FAIL) {
+	if (context->expect == MICROATF_EXPECT_FAIL) {
 		fprintf(stderr, "*** Expected check failure: ");
 
 		va_list args;
@@ -222,7 +222,7 @@ microatf_context_fail_check(microatf_context_t *context, /**/
 		fprintf(stderr, "\n");
 
 		context->expect_fail_count++;
-	} else if (context->expect == EXPECT_PASS) {
+	} else if (context->expect == MICROATF_EXPECT_PASS) {
 		fprintf(stderr, "*** Check failed: ");
 
 		va_list args;
@@ -251,7 +251,7 @@ static inline void
 microatf_context_fail_require(microatf_context_t *context, /**/
     char const *msg, ...)
 {
-	if (context->expect == EXPECT_FAIL) {
+	if (context->expect == MICROATF_EXPECT_FAIL) {
 		va_list args;
 		va_start(args, msg);
 		microatf_context_write_result_pack(context, /**/
@@ -259,7 +259,7 @@ microatf_context_fail_require(microatf_context_t *context, /**/
 		va_end(args);
 
 		microatf_context_exit(context, EXIT_SUCCESS);
-	} else if (context->expect == EXPECT_PASS) {
+	} else if (context->expect == MICROATF_EXPECT_PASS) {
 		va_list args;
 		va_start(args, msg);
 		microatf_context_write_result_pack(context, /**/
@@ -287,7 +287,7 @@ static inline void
 atf_tc_expect_timeout(const char *msg, ...)
 {
 	microatf_context_validate_expect(&microatf_context);
-	microatf_context.expect = EXPECT_TIMEOUT;
+	microatf_context.expect = MICROATF_EXPECT_TIMEOUT;
 
 	va_list args;
 	va_start(args, msg);
@@ -300,7 +300,7 @@ static inline void
 atf_tc_expect_exit(const int exitcode, const char *msg, ...)
 {
 	microatf_context_validate_expect(&microatf_context);
-	microatf_context.expect = EXPECT_EXIT;
+	microatf_context.expect = MICROATF_EXPECT_EXIT;
 
 	va_list args;
 	va_start(args, msg);
@@ -313,7 +313,7 @@ static inline void
 atf_tc_expect_signal(const int signal, const char *msg, ...)
 {
 	microatf_context_validate_expect(&microatf_context);
-	microatf_context.expect = EXPECT_SIGNAL;
+	microatf_context.expect = MICROATF_EXPECT_SIGNAL;
 
 	va_list args;
 	va_start(args, msg);
@@ -328,7 +328,7 @@ atf_tc_expect_fail(const char *msg, ...)
 	(void)msg;
 
 	microatf_context_validate_expect(&microatf_context);
-	microatf_context.expect = EXPECT_FAIL;
+	microatf_context.expect = MICROATF_EXPECT_FAIL;
 
 	microatf_context.expect_previous_fail_count =
 	    microatf_context.expect_fail_count;
