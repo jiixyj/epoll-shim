@@ -35,7 +35,7 @@ if(NOT _result_line_length EQUAL 1)
 endif()
 
 
-message(STATUS "result: ${_result}")
+message(STATUS "result: ${_result}, ${_result_line}")
 
 
 #[[
