@@ -224,8 +224,37 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 	event.data.fd = 0;
 
 	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
-	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, 3, 5, &event) < 0);
-	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, 3, 5, NULL) < 0);
+
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_ADD, fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_DEL, fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_MOD, fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, 42, fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_ADD, fd, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_DEL, fd, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_MOD, fd, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, 42, fd, NULL) < 0);
+
+	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_ADD, 42, &event) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_DEL, 42, &event) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_MOD, 42, &event) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, 42, 42, &event) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_ADD, 42, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_DEL, 42, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_MOD, 42, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, 42, 42, NULL) < 0);
+
+	int fd2;
+	ATF_REQUIRE((fd2 = epoll_create1(EPOLL_CLOEXEC)) >= 0);
+
+	ATF_REQUIRE_ERRNO(ENOENT, epoll_ctl(fd, EPOLL_CTL_DEL, fd2, &event) < 0);
+	ATF_REQUIRE_ERRNO(ENOENT, epoll_ctl(fd, EPOLL_CTL_MOD, fd2, &event) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, 42, fd2, &event) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_ADD, fd2, NULL) < 0);
+	ATF_REQUIRE_ERRNO(ENOENT, epoll_ctl(fd, EPOLL_CTL_DEL, fd2, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_MOD, fd2, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, 42, fd2, NULL) < 0);
+
+	ATF_REQUIRE(close(fd2) == 0);
 	ATF_REQUIRE(close(fd) == 0);
 }
 
