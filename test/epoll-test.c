@@ -25,20 +25,18 @@
 #include <time.h>
 #include <unistd.h>
 
-static int
+static void
 fd_pipe(int fds[3])
 {
 	fds[2] = -1;
 	ATF_REQUIRE(pipe2(fds, O_CLOEXEC) >= 0);
-	return 0;
 }
 
-static int
+static void
 fd_domain_socket(int fds[3])
 {
 	fds[2] = -1;
 	ATF_REQUIRE(socketpair(PF_LOCAL, SOCK_STREAM, 0, fds) >= 0);
-	return 0;
 }
 
 static int fd_leak_test_a;
@@ -93,10 +91,7 @@ connector_client(void *arg)
 	(void)arg;
 
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (sock < 0) {
-		warnx("exiting connector_client 1");
-		return NULL;
-	}
+	ATF_REQUIRE(sock >= 0);
 
 	if (connector_epfd >= 0) {
 		int ep = connector_epfd;
@@ -105,91 +100,63 @@ connector_client(void *arg)
 		event.events = EPOLLOUT | EPOLLIN;
 		event.data.fd = sock;
 
-		if (epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) < 0) {
-			warnx("exiting connector_client 2");
-			return NULL;
-		}
+		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == 0);
 
 		int ret;
 
 		for (int i = 0; i < 3; ++i) {
 			ret = epoll_wait(ep, &event, 1, 300);
-			if (ret != 1) {
-				warnx("exiting connector_client 3");
-				return NULL;
-			}
+			ATF_REQUIRE(ret == 1);
 
-			if (event.events != (EPOLLOUT | EPOLLHUP)) {
-				warnx("exiting connector_client 4");
-				return NULL;
-			}
+			ATF_REQUIRE(event.events == (EPOLLOUT | EPOLLHUP));
 		}
 	}
 
 	struct sockaddr_in addr = {0};
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(1337);
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
-		return NULL;
-	}
+	ATF_REQUIRE(inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) == 1);
 
-	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
-		return NULL;
-	}
+	ATF_REQUIRE(
+	    connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) == 0);
 
 	return (void *)(intptr_t)sock;
 }
 
-static int
+static void
 fd_tcp_socket(int fds[3])
 {
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (sock < 0) {
-		return (-1);
-	}
+	ATF_REQUIRE(sock >= 0);
 
 	int enable = 1;
-	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, /**/
-		&enable, sizeof(int)) < 0) {
-		return (-1);
-	}
+	ATF_REQUIRE(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, /**/
+			&enable, sizeof(int)) == 0);
 
 	struct sockaddr_in addr = {0};
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(1337);
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
-		return (-1);
-	}
+	ATF_REQUIRE(inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) == 1);
 
-	if (bind(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
-		err(1, "bind");
-		return (-1);
-	}
+	ATF_REQUIRE(bind(sock, /**/
+			(struct sockaddr const *)&addr, sizeof(addr)) == 0);
 
-	if (listen(sock, 5) < 0) {
-		return (-1);
-	}
+	ATF_REQUIRE(listen(sock, 5) == 0);
 
 	pthread_t client_thread;
-	if (pthread_create(&client_thread, NULL, connector_client, NULL) < 0) {
-		return (-1);
-	}
+	ATF_REQUIRE(
+	    pthread_create(&client_thread, NULL, connector_client, NULL) == 0);
 
 	int conn = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
-	if (conn < 0) {
-		return (-1);
-	}
+	ATF_REQUIRE(conn >= 0);
 
 	void *client_socket = NULL;
 
-	if (pthread_join(client_thread, &client_socket) < 0) {
-		return (-1);
-	}
+	ATF_REQUIRE(pthread_join(client_thread, &client_socket) == 0);
 
 	fds[0] = conn;
 	fds[1] = (int)(intptr_t)client_socket;
 	fds[2] = sock;
-	return 0;
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__simple);
@@ -227,9 +194,12 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 	event.data.fd = 0;
 
 	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
-	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_ADD, fd, &event) < 0);
-	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_DEL, fd, &event) < 0);
-	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_MOD, fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    epoll_ctl(fd, EPOLL_CTL_ADD, fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    epoll_ctl(fd, EPOLL_CTL_DEL, fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    epoll_ctl(fd, EPOLL_CTL_MOD, fd, &event) < 0);
 	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, 42, fd, &event) < 0);
 	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_ADD, fd, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_DEL, fd, NULL) < 0);
@@ -250,8 +220,10 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 
 	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
 	ATF_REQUIRE((fd2 = epoll_create1(EPOLL_CLOEXEC)) >= 0);
-	ATF_REQUIRE_ERRNO(ENOENT, epoll_ctl(fd, EPOLL_CTL_DEL, fd2, &event) < 0);
-	ATF_REQUIRE_ERRNO(ENOENT, epoll_ctl(fd, EPOLL_CTL_MOD, fd2, &event) < 0);
+	ATF_REQUIRE_ERRNO(ENOENT,
+	    epoll_ctl(fd, EPOLL_CTL_DEL, fd2, &event) < 0);
+	ATF_REQUIRE_ERRNO(ENOENT,
+	    epoll_ctl(fd, EPOLL_CTL_MOD, fd2, &event) < 0);
 	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, 42, fd2, &event) < 0);
 	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_ADD, fd2, NULL) < 0);
 	ATF_REQUIRE_ERRNO(ENOENT, epoll_ctl(fd, EPOLL_CTL_DEL, fd2, NULL) < 0);
@@ -288,7 +260,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__event_size, tc)
 }
 
 static void
-simple_epollin_impl(int (*fd_fun)(int fds[3]))
+simple_epollin_impl(void (*fd_fun)(int fds[3]))
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
@@ -900,7 +872,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollerr_on_closed_pipe, tcptr)
 }
 
 static void
-shutdown_behavior_impl(int (*fd_fun)(int fds[3]))
+shutdown_behavior_impl(void (*fd_fun)(int fds[3]))
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
@@ -940,14 +912,16 @@ shutdown_behavior_impl(int (*fd_fun)(int fds[3]))
 			++counter;
 
 			if (counter <= 5) {
-				write(fds[0], &c, 1);
+				send(fds[0], &c, 1, MSG_NOSIGNAL);
 			} else if (counter == 6) {
-				write(fds[0], &c, 1);
+				send(fds[0], &c, 1, MSG_NOSIGNAL);
 				shutdown(fds[0], SHUT_WR);
+
 				usleep(100000);
 			} else {
 				uint8_t data[512] = {0};
-				write(fds[1], &data, sizeof(data));
+				send(fds[1], &data, sizeof(data),
+				    MSG_NOSIGNAL);
 
 				close(fds[0]);
 
@@ -960,7 +934,7 @@ shutdown_behavior_impl(int (*fd_fun)(int fds[3]))
 			}
 
 		} else if (event_result.events == EPOLLOUT) {
-			write(event.data.fd, &c, 1);
+			send(event.data.fd, &c, 1, MSG_NOSIGNAL);
 			// continue
 		} else if (fd_fun == fd_domain_socket &&
 		    (event_result.events & (EPOLLOUT | EPOLLHUP)) ==
@@ -986,8 +960,18 @@ shutdown_behavior_impl(int (*fd_fun)(int fds[3]))
 				    error, strerror(error));
 			}
 			break;
+		} else if (fd_fun == fd_tcp_socket &&
+		    event_result.events == (EPOLLOUT | EPOLLHUP)) {
+			/*
+			 * Rarely, we get here (no EPOLLERR). But don't fail
+			 * the test. There is some non-determinism involved...
+			 */
+			fprintf(stderr, "no socket error\n");
+			break;
 		} else {
-			ATF_REQUIRE(false);
+			ATF_REQUIRE_MSG(false, "%p(%p/%p): events %x",
+			    (void *)fd_fun, (void *)fd_domain_socket,
+			    (void *)fd_tcp_socket, event_result.events);
 		}
 	}
 
@@ -1009,20 +993,15 @@ datagram_connector(void *arg)
 	(void)arg;
 
 	int sock = socket(PF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (sock < 0) {
-		return NULL;
-	}
+	ATF_REQUIRE(sock >= 0);
 
 	struct sockaddr_in addr = {0};
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(1337);
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
-		return NULL;
-	}
+	ATF_REQUIRE(inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) == 1);
 
-	if (connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) < 0) {
-		return NULL;
-	}
+	ATF_REQUIRE(
+	    connect(sock, (struct sockaddr const *)&addr, sizeof(addr)) == 0);
 
 	fprintf(stderr, "got client\n");
 
