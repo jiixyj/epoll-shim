@@ -179,20 +179,43 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 	uint16_t flags;
 	errno_t ec;
 
-	if ((!ev && op != EPOLL_CTL_DEL) ||
-	    (ev &&
-		((ev->events &
-		    ~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLHUP /**/
-			| EPOLLRDHUP | EPOLLERR))
-		    /* the user should really set one of EPOLLIN or EPOLLOUT
-		     * so that EPOLLHUP and EPOLLERR work. Don't make this a
-		     * hard error for now, though. */
-		    /* || !(ev->events & (EPOLLIN | EPOLLOUT)) */))) {
+	if (!ev && op != EPOLL_CTL_DEL) {
+		return EFAULT;
+	}
+
+	if (epollfd->kq == fd2) {
+		return EINVAL;
+	}
+
+	if (ev &&
+	    ((ev->events &
+		~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLHUP /**/
+		    | EPOLLRDHUP | EPOLLERR))
+		/* the user should really set one of EPOLLIN or EPOLLOUT
+		 * so that EPOLLHUP and EPOLLERR work. Don't make this a
+		 * hard error for now, though. */
+		/* || !(ev->events & (EPOLLIN | EPOLLOUT)) */)) {
 		return EINVAL;
 	}
 
 	if (fd2 < 0 || ((uint32_t)fd2 & ~(((uint32_t)1 << KEY_BITS) - 1))) {
 		return EBADF;
+	}
+
+	struct stat statbuf;
+	if (fstat(fd2, &statbuf) < 0) {
+		ec = errno;
+		/* If the fstat fails for some reason we must clear
+		 * internal state to avoid EEXIST errors in future
+		 * calls to epoll_ctl. */
+		(void)kqueue_save_state(epollfd->kq, (uint32_t)fd2, 0);
+		return ec;
+	}
+
+	if (op != EPOLL_CTL_ADD && /**/
+	    op != EPOLL_CTL_DEL && /**/
+	    op != EPOLL_CTL_MOD) {
+		return EINVAL;
 	}
 
 	if ((ec = kqueue_load_state(epollfd->kq, /**/
@@ -248,10 +271,10 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		}
 
 		EV_SET(&kev[0], fd2, EVFILT_READ,
-		    ev->events & EPOLLIN ? EV_ENABLE : EV_DISABLE, 0, 0,
+		    (ev->events & EPOLLIN) ? EV_ENABLE : EV_DISABLE, 0, 0,
 		    ev->data.ptr);
 		EV_SET(&kev[1], fd2, EVFILT_WRITE,
-		    ev->events & EPOLLOUT ? EV_ENABLE : EV_DISABLE, 0, 0,
+		    (ev->events & EPOLLOUT) ? EV_ENABLE : EV_DISABLE, 0, 0,
 		    ev->data.ptr);
 
 #define SET_FLAG(flag)                                                        \
@@ -270,7 +293,7 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 #undef SET_FLAG
 
 	} else {
-		return EINVAL;
+		__builtin_unreachable();
 	}
 
 	for (int i = 0; i < 2; ++i) {
@@ -337,16 +360,6 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 	}
 
 	if (op == EPOLL_CTL_ADD) {
-		struct stat statbuf;
-		if (fstat(fd2, &statbuf) < 0) {
-			ec = errno;
-			/* If the fstat fails for some reason we must clear
-			 * internal state to avoid EEXIST errors in future
-			 * calls to epoll_ctl. */
-			(void)kqueue_save_state(epollfd->kq, (uint32_t)fd2, 0);
-			return ec;
-		}
-
 		if (S_ISFIFO(statbuf.st_mode)) {
 			flags |= KQUEUE_STATE_ISFIFO;
 		} else if (S_ISSOCK(statbuf.st_mode)) {
