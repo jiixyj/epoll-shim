@@ -345,6 +345,19 @@ ATF_TC_BODY(timerfd__expire_five, tc)
 	ATF_REQUIRE(close(fd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(timerfd__gettime_stub);
+ATF_TC_BODY(timerfd__gettime_stub, tc)
+{
+	struct itimerspec curr_value;
+
+	int fd = timerfd_create(CLOCK_MONOTONIC, 0);
+	ATF_REQUIRE(fd >= 0);
+
+	ATF_REQUIRE_ERRNO(ENOSYS, timerfd_gettime(fd, &curr_value) < 0);
+
+	ATF_REQUIRE(close(fd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -354,6 +367,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__reset_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__reenable_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__expire_five);
+	ATF_TP_ADD_TC(tp, timerfd__gettime_stub);
 
 	return atf_no_error();
 }

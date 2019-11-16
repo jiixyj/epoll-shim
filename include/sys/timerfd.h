@@ -5,22 +5,20 @@
 extern "C" {
 #endif
 
-#include <fcntl.h>
 #include <time.h>
+#include <fcntl.h>
 
 #define TFD_NONBLOCK O_NONBLOCK
 #define TFD_CLOEXEC O_CLOEXEC
 
 #define TFD_TIMER_ABSTIME 1
+#define TFD_TIMER_CANCEL_ON_SET (1 << 1)
 
 struct itimerspec;
 
-int timerfd_create(int /*clockid*/, int /*flags*/);
-int timerfd_settime(int /*fd*/, int /*flags*/,
-    const struct itimerspec * /*new*/, struct itimerspec * /*old*/);
-#if 0
+int timerfd_create(int, int);
+int timerfd_settime(int, int, const struct itimerspec *, struct itimerspec *);
 int timerfd_gettime(int, struct itimerspec *);
-#endif
 
 
 #ifndef SHIM_SYS_SHIM_HELPERS
