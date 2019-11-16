@@ -336,46 +336,50 @@ atf_tc_expect_fail(const char *msg, ...)
 
 /**/
 
-#define ATF_CHECK(expression)                                                 \
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+
+#define ATF_REQUIRE_MSG(expression, fmt, ...)                                 \
 	do {                                                                  \
 		if (!(expression)) {                                          \
-			microatf_context_fail_check(&microatf_context,        \
-			    "%s:%d: %s not met", __FILE__, __LINE__,          \
-			    #expression);                                     \
+			microatf_context_fail_require(&microatf_context,      \
+			    "%s:%d: " fmt, __FILE__, __LINE__,                \
+			    ##__VA_ARGS__);                                   \
 		}                                                             \
 	} while (0)
+
+#define ATF_CHECK_MSG(expression, fmt, ...)                                   \
+	do {                                                                  \
+		if (!(expression)) {                                          \
+			microatf_context_fail_require(&microatf_context,      \
+			    "%s:%d: " fmt, __FILE__, __LINE__,                \
+			    ##__VA_ARGS__);                                   \
+		}                                                             \
+	} while (0)
+
+#pragma clang diagnostic pop
 
 #define ATF_REQUIRE(expression)                                               \
-	do {                                                                  \
-		if (!(expression)) {                                          \
-			microatf_context_fail_require(&microatf_context,      \
-			    "%s:%d: %s not met", __FILE__, __LINE__,          \
-			    #expression);                                     \
-		}                                                             \
-	} while (0)
+	ATF_REQUIRE_MSG((expression), "%s not met", #expression)
+
+#define ATF_CHECK(expression)                                                 \
+	ATF_CHECK_MSG((expression), "%s not met", #expression)
 
 #define ATF_REQUIRE_EQ(expected, actual)                                      \
-	do {                                                                  \
-		if ((expected) != (actual)) {                                 \
-			microatf_context_fail_require(&microatf_context,      \
-			    "%s:%d: %s != %s", __FILE__, __LINE__, /**/       \
-			    #expected, #actual);                              \
-		}                                                             \
-	} while (0)
+	ATF_REQUIRE_MSG((expected) == (actual), "%s != %s", #expected, #actual)
+
+#define ATF_CHECK_EQ(expected, actual)                                        \
+	ATF_CHECK_MSG((expected) == (actual), "%s != %s", #expected, #actual)
 
 #define ATF_REQUIRE_ERRNO(exp_errno, bool_expr)                               \
 	do {                                                                  \
-		if (!(bool_expr)) {                                           \
-			microatf_context_fail_require(&microatf_context,      \
-			    "%s:%d: Expected true value in %s", /**/          \
-			    __FILE__, __LINE__, #bool_expr);                  \
-		}                                                             \
+		ATF_REQUIRE_MSG((bool_expr),	 /**/                         \
+		    "Expected true value in %s", /**/                         \
+		    #bool_expr);                                              \
 		int ec = errno;                                               \
-		if (ec != (exp_errno)) {                                      \
-			microatf_context_fail_require(&microatf_context,      \
-			    "%s:%d: Expected errno %d, got %d, in %s",        \
-			    __FILE__, __LINE__, exp_errno, ec, #bool_expr);   \
-		}                                                             \
+		ATF_REQUIRE_MSG(ec == (exp_errno),	/**/                  \
+		    "Expected errno %d, got %d, in %s", /**/                  \
+		    (exp_errno), ec, #bool_expr);                             \
 	} while (0)
 
 #define ATF_TC_WITHOUT_HEAD(tc)                                               \
