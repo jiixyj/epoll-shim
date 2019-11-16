@@ -7,8 +7,32 @@
 #include <sys/stat.h>
 
 #include <assert.h>
+#include <stdlib.h>
 
 #include <poll.h>
+
+RegisteredFDsNode *
+registered_fds_node_create(int fd, struct epoll_event *ev)
+{
+	RegisteredFDsNode *node;
+
+	node = malloc(sizeof(*node));
+	if (!node) {
+		return NULL;
+	}
+
+	node->fd = fd;
+	node->flags = 0;
+	node->data = ev->data;
+
+	return node;
+}
+
+void
+registered_fds_node_destroy(RegisteredFDsNode *node)
+{
+	free(node);
+}
 
 static int
 fd_cmp(RegisteredFDsNode *e1, RegisteredFDsNode *e2)
@@ -47,90 +71,18 @@ epollfd_ctx_terminate(EpollFDCtx *epollfd)
 	ec_local = pthread_mutex_destroy(&epollfd->mutex);
 	ec = ec ? ec : ec_local;
 
+	RegisteredFDsNode *np;
+	RegisteredFDsNode *np_temp;
+	RB_FOREACH_SAFE(np, registered_fds_set_, &epollfd->registered_fds,
+	    np_temp)
+	{
+		RB_REMOVE(registered_fds_set_, &epollfd->registered_fds, np);
+		registered_fds_node_destroy(np);
+	}
+
 	return ec;
 }
 
-#define KEY_BITS (20)
-#define VAL_BITS (32 - KEY_BITS)
-static errno_t
-kqueue_save_state(int kq, uint32_t key, uint16_t val)
-{
-	struct kevent kev[VAL_BITS * 2];
-	int n = 0;
-	int i;
-	int oe, ec;
-
-	if ((key & ~(((uint32_t)1 << KEY_BITS) - 1)) ||
-	    (val & ~(((uint16_t)1 << VAL_BITS) - 1))) {
-		return (EINVAL);
-	}
-
-	for (i = 0; i < VAL_BITS; ++i) {
-		uint32_t info_bit = (uint32_t)1 << i;
-		uint32_t kev_key = key | (info_bit << KEY_BITS);
-		EV_SET(&kev[n], kev_key, EVFILT_USER, EV_ADD, 0, 0, 0);
-		++n;
-		if (!(val & info_bit)) {
-			EV_SET(&kev[n], kev_key, EVFILT_USER, /**/
-			    EV_DELETE, 0, 0, 0);
-			++n;
-		}
-	}
-
-	oe = errno;
-	if ((n = kevent(kq, kev, n, NULL, 0, NULL)) < 0) {
-		ec = errno;
-		errno = oe;
-		return (ec);
-	}
-
-	return (0);
-}
-
-static errno_t
-kqueue_load_state(int kq, uint32_t key, uint16_t *val)
-{
-	struct kevent kev[VAL_BITS];
-	int n = 0;
-	int i;
-	uint16_t nval = 0;
-	int oe, ec;
-
-	if ((key & ~(((uint32_t)1 << KEY_BITS) - 1))) {
-		return (EINVAL);
-	}
-
-	for (i = 0; i < VAL_BITS; ++i) {
-		uint32_t info_bit = (uint32_t)1 << i;
-		uint32_t kev_key = key | (info_bit << KEY_BITS);
-		EV_SET(&kev[i], kev_key, EVFILT_USER, EV_RECEIPT, 0, 0, 0);
-	}
-
-	oe = errno;
-	if ((n = kevent(kq, kev, VAL_BITS, kev, VAL_BITS, NULL)) < 0) {
-		ec = errno;
-		errno = oe;
-		return (ec);
-	}
-
-	for (i = 0; i < n; ++i) {
-		if (!(kev[i].flags & EV_ERROR)) {
-			return (EINVAL);
-		}
-
-		if (kev[i].data == 0) {
-			nval |= (uint32_t)1 << i;
-		} else if (kev[i].data != ENOENT) {
-			return (EINVAL);
-		}
-	}
-
-	*val = nval;
-
-	return (0);
-}
-
-#define KQUEUE_STATE_REGISTERED 0x1u
 #define KQUEUE_STATE_EPOLLIN 0x2u
 #define KQUEUE_STATE_EPOLLOUT 0x4u
 #define KQUEUE_STATE_EPOLLRDHUP 0x8u
@@ -141,7 +93,6 @@ kqueue_load_state(int kq, uint32_t key, uint16_t *val)
 static int
 is_not_yet_connected_stream_socket(int s)
 {
-
 	{
 		int val;
 		socklen_t length = sizeof(int);
@@ -175,9 +126,8 @@ static errno_t
 epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
     struct epoll_event *ev)
 {
+	errno_t ec = 0;
 	struct kevent kev[2];
-	uint16_t flags;
-	errno_t ec;
 
 	if (!ev && op != EPOLL_CTL_DEL) {
 		return EFAULT;
@@ -198,17 +148,27 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		return EINVAL;
 	}
 
-	if (fd2 < 0 || ((uint32_t)fd2 & ~(((uint32_t)1 << KEY_BITS) - 1))) {
-		return EBADF;
+	RegisteredFDsNode *fd2_node;
+	{
+		RegisteredFDsNode find;
+		find.fd = fd2;
+
+		fd2_node = RB_FIND(registered_fds_set_, /**/
+		    &epollfd->registered_fds, &find);
 	}
 
 	struct stat statbuf;
 	if (fstat(fd2, &statbuf) < 0) {
 		ec = errno;
-		/* If the fstat fails for some reason we must clear
+
+		/* If the fstat fails for any reason we must clear
 		 * internal state to avoid EEXIST errors in future
 		 * calls to epoll_ctl. */
-		(void)kqueue_save_state(epollfd->kq, (uint32_t)fd2, 0);
+		if (fd2_node) {
+			op = EPOLL_CTL_DEL;
+			goto out;
+		}
+
 		return ec;
 	}
 
@@ -218,29 +178,37 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		return EINVAL;
 	}
 
-	if ((ec = kqueue_load_state(epollfd->kq, /**/
-		 (uint32_t)fd2, &flags)) != 0) {
-		return ec;
-	}
+	uint16_t new_flags;
 
 	if (op == EPOLL_CTL_ADD) {
-		if (flags & KQUEUE_STATE_REGISTERED) {
+		if (fd2_node) {
 			return EEXIST;
+		}
+
+		new_flags = 0;
+
+		if (S_ISFIFO(statbuf.st_mode)) {
+			new_flags |= KQUEUE_STATE_ISFIFO;
+		} else if (S_ISSOCK(statbuf.st_mode)) {
+			new_flags |= KQUEUE_STATE_ISSOCK;
+		}
+
+		fd2_node = registered_fds_node_create(fd2, ev);
+		if (!fd2_node) {
+			return ENOMEM;
 		}
 
 		EV_SET(&kev[0], fd2, EVFILT_READ,
 		    EV_ADD | (ev->events & EPOLLIN ? 0 : EV_DISABLE), 0, 0,
-		    ev->data.ptr);
+		    fd2_node);
 		EV_SET(&kev[1], fd2, EVFILT_WRITE,
 		    EV_ADD | (ev->events & EPOLLOUT ? 0 : EV_DISABLE), 0, 0,
-		    ev->data.ptr);
-
-		flags = KQUEUE_STATE_REGISTERED;
+		    fd2_node);
 
 #define SET_FLAG(flag)                                                        \
 	do {                                                                  \
 		if (ev->events & (flag)) {                                    \
-			flags |= KQUEUE_STATE_##flag;                         \
+			new_flags |= KQUEUE_STATE_##flag;                     \
 		}                                                             \
 	} while (0)
 
@@ -251,38 +219,37 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 #undef SET_FLAG
 
 	} else if (op == EPOLL_CTL_DEL) {
-		if (!(flags & KQUEUE_STATE_REGISTERED)) {
+		if (!fd2_node) {
 			return ENOENT;
 		}
 
 		if (fd2 >= 0 && fd2 == epollfd->pfds[0].fd) {
-			epollfd->pfds[0].fd = -1;
-			kqueue_save_state(epollfd->kq, (uint32_t)fd2, 0);
-			return 0;
+			goto out;
 		}
 
 		EV_SET(&kev[0], fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
 		EV_SET(&kev[1], fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
 
-		flags = 0;
 	} else if (op == EPOLL_CTL_MOD) {
-		if (!(flags & KQUEUE_STATE_REGISTERED)) {
+		if (!fd2_node) {
 			return ENOENT;
 		}
 
 		EV_SET(&kev[0], fd2, EVFILT_READ,
 		    (ev->events & EPOLLIN) ? EV_ENABLE : EV_DISABLE, 0, 0,
-		    ev->data.ptr);
+		    fd2_node);
 		EV_SET(&kev[1], fd2, EVFILT_WRITE,
 		    (ev->events & EPOLLOUT) ? EV_ENABLE : EV_DISABLE, 0, 0,
-		    ev->data.ptr);
+		    fd2_node);
+
+		new_flags = fd2_node->flags;
 
 #define SET_FLAG(flag)                                                        \
 	do {                                                                  \
 		if (ev->events & (flag)) {                                    \
-			flags |= KQUEUE_STATE_##flag;                         \
+			new_flags |= KQUEUE_STATE_##flag;                     \
 		} else {                                                      \
-			flags &= ~KQUEUE_STATE_##flag;                        \
+			new_flags &= ~KQUEUE_STATE_##flag;                    \
 		}                                                             \
 	} while (0)
 
@@ -302,20 +269,23 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 
 	int ret = kevent(epollfd->kq, kev, 2, kev, 2, NULL);
 	if (ret < 0) {
-		return errno;
+		ec = errno;
+		goto out;
 	}
 
 	if (ret != 2) {
-		return EINVAL;
+		ec = EINVAL;
+		goto out;
 	}
 
 	for (int i = 0; i < 2; ++i) {
 		if (!(kev[i].flags & EV_ERROR)) {
-			return EINVAL;
+			ec = EINVAL;
+			goto out;
 		}
 
 		/* Check for fds that only support poll. */
-		if (kev[i].data == ENODEV && fd2 >= 0 &&
+		if (kev[i].data == ENODEV && op != EPOLL_CTL_DEL && fd2 >= 0 &&
 		    !(ev->events & ~(uint32_t)(EPOLLIN | EPOLLOUT)) &&
 		    (epollfd->pfds[0].fd < 0 || epollfd->pfds[0].fd == fd2)) {
 			epollfd->pfds[0] = (struct pollfd){
@@ -324,6 +294,7 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 				((ev->events & EPOLLOUT) ? POLLOUT : 0),
 			};
 			epollfd->pollfd_data = ev->data;
+
 			goto out;
 		}
 
@@ -340,43 +311,60 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		}
 
 		if (kev[i].data != 0) {
-			if (i == 0 &&
-			    (kev[i].data == ENOENT || kev[i].data == EBADF)) {
-				kqueue_save_state(epollfd->kq, /**/
-				    (uint32_t)fd2, 0);
-			}
-			return (int)kev[i].data;
+			ec = (int)kev[i].data;
+			goto out;
 		}
 	}
 
 	if (op != EPOLL_CTL_DEL && is_not_yet_connected_stream_socket(fd2)) {
 		EV_SET(&kev[0], fd2, EVFILT_READ, EV_ENABLE | EV_FORCEONESHOT,
-		    0, 0, ev->data.ptr);
+		    0, 0, fd2_node);
 		if (kevent(epollfd->kq, kev, 1, NULL, 0, NULL) < 0) {
-			return errno;
+			ec = errno;
+			goto out;
 		}
 
-		flags |= KQUEUE_STATE_NYCSS;
-	}
-
-	if (op == EPOLL_CTL_ADD) {
-		if (S_ISFIFO(statbuf.st_mode)) {
-			flags |= KQUEUE_STATE_ISFIFO;
-		} else if (S_ISSOCK(statbuf.st_mode)) {
-			flags |= KQUEUE_STATE_ISSOCK;
-		}
+		new_flags |= KQUEUE_STATE_NYCSS;
 	}
 
 out:
-	if ((ec = kqueue_save_state(epollfd->kq, (uint32_t)fd2, flags)) != 0) {
-		return ec;
+	if (op == EPOLL_CTL_ADD) {
+		if (ec == 0) {
+			fd2_node->flags = new_flags;
+
+			if (RB_INSERT(registered_fds_set_,
+				&epollfd->registered_fds, fd2_node)) {
+				assert(0);
+			}
+		} else {
+			registered_fds_node_destroy(fd2_node);
+		}
+
+	} else if (op == EPOLL_CTL_DEL) {
+		RB_REMOVE(registered_fds_set_, /**/
+		    &epollfd->registered_fds, fd2_node);
+		registered_fds_node_destroy(fd2_node);
+
+		if (fd2 >= 0 && fd2 == epollfd->pfds[0].fd) {
+			epollfd->pfds[0].fd = -1;
+		}
+
+	} else if (op == EPOLL_CTL_MOD) {
+		if (ec == 0) {
+			fd2_node->flags = new_flags;
+			fd2_node->data = ev->data;
+		} else if (ec == ENOENT || ec == EBADF) {
+			RB_REMOVE(registered_fds_set_, /**/
+			    &epollfd->registered_fds, fd2_node);
+			registered_fds_node_destroy(fd2_node);
+		}
+
+	} else {
+		__builtin_unreachable();
 	}
 
-	return 0;
+	return ec;
 }
-
-#undef VAL_BITS
-#undef KEY_BITS
 
 errno_t
 epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2, struct epoll_event *ev)
@@ -455,9 +443,8 @@ again:;
 		if (evlist[i].filter == EVFILT_READ) {
 			events |= EPOLLIN;
 			if (evlist[i].flags & EV_ONESHOT) {
-				uint16_t flags = 0;
-				kqueue_load_state(epollfd->kq,
-				    (uint32_t)evlist[i].ident, &flags);
+				RegisteredFDsNode *fd2_node = evlist[i].udata;
+				uint16_t flags = fd2_node->flags;
 
 				if (flags & KQUEUE_STATE_NYCSS) {
 					if (is_not_yet_connected_stream_socket(
@@ -501,9 +488,8 @@ again:;
 
 						kevent(epollfd->kq, nkev, 2,
 						    NULL, 0, NULL);
-						kqueue_save_state(epollfd->kq,
-						    (uint32_t)evlist[i].ident,
-						    flags);
+
+						fd2_node->flags = flags;
 
 						continue;
 					}
@@ -522,9 +508,8 @@ again:;
 				events |= EPOLLERR;
 			}
 
-			uint16_t flags = 0;
-			kqueue_load_state(epollfd->kq,
-			    (uint32_t)evlist[i].ident, &flags);
+			uint16_t flags =
+			    ((RegisteredFDsNode *)evlist[i].udata)->flags;
 
 			int epoll_event;
 
@@ -613,7 +598,7 @@ again:;
 			events |= epoll_event;
 		}
 		ev[j].events = (uint32_t)events;
-		ev[j].data.ptr = evlist[i].udata;
+		ev[j].data = ((RegisteredFDsNode *)evlist[i].udata)->data;
 		++j;
 	}
 

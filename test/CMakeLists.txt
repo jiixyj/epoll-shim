@@ -59,13 +59,6 @@ target_link_libraries(atf-test PRIVATE epoll-shim::epoll-shim atf::atf-c)
 atf_discover_tests(atf-test)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  add_executable(kqueue-state kqueue-state.c)
-  target_include_directories(kqueue-state
-                             PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../include")
-  target_link_options(kqueue-state PRIVATE
-                      "LINKER:--unresolved-symbols=ignore-all")
-  add_test(NAME kqueue-state COMMAND kqueue-state)
-
   add_executable(eventfd-ctx-test eventfd-ctx-test.c)
   target_link_libraries(eventfd-ctx-test PRIVATE Threads::Threads)
   target_include_directories(eventfd-ctx-test

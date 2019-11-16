@@ -19,9 +19,13 @@ struct registered_fds_node_ {
 	RB_ENTRY(registered_fds_node_) entry;
 	int fd;
 	uint16_t flags;
+	epoll_data_t data;
 };
 
 typedef RB_HEAD(registered_fds_set_, registered_fds_node_) RegisteredFDsSet;
+
+RegisteredFDsNode *registered_fds_node_create(int fd, struct epoll_event *ev);
+void registered_fds_node_destroy(RegisteredFDsNode *node);
 
 typedef struct {
 	int kq; // non owning
