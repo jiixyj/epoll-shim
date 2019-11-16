@@ -55,8 +55,8 @@ if(ENABLE_COMPILER_WARNINGS)
 endif()
 
 add_executable(perf-many-fds perf-many-fds.c)
-target_link_libraries(perf-many-fds PRIVATE epoll-shim::epoll-shim)
-add_test(NAME perf-many-fds COMMAND perf-many-fds)
+target_link_libraries(perf-many-fds PRIVATE epoll-shim::epoll-shim atf::atf-c)
+atf_discover_tests(perf-many-fds)
 
 add_executable(epoll-test-atf epoll-test-atf.c)
 target_link_libraries(epoll-test-atf PRIVATE epoll-shim::epoll-shim atf::atf-c)
