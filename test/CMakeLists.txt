@@ -38,10 +38,6 @@ target_link_libraries(epoll-test PRIVATE epoll-shim::epoll-shim
                                          Threads::Threads)
 add_test(NAME epoll-test COMMAND epoll-test)
 
-add_executable(expire-five expire-five.c)
-target_link_libraries(expire-five PRIVATE epoll-shim::epoll-shim)
-add_test(NAME expire-five COMMAND expire-five)
-
 add_executable(timerfd-test timerfd-test.c)
 target_link_libraries(timerfd-test PRIVATE epoll-shim::epoll-shim atf::atf-c)
 atf_discover_tests(timerfd-test)

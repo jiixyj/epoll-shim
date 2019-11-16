@@ -12,6 +12,7 @@
 #include <sys/time.h>
 
 #include <errno.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -292,6 +293,58 @@ ATF_TC_BODY(timerfd__reenable_periodic_timer, tc)
 #endif
 }
 
+/*
+ * Adapted from sghctoma's example here:
+ * https://github.com/jiixyj/epoll-shim/issues/2
+ *
+ * The SIGUSR1 signal should not kill the process.
+ */
+ATF_TC_WITHOUT_HEAD(timerfd__expire_five);
+ATF_TC_BODY(timerfd__expire_five, tc)
+{
+	int fd;
+	struct itimerspec value;
+	uint64_t total_exp = 0;
+
+	fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+	ATF_REQUIRE(fd >= 0);
+
+	value.it_value.tv_sec = 3;
+	value.it_value.tv_nsec = 0;
+	value.it_interval.tv_sec = 1;
+	value.it_interval.tv_nsec = 0;
+
+	ATF_REQUIRE(timerfd_settime(fd, 0, &value, NULL) == 0);
+
+	sigset_t sigs;
+	sigemptyset(&sigs);
+	sigaddset(&sigs, SIGUSR1);
+	sigprocmask(SIG_BLOCK, &sigs, NULL);
+
+	kill(getpid(), SIGUSR1);
+
+	for (;;) {
+		struct pollfd pfd = {.fd = fd, .events = POLLIN};
+		int n;
+		ssize_t r;
+		uint64_t exp;
+
+		ATF_REQUIRE((n = poll(&pfd, 1, -1)) >= 0);
+
+		ATF_REQUIRE((r = read(fd, &exp, sizeof(uint64_t))) ==
+		    sizeof(uint64_t));
+
+		printf("timer expired %u times\n", (unsigned)exp);
+
+		total_exp += exp;
+		if (total_exp >= 5) {
+			break;
+		}
+	}
+
+	ATF_REQUIRE(close(fd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -300,6 +353,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__complex_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__reset_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__reenable_periodic_timer);
+	ATF_TP_ADD_TC(tp, timerfd__expire_five);
 
 	return atf_no_error();
 }
