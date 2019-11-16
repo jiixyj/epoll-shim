@@ -404,10 +404,12 @@ atf_tc_expect_fail(const char *msg, ...)
 	}
 
 #define ATF_TC_HEAD(tc, tcptr)                                                \
-	static void microatf_tc_##tc##_head(atf_tc_t *tcptr MICROATF_ATTRIBUTE_UNUSED)
+	static void microatf_tc_##tc##_head(                                  \
+	    atf_tc_t *tcptr MICROATF_ATTRIBUTE_UNUSED)
 
 #define ATF_TC_BODY(tc, tcptr)                                                \
-	static void microatf_tc_##tc##_body(atf_tc_t const *tcptr MICROATF_ATTRIBUTE_UNUSED)
+	static void microatf_tc_##tc##_body(                                  \
+	    atf_tc_t const *tcptr MICROATF_ATTRIBUTE_UNUSED)
 
 #define ATF_TP_ADD_TCS(tps)                                                   \
 	static atf_error_t microatf_tp_add_tcs(atf_tp_t *);                   \
@@ -512,10 +514,11 @@ microatf_tp_main(int argc, char **argv,
 			print_newline = true;
 
 			for (size_t i = 0; i < tc->variables_size; ++i) {
-				char *key_end = strchr(tc->variables_key[i], '=');
-				ptrdiff_t key_length = key_end ?
-					(key_end - tc->variables_key[i]) :
-					(ptrdiff_t)strlen(tc->variables_key[i]);
+				char *key_end =
+				    strchr(tc->variables_key[i], '=');
+				ptrdiff_t key_length = key_end
+				    ? (key_end - tc->variables_key[i])
+				    : (ptrdiff_t)strlen(tc->variables_key[i]);
 				printf("%.*s: %s\n", (int)key_length,
 				    tc->variables_key[i],
 				    tc->variables_value[i]);
