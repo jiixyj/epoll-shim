@@ -2,7 +2,7 @@
 #
 # See `Copyright.txt` for license details.
 
-set(script "set(_counter 1)")
+set(script "")
 
 function(add_test_to_script _name _executable _test _vars)
 
@@ -19,7 +19,7 @@ function(add_test_to_script _name _executable _test _vars)
 
   set(_testscript
       "
-add_test(${_name} ${CMAKE_COMMAND}
+add_test(\"${_name}\" \"${CMAKE_COMMAND}\"
           -D \"TEST_FOLDER_NAME=${_name}\"
           -D \"TEST_EXECUTABLE=${_executable}\"
           -D \"TEST_NAME=${_test}\"
