@@ -5,15 +5,16 @@ option(BUILD_SHARED_LIBS "build libepoll-shim as shared lib" ON)
 option(ENABLE_COMPILER_WARNINGS "enable compiler warnings" OFF)
 
 if(ENABLE_COMPILER_WARNINGS)
-  add_compile_options("-Wall"
-                      "-Wextra"
-                      "-Wconversion"
-                      "-Wsign-conversion"
-                      "-Wmissing-prototypes"
-                      "-pedantic"
-                      "-Werror=implicit-function-declaration"
-                      "-Werror=return-type"
-                      "-Werror=incompatible-pointer-types")
+  add_compile_options(
+    "-Wall"
+    "-Wextra"
+    "-Wconversion"
+    "-Wsign-conversion"
+    "-Wmissing-prototypes"
+    "-pedantic"
+    "-Werror=implicit-function-declaration"
+    "-Werror=return-type"
+    "-Werror=incompatible-pointer-types")
 endif()
 
 include(CTest)
@@ -50,19 +51,22 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
           DESTINATION "${CMAKE_INSTALL_PKGCONFIGDIR}")
 
   set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/libepoll-shim")
-  install(TARGETS epoll-shim
-          EXPORT ${PROJECT_NAME}-targets
-          LIBRARY
-          INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+  install(
+    TARGETS epoll-shim
+    EXPORT ${PROJECT_NAME}-targets
+    LIBRARY
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
   install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/" TYPE INCLUDE)
 
-  install(EXPORT ${PROJECT_NAME}-targets
-          NAMESPACE "${_namespace}::"
-          DESTINATION "${CMAKE_INSTALL_CMAKEBASEDIR}")
+  install(
+    EXPORT ${PROJECT_NAME}-targets
+    NAMESPACE "${_namespace}::"
+    DESTINATION "${CMAKE_INSTALL_CMAKEBASEDIR}")
   if(NOT BUILD_SHARED_LIBS)
-    set(_deps "include(CMakeFindDependencyMacro)\n"
-              "set(THREADS_PREFER_PTHREAD_FLAG ON)\n"
-              "find_dependency(Threads)\n")
+    set(_deps
+        "include(CMakeFindDependencyMacro)\n" #
+        "set(THREADS_PREFER_PTHREAD_FLAG ON)\n" #
+        "find_dependency(Threads)\n")
   endif()
   file(
     WRITE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
