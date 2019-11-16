@@ -35,8 +35,8 @@ find_package(Threads REQUIRED)
 
 add_executable(epoll-test epoll-test.c)
 target_link_libraries(epoll-test PRIVATE epoll-shim::epoll-shim
-                                         Threads::Threads)
-add_test(NAME epoll-test COMMAND epoll-test)
+                                         Threads::Threads atf::atf-c)
+atf_discover_tests(epoll-test)
 
 add_executable(timerfd-test timerfd-test.c)
 target_link_libraries(timerfd-test PRIVATE epoll-shim::epoll-shim atf::atf-c)
