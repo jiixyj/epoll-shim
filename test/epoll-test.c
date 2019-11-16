@@ -74,14 +74,14 @@ check_for_fd_leaks(void)
 }
 
 #define ATF_TC_BODY_FD_LEAKCHECK(tc, tcptr)                                   \
-	static void fd_leakcheck_##tc##_body(atf_tc_t const *tcptr __unused); \
+	static void fd_leakcheck_##tc##_body(atf_tc_t const *tcptr __attribute__((__unused__))); \
 	ATF_TC_BODY(tc, tcptr)                                                \
 	{                                                                     \
 		init_fd_checking();                                           \
 		fd_leakcheck_##tc##_body(tcptr);                              \
 		check_for_fd_leaks();                                         \
 	}                                                                     \
-	static void fd_leakcheck_##tc##_body(atf_tc_t const *tcptr __unused)
+	static void fd_leakcheck_##tc##_body(atf_tc_t const *tcptr __attribute__((__unused__)))
 
 static int connector_epfd = -1;
 
@@ -219,8 +219,13 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 {
 	int fd;
 
+	struct epoll_event event;
+	event.events = EPOLLIN;
+	event.data.fd = 0;
+
 	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
-	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, 3, 5, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, 3, 5, &event) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, 3, 5, NULL) < 0);
 	ATF_REQUIRE(close(fd) == 0);
 }
 
