@@ -54,9 +54,9 @@ add_executable(perf-many-fds perf-many-fds.c)
 target_link_libraries(perf-many-fds PRIVATE epoll-shim::epoll-shim atf::atf-c)
 atf_discover_tests(perf-many-fds)
 
-add_executable(epoll-test-atf epoll-test-atf.c)
-target_link_libraries(epoll-test-atf PRIVATE epoll-shim::epoll-shim atf::atf-c)
-atf_discover_tests(epoll-test-atf)
+add_executable(atf-test atf-test.c)
+target_link_libraries(atf-test PRIVATE epoll-shim::epoll-shim atf::atf-c)
+atf_discover_tests(atf-test)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_executable(kqueue-state kqueue-state.c)
