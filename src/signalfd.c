@@ -39,23 +39,37 @@ static errno_t
 signalfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
-	// TODO(jan): fix this to read multiple signals
-	if (nbytes != sizeof(struct signalfd_siginfo)) {
+	errno_t ec;
+
+	if (nbytes < sizeof(struct signalfd_siginfo)) {
 		return EINVAL;
 	}
 
-	uint32_t signo;
-	errno_t ec;
-	if ((ec = signalfd_ctx_read_or_block(&node->ctx.signalfd, &signo,
-		 node->flags & SFD_NONBLOCK)) != 0) {
-		return ec;
+	bool nonblock = (node->flags & SFD_NONBLOCK);
+	size_t bytes_transferred_local = 0;
+
+	while (nbytes >= sizeof(struct signalfd_siginfo)) {
+		uint32_t signo;
+		if ((ec = signalfd_ctx_read_or_block(&node->ctx.signalfd,
+			 &signo, nonblock)) != 0) {
+			break;
+		}
+
+		struct signalfd_siginfo siginfo = {.ssi_signo = signo};
+		memcpy(buf, &siginfo, sizeof(siginfo));
+		bytes_transferred_local += sizeof(siginfo);
+
+		nonblock = true;
+		nbytes -= sizeof(siginfo);
+		buf = ((unsigned char *)buf) + sizeof(siginfo);
 	}
 
-	struct signalfd_siginfo siginfo = {.ssi_signo = signo};
-	memcpy(buf, &siginfo, sizeof(siginfo));
+	if (bytes_transferred_local > 0) {
+		ec = 0;
+	}
 
-	*bytes_transferred = sizeof(siginfo);
-	return 0;
+	*bytes_transferred = bytes_transferred_local;
+	return ec;
 }
 
 static errno_t

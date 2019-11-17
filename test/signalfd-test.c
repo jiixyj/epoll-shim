@@ -126,11 +126,56 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__nonblocking_read, tcptr)
 	ATF_REQUIRE(close(sfd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(signalfd__multiple_signals);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__multiple_signals, tcptr)
+{
+	sigset_t mask;
+	int sfd;
+	struct signalfd_siginfo fdsi[16];
+	ssize_t s;
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	sigaddset(&mask, SIGUSR1);
+	sigaddset(&mask, SIGUSR2);
+
+	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+
+	sfd = signalfd(-1, &mask, 0);
+	ATF_REQUIRE(sfd >= 0);
+
+	kill(getpid(), SIGINT);
+	kill(getpid(), SIGUSR1);
+	kill(getpid(), SIGUSR2);
+
+	s = read(sfd, &fdsi, sizeof(fdsi));
+	ATF_REQUIRE(s == 3 * sizeof(struct signalfd_siginfo));
+
+	printf("%d %d %d\n", /**/
+	    fdsi[0].ssi_signo, fdsi[1].ssi_signo, fdsi[2].ssi_signo);
+
+	ATF_REQUIRE(			   /**/
+	    fdsi[0].ssi_signo == SIGINT || /**/
+	    fdsi[1].ssi_signo == SIGINT || /**/
+	    fdsi[2].ssi_signo == SIGINT);
+	ATF_REQUIRE(			    /**/
+	    fdsi[0].ssi_signo == SIGUSR1 || /**/
+	    fdsi[1].ssi_signo == SIGUSR1 || /**/
+	    fdsi[2].ssi_signo == SIGUSR1);
+	ATF_REQUIRE(			    /**/
+	    fdsi[0].ssi_signo == SIGUSR2 || /**/
+	    fdsi[1].ssi_signo == SIGUSR2 || /**/
+	    fdsi[2].ssi_signo == SIGUSR2);
+
+	ATF_REQUIRE(close(sfd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, signalfd__simple_signalfd);
 	ATF_TP_ADD_TC(tp, signalfd__blocking_read);
 	ATF_TP_ADD_TC(tp, signalfd__nonblocking_read);
+	ATF_TP_ADD_TC(tp, signalfd__multiple_signals);
 
 	return atf_no_error();
 }
