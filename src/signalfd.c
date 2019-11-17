@@ -5,6 +5,7 @@
 #include <sys/types.h>
 
 #include <sys/event.h>
+#include <sys/stat.h>
 
 #include <errno.h>
 #include <poll.h>
@@ -89,13 +90,14 @@ signalfd_impl(int fd, const sigset_t *sigs, int flags, errno_t *ec)
 {
 	FDContextMapNode *node;
 
-	if (fd != -1) {
+	if (sigs == NULL || (flags & ~(SFD_NONBLOCK | SFD_CLOEXEC))) {
 		*ec = EINVAL;
 		return NULL;
 	}
 
-	if (flags & ~(SFD_NONBLOCK | SFD_CLOEXEC)) {
-		*ec = EINVAL;
+	if (fd != -1) {
+		struct stat sb;
+		*ec = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 		return NULL;
 	}
 
