@@ -70,7 +70,6 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 	struct kevent kev;
 	EV_SET(&kev, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
 	if (kevent(ctx->kq, &kev, 1, NULL, 0, NULL) < 0) {
-		assert(errno != 0);
 		return errno;
 	}
 
@@ -80,6 +79,7 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 	}
 
 	if (kevent(ctx->kq, NULL, 0, &kev, 1, NULL) < 0) {
+		ec = errno;
 		goto out;
 	}
 
@@ -92,6 +92,7 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 	};
 
 	if (timer_create(clockid, &sigev, &ctx->complx.timer) < 0) {
+		ec = errno;
 		goto out;
 	}
 
@@ -100,8 +101,6 @@ upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
 	return 0;
 
 out:
-	ec = errno;
-	assert(ec != 0);
 	pthread_kill(ctx->complx.worker, SIGRTMIN + 1);
 	pthread_join(ctx->complx.worker, NULL);
 	return ec;
