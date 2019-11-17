@@ -194,7 +194,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 
 	/**/
 
-	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_ADD, fd2, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_ADD, fd2, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_ADD, fd2, &event) < 0);
 
 	ATF_REQUIRE_ERRNO(EINVAL, epoll_wait(fd, NULL, 0, 0) < 0);
 	struct epoll_event ev;

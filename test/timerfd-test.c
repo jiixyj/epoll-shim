@@ -353,7 +353,11 @@ ATF_TC_BODY(timerfd__gettime_stub, tc)
 	int fd = timerfd_create(CLOCK_MONOTONIC, 0);
 	ATF_REQUIRE(fd >= 0);
 
-	ATF_REQUIRE_ERRNO(ENOSYS, timerfd_gettime(fd, &curr_value) < 0);
+#ifndef __linux__
+	atf_tc_expect_fail("timerfd_gettime is stubbed out currently");
+#endif
+
+	ATF_REQUIRE(timerfd_gettime(fd, &curr_value) == 0);
 
 	ATF_REQUIRE(close(fd) == 0);
 }
@@ -415,7 +419,7 @@ ATF_TC_BODY(timerfd__argument_checks, tc)
 
 	ATF_REQUIRE_ERRNO(EFAULT, timerfd_settime(timerfd, 0, NULL, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EFAULT, timerfd_settime(-2, 0, NULL, NULL) < 0);
-	ATF_REQUIRE_ERRNO(EINVAL, timerfd_settime(-2, 0, &time, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, timerfd_settime(-2, 0, &time, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EINVAL,
 	    timerfd_settime(timerfd, 42, &time, NULL) < 0);
 
