@@ -42,6 +42,11 @@ add_executable(timerfd-test timerfd-test.c)
 target_link_libraries(timerfd-test PRIVATE epoll-shim::epoll-shim atf::atf-c)
 atf_discover_tests(timerfd-test)
 
+add_executable(signalfd-test signalfd-test.c)
+target_link_libraries(signalfd-test PRIVATE epoll-shim::epoll-shim
+                                            Threads::Threads atf::atf-c)
+atf_discover_tests(signalfd-test)
+
 add_executable(tst-eventfd tst-eventfd.c)
 target_link_libraries(tst-eventfd PRIVATE epoll-shim::epoll-shim
                                           Threads::Threads)
