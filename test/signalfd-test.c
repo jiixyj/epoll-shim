@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <atf-c.h>
 
 #include <sys/types.h>
@@ -208,8 +210,8 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__argument_checks, tcptr)
 	ATF_REQUIRE(close(sfd) == 0);
 
 	ATF_REQUIRE_ERRNO(EBADF, signalfd(42, &mask, 0));
-	ATF_REQUIRE_ERRNO(EBADF, signalfd(42, NULL, 0));
-	ATF_REQUIRE_ERRNO(EFAULT, signalfd(-1, NULL, 0));
+	ATF_REQUIRE_ERRNO(EINVAL, signalfd(42, NULL, 0));
+	ATF_REQUIRE_ERRNO(EINVAL, signalfd(-1, NULL, 0));
 
 	int fds[2];
 	ATF_REQUIRE(pipe2(fds, O_CLOEXEC) == 0);
