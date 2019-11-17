@@ -170,12 +170,63 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__multiple_signals, tcptr)
 	ATF_REQUIRE(close(sfd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(signalfd__modify_signalmask);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__modify_signalmask, tcptr)
+{
+	sigset_t mask;
+	int sfd;
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+
+	sfd = signalfd(-1, &mask, 0);
+	ATF_REQUIRE(sfd >= 0);
+
+	sigaddset(&mask, SIGUSR1);
+
+#ifndef __linux__
+	atf_tc_expect_fail("modifying an existing signalfd descriptor is "
+			   "not currently supported");
+#endif
+
+	ATF_REQUIRE(sfd == signalfd(sfd, &mask, 0));
+
+	ATF_REQUIRE(close(sfd) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(signalfd__argument_checks);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__argument_checks, tcptr)
+{
+	sigset_t mask;
+	int sfd;
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+
+	sfd = signalfd(-1, &mask, 0);
+	ATF_REQUIRE(sfd >= 0);
+	ATF_REQUIRE(close(sfd) == 0);
+
+	ATF_REQUIRE_ERRNO(EBADF, signalfd(42, &mask, 0));
+	ATF_REQUIRE_ERRNO(EBADF, signalfd(42, NULL, 0));
+	ATF_REQUIRE_ERRNO(EFAULT, signalfd(-1, NULL, 0));
+
+	int fds[2];
+	ATF_REQUIRE(pipe2(fds, O_CLOEXEC) == 0);
+	ATF_REQUIRE_ERRNO(EINVAL, signalfd(fds[0], &mask, 0));
+	ATF_REQUIRE_ERRNO(EINVAL, signalfd(fds[0], NULL, 0));
+	ATF_REQUIRE(close(fds[0]) == 0);
+	ATF_REQUIRE(close(fds[1]) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, signalfd__simple_signalfd);
 	ATF_TP_ADD_TC(tp, signalfd__blocking_read);
 	ATF_TP_ADD_TC(tp, signalfd__nonblocking_read);
 	ATF_TP_ADD_TC(tp, signalfd__multiple_signals);
+	ATF_TP_ADD_TC(tp, signalfd__modify_signalmask);
+	ATF_TP_ADD_TC(tp, signalfd__argument_checks);
 
 	return atf_no_error();
 }
