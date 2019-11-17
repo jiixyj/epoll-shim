@@ -33,7 +33,7 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-add_executable(epoll-test epoll-test.c)
+add_executable(epoll-test epoll-test.c real_close.c)
 target_link_libraries(epoll-test PRIVATE epoll-shim::epoll-shim
                                          Threads::Threads atf::atf-c)
 atf_discover_tests(epoll-test)

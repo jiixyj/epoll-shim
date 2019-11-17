@@ -1245,6 +1245,35 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 	}
 }
 
+ATF_TC_WITHOUT_HEAD(epoll__using_real_close);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__using_real_close, tcptr)
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	int fds[3];
+	fd_pipe(fds);
+
+	struct epoll_event event = {0};
+	event.events = EPOLLIN;
+
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == 0);
+
+	// This closes the underlying kqueue fd directly, without going through
+	// our epoll_shim_close wrapper. It shouldn't blow up too badly.
+	extern int real_close(int fd);
+	ATF_REQUIRE(real_close(ep) == 0);
+
+	ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == 0);
+
+	ATF_REQUIRE(close(fds[0]) == 0);
+	ATF_REQUIRE(close(fds[1]) == 0);
+	ATF_REQUIRE(close(ep) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, epoll__simple);
@@ -1275,6 +1304,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__remove_closed);
 	ATF_TP_ADD_TC(tp, epoll__add_different_file_with_same_fd_value);
 	ATF_TP_ADD_TC(tp, epoll__invalid_writes);
+	ATF_TP_ADD_TC(tp, epoll__using_real_close);
 
 	return atf_no_error();
 }
