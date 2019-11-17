@@ -129,9 +129,7 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 	errno_t ec = 0;
 	struct kevent kev[2];
 
-	if (!ev && op != EPOLL_CTL_DEL) {
-		return EFAULT;
-	}
+	assert(op == EPOLL_CTL_DEL || ev != NULL);
 
 	if (epollfd->kq == fd2) {
 		return EINVAL;

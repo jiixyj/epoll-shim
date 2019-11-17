@@ -2,6 +2,7 @@
 
 #include <sys/event.h>
 #include <sys/param.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 
 #include <assert.h>
@@ -107,9 +108,15 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 	errno_t ec;
 	FDContextMapNode *node;
 
+	if (!ev && op != EPOLL_CTL_DEL) {
+		errno = EFAULT;
+		return -1;
+	}
+
 	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &epollfd_vtable) {
-		errno = EINVAL;
+		struct stat sb;
+		errno = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 		return -1;
 	}
 
