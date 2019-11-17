@@ -61,9 +61,7 @@ int epoll_create(int);
 int epoll_create1(int);
 int epoll_ctl(int, int, int, struct epoll_event *);
 int epoll_wait(int, struct epoll_event *, int, int);
-#if 0
 int epoll_pwait(int, struct epoll_event *, int, int, const sigset_t *);
-#endif
 
 
 #ifndef SHIM_SYS_SHIM_HELPERS

@@ -7,6 +7,7 @@
     epoll_create1;
     epoll_ctl;
     epoll_wait;
+    epoll_pwait;
     signalfd;
     timerfd_create;
     timerfd_settime;
