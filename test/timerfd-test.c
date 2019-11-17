@@ -24,6 +24,8 @@
 
 #include <sys/timerfd.h>
 
+#include "atf-c-leakcheck.h"
+
 // TODO(jan): Remove this once the definition is exposed in <sys/time.h> in
 // all supported FreeBSD versions.
 #ifndef timespecsub
@@ -50,7 +52,6 @@ is_fast_timer(int fd)
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
 
 	bool is_fast = kevent(fd, kev, nitems(kev), NULL, 0, NULL) == 0;
-	close(fd);
 	return (is_fast);
 }
 #endif
@@ -69,7 +70,7 @@ ATF_TC_BODY(timerfd__many_timers, tc)
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__simple_timer);
-ATF_TC_BODY(timerfd__simple_timer, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_timer, tc)
 {
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
 	    TFD_CLOEXEC | TFD_NONBLOCK);
@@ -97,10 +98,11 @@ ATF_TC_BODY(timerfd__simple_timer, tc)
 #ifndef __linux__
 	ATF_REQUIRE(is_fast_timer(timerfd));
 #endif
+	ATF_REQUIRE(close(timerfd) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__simple_periodic_timer);
-ATF_TC_BODY(timerfd__simple_periodic_timer, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_periodic_timer, tc)
 {
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
 	    TFD_CLOEXEC | TFD_NONBLOCK);
@@ -142,10 +144,11 @@ ATF_TC_BODY(timerfd__simple_periodic_timer, tc)
 #ifndef __linux__
 	ATF_REQUIRE(is_fast_timer(timerfd));
 #endif
+	ATF_REQUIRE(close(timerfd) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__complex_periodic_timer);
-ATF_TC_BODY(timerfd__complex_periodic_timer, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__complex_periodic_timer, tc)
 {
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
 	    TFD_CLOEXEC | TFD_NONBLOCK);
@@ -186,10 +189,11 @@ ATF_TC_BODY(timerfd__complex_periodic_timer, tc)
 #ifndef __linux__
 	ATF_REQUIRE(!is_fast_timer(timerfd));
 #endif
+	ATF_REQUIRE(close(timerfd) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__reset_periodic_timer);
-ATF_TC_BODY(timerfd__reset_periodic_timer, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_periodic_timer, tc)
 {
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
 	    TFD_CLOEXEC | TFD_NONBLOCK);
@@ -234,10 +238,11 @@ ATF_TC_BODY(timerfd__reset_periodic_timer, tc)
 #ifndef __linux__
 	ATF_REQUIRE(is_fast_timer(timerfd));
 #endif
+	ATF_REQUIRE(close(timerfd) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__reenable_periodic_timer);
-ATF_TC_BODY(timerfd__reenable_periodic_timer, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 {
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
 	    TFD_CLOEXEC | TFD_NONBLOCK);
@@ -291,6 +296,7 @@ ATF_TC_BODY(timerfd__reenable_periodic_timer, tc)
 #ifndef __linux__
 	ATF_REQUIRE(is_fast_timer(timerfd));
 #endif
+	ATF_REQUIRE(close(timerfd) == 0);
 }
 
 /*
@@ -300,7 +306,7 @@ ATF_TC_BODY(timerfd__reenable_periodic_timer, tc)
  * The SIGUSR1 signal should not kill the process.
  */
 ATF_TC_WITHOUT_HEAD(timerfd__expire_five);
-ATF_TC_BODY(timerfd__expire_five, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__expire_five, tc)
 {
 	int fd;
 	struct itimerspec value;
@@ -346,7 +352,7 @@ ATF_TC_BODY(timerfd__expire_five, tc)
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__gettime_stub);
-ATF_TC_BODY(timerfd__gettime_stub, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__gettime_stub, tc)
 {
 	struct itimerspec curr_value;
 
@@ -363,7 +369,7 @@ ATF_TC_BODY(timerfd__gettime_stub, tc)
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__simple_blocking_periodic_timer);
-ATF_TC_BODY(timerfd__simple_blocking_periodic_timer, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_blocking_periodic_timer, tc)
 {
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
 
@@ -402,10 +408,12 @@ ATF_TC_BODY(timerfd__simple_blocking_periodic_timer, tc)
 	    e.tv_nsec < 350000000);
 
 	ATF_REQUIRE(num_loop_iterations <= 3);
+
+	ATF_REQUIRE(close(timerfd) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__argument_checks);
-ATF_TC_BODY(timerfd__argument_checks, tc)
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_checks, tc)
 {
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
 	ATF_REQUIRE(timerfd >= 0);
@@ -429,6 +437,8 @@ ATF_TC_BODY(timerfd__argument_checks, tc)
 	    timerfd_create(CLOCK_MONOTONIC | 42, TFD_CLOEXEC));
 	ATF_REQUIRE_ERRNO(EINVAL,
 	    timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | 42));
+
+	ATF_REQUIRE(close(timerfd) == 0);
 }
 
 ATF_TP_ADD_TCS(tp)
