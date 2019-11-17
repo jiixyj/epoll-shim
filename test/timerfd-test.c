@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <atf-c.h>
 
 #include <sys/types.h>

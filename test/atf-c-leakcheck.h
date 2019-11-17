@@ -3,6 +3,10 @@
 
 #include <atf-c.h>
 
+#ifndef _GNU_SOURCE
+#error "Need to define _GNU_SOURCE"
+#endif
+
 #include <fcntl.h>
 #include <unistd.h>
 
