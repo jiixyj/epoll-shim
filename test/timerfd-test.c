@@ -443,6 +443,65 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_checks, tc)
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(timerfd__upgrade_simple_to_complex);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+
+	ATF_REQUIRE(timerfd >= 0);
+
+	struct itimerspec time = {
+	    .it_value.tv_sec = 0,
+	    .it_value.tv_nsec = 100000000,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 100000000,
+	};
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
+
+	struct timespec b, e;
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
+
+	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+
+	time = (struct itimerspec){
+	    .it_value.tv_sec = 0,
+	    .it_value.tv_nsec = 50000000,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 70000000,
+	};
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
+	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+
+	uint64_t timeouts;
+	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
+	    (ssize_t)sizeof(timeouts));
+	ATF_REQUIRE(timeouts == 1);
+
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
+	timespecsub(&e, &b, &e);
+	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
+	    e.tv_nsec < 200000000);
+
+	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
+	    (ssize_t)sizeof(timeouts));
+	ATF_REQUIRE(timeouts == 1);
+
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
+	timespecsub(&e, &b, &e);
+	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 220000000 &&
+	    e.tv_nsec < 270000000);
+
+#ifndef __linux__
+	ATF_REQUIRE(!is_fast_timer(timerfd));
+#endif
+	ATF_REQUIRE(close(timerfd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -455,6 +514,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__gettime_stub);
 	ATF_TP_ADD_TC(tp, timerfd__simple_blocking_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__argument_checks);
+	ATF_TP_ADD_TC(tp, timerfd__upgrade_simple_to_complex);
 
 	return atf_no_error();
 }

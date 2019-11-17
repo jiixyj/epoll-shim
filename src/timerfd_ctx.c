@@ -112,9 +112,7 @@ timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 {
 	errno_t ec;
 
-	if (clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME) {
-		return EINVAL;
-	}
+	assert(clockid == CLOCK_MONOTONIC || clockid == CLOCK_REALTIME);
 
 	*timerfd = (TimerFDCtx){.kq = kq, .kind = TIMERFD_KIND_UNDETERMINED};
 
@@ -161,9 +159,7 @@ timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
 {
 	errno_t ec;
 
-	if (flags & ~(TIMER_ABSTIME)) {
-		return EINVAL;
-	}
+	assert((flags & ~(TIMER_ABSTIME)) == 0);
 
 	if ((flags & TIMER_ABSTIME) ||
 	    ((new->it_interval.tv_sec != 0 || new->it_interval.tv_nsec != 0) &&
