@@ -400,6 +400,31 @@ ATF_TC_BODY(timerfd__simple_blocking_periodic_timer, tc)
 	ATF_REQUIRE(num_loop_iterations <= 3);
 }
 
+ATF_TC_WITHOUT_HEAD(timerfd__argument_checks);
+ATF_TC_BODY(timerfd__argument_checks, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+	ATF_REQUIRE(timerfd >= 0);
+
+	struct itimerspec time = {
+	    .it_value.tv_sec = 0,
+	    .it_value.tv_nsec = 100000000,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 100000000,
+	};
+
+	ATF_REQUIRE_ERRNO(EFAULT, timerfd_settime(timerfd, 0, NULL, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, timerfd_settime(-2, 0, NULL, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, timerfd_settime(-2, 0, &time, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    timerfd_settime(timerfd, 42, &time, NULL) < 0);
+
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    timerfd_create(CLOCK_MONOTONIC | 42, TFD_CLOEXEC));
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | 42));
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -411,6 +436,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__expire_five);
 	ATF_TP_ADD_TC(tp, timerfd__gettime_stub);
 	ATF_TP_ADD_TC(tp, timerfd__simple_blocking_periodic_timer);
+	ATF_TP_ADD_TC(tp, timerfd__argument_checks);
 
 	return atf_no_error();
 }
