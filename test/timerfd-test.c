@@ -420,6 +420,8 @@ ATF_TC_BODY(timerfd__argument_checks, tc)
 	ATF_REQUIRE_ERRNO(EFAULT, timerfd_settime(timerfd, 0, NULL, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EFAULT, timerfd_settime(-2, 0, NULL, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EBADF, timerfd_settime(-2, 0, &time, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT, timerfd_settime(-2, 42, NULL, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, timerfd_settime(-2, 42, &time, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EINVAL,
 	    timerfd_settime(timerfd, 42, &time, NULL) < 0);
 
