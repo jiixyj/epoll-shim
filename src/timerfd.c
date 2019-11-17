@@ -4,6 +4,7 @@
 
 #include <sys/event.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 
 #include <poll.h>
 #include <pthread.h>
@@ -129,13 +130,14 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		return EFAULT;
 	}
 
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &timerfd_vtable) {
+	if (flags & ~(TFD_TIMER_ABSTIME)) {
 		return EINVAL;
 	}
 
-	if (flags & ~(TFD_TIMER_ABSTIME)) {
-		return EINVAL;
+	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	if (!node || node->vtable != &timerfd_vtable) {
+		struct stat sb;
+		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
 	}
 
 	if ((ec = timerfd_ctx_settime(&node->ctx.timerfd,
