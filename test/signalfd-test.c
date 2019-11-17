@@ -202,6 +202,8 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__argument_checks, tcptr)
 	sigset_t mask;
 	int sfd;
 
+	int const invalid_fd = 0xbeef;
+
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
 
@@ -212,14 +214,14 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__argument_checks, tcptr)
 	int fds[2];
 	ATF_REQUIRE(pipe2(fds, O_CLOEXEC) == 0);
 
-	ATF_REQUIRE_ERRNO(EBADF, signalfd(42, &mask, 0));
-	ATF_REQUIRE_ERRNO(EINVAL, signalfd(42, NULL, 0));
+	ATF_REQUIRE_ERRNO(EBADF, signalfd(invalid_fd, &mask, 0));
+	ATF_REQUIRE_ERRNO(EINVAL, signalfd(invalid_fd, NULL, 0));
 	ATF_REQUIRE_ERRNO(EINVAL, signalfd(-1, NULL, 0));
 
 	ATF_REQUIRE_ERRNO(EINVAL, signalfd(fds[0], &mask, 0));
 	ATF_REQUIRE_ERRNO(EINVAL, signalfd(fds[0], NULL, 0));
 
-	ATF_REQUIRE_ERRNO(EINVAL, signalfd(42, &mask, 42));
+	ATF_REQUIRE_ERRNO(EINVAL, signalfd(invalid_fd, &mask, 42));
 
 	ATF_REQUIRE_ERRNO(EBADF, signalfd(-2, &mask, 0));
 
