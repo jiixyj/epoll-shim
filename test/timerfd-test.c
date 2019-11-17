@@ -358,6 +358,48 @@ ATF_TC_BODY(timerfd__gettime_stub, tc)
 	ATF_REQUIRE(close(fd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(timerfd__simple_blocking_periodic_timer);
+ATF_TC_BODY(timerfd__simple_blocking_periodic_timer, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+
+	ATF_REQUIRE(timerfd >= 0);
+
+	struct itimerspec time = {
+	    .it_value.tv_sec = 0,
+	    .it_value.tv_nsec = 100000000,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 100000000,
+	};
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
+
+	struct timespec b, e;
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
+
+	uint64_t timeouts = 0;
+	int num_loop_iterations = 0;
+
+	while (timeouts < 3) {
+		uint64_t timeouts_local;
+		ATF_REQUIRE(
+		    read(timerfd, &timeouts_local, sizeof(timeouts_local)) ==
+		    (ssize_t)sizeof(timeouts_local));
+		ATF_REQUIRE(timeouts_local > 0);
+
+		++num_loop_iterations;
+		timeouts += timeouts_local;
+	}
+
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
+	timespecsub(&e, &b, &e);
+
+	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 300000000 &&
+	    e.tv_nsec < 350000000);
+
+	ATF_REQUIRE(num_loop_iterations <= 3);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -368,6 +410,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__reenable_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__expire_five);
 	ATF_TP_ADD_TC(tp, timerfd__gettime_stub);
+	ATF_TP_ADD_TC(tp, timerfd__simple_blocking_periodic_timer);
 
 	return atf_no_error();
 }
