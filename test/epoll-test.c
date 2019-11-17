@@ -21,6 +21,7 @@
 
 #include <err.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <time.h>
 #include <unistd.h>
@@ -171,6 +172,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__simple, tc)
 
 	ATF_REQUIRE(epoll_create(1) >= 0);
 	ATF_REQUIRE(close(fd) == 0);
+
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_create1(42) < 0);
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__leakcheck);
@@ -231,6 +234,14 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, 42, fd2, NULL) < 0);
 	ATF_REQUIRE(close(fd2) == 0);
 	ATF_REQUIRE(close(fd) == 0);
+
+	/**/
+
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(fd, EPOLL_CTL_ADD, fd2, NULL) < 0);
+
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_wait(fd, NULL, 0, 0) < 0);
+	struct epoll_event ev;
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_wait(fd, &ev, 0, 0) < 0);
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__simple_wait);
@@ -1218,6 +1229,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 		fd = timerfd_create(CLOCK_MONOTONIC, 0);
 		ATF_REQUIRE(fd >= 0);
 		ATF_REQUIRE_ERRNO(EINVAL, write(fd, &dummy, 1) < 0);
+		ATF_REQUIRE_ERRNO(EINVAL,
+		    write(fd, &dummy, (size_t)SSIZE_MAX + 1) < 0);
 		ATF_REQUIRE(close(fd) == 0);
 	}
 
@@ -1226,6 +1239,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 		ATF_REQUIRE(fd >= 0);
 		ATF_REQUIRE_ERRNO(EINVAL, write(fd, &dummy, 1) < 0);
 		ATF_REQUIRE_ERRNO(EINVAL, read(fd, &dummy, 1) < 0);
+		ATF_REQUIRE_ERRNO(EINVAL,
+		    read(fd, &dummy, (size_t)SSIZE_MAX + 1) < 0);
 		ATF_REQUIRE(close(fd) == 0);
 	}
 }
