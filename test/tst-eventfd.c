@@ -351,8 +351,8 @@ int poll_test(void)
     /* write to event and check read poll */
     c = 1;
     s = write(efd, &c, sizeof(c));
-    if (s != sizeof(s)) {
-        handle_error("");
+    if (s != sizeof(c)) {
+        handle_error("failed to write event.");
     }
 
 #ifndef __FreeBSD__
