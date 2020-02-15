@@ -46,18 +46,6 @@
 #define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 #endif
 
-#ifndef __linux__
-static bool
-is_fast_timer(int fd)
-{
-	struct kevent kev[1];
-	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-
-	bool is_fast = kevent(fd, kev, nitems(kev), NULL, 0, NULL) == 0;
-	return (is_fast);
-}
-#endif
-
 ATF_TC_WITHOUT_HEAD(timerfd__many_timers);
 ATF_TC_BODY(timerfd__many_timers, tc)
 {
@@ -97,9 +85,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_timer, tc)
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 100000000 &&
 	    e.tv_nsec < 150000000);
 
-#ifndef __linux__
-	ATF_REQUIRE(is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -143,9 +128,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_periodic_timer, tc)
 	    (ssize_t)sizeof(timeouts));
 	ATF_REQUIRE(timeouts == 2);
 
-#ifndef __linux__
-	ATF_REQUIRE(is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -188,9 +170,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__complex_periodic_timer, tc)
 	    (ssize_t)sizeof(timeouts));
 	ATF_REQUIRE(timeouts == 2);
 
-#ifndef __linux__
-	ATF_REQUIRE(!is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -237,9 +216,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_periodic_timer, tc)
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
 	    e.tv_nsec < 200000000);
 
-#ifndef __linux__
-	ATF_REQUIRE(is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -295,9 +271,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 	};
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
-#ifndef __linux__
-	ATF_REQUIRE(is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -496,9 +469,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 220000000 &&
 	    e.tv_nsec < 270000000);
 
-#ifndef __linux__
-	ATF_REQUIRE(!is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -554,9 +524,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
 
 	ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 
-#ifndef __linux__
-	ATF_REQUIRE(!is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 

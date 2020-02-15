@@ -4,106 +4,172 @@
 
 #include <sys/event.h>
 #include <sys/param.h>
+#include <sys/time.h>
 
 #include <assert.h>
 #include <signal.h>
 
 #include <pthread_np.h>
 
-static void *
-worker_function(void *arg)
+#ifndef timespeccmp
+#define timespeccmp(tvp, uvp, cmp)                                            \
+	(((tvp)->tv_sec == (uvp)->tv_sec)                                     \
+		? ((tvp)->tv_nsec cmp(uvp)->tv_nsec)                          \
+		: ((tvp)->tv_sec cmp(uvp)->tv_sec))
+#endif
+
+#ifndef timespecsub
+#define timespecsub(tsp, usp, vsp)                                            \
+	do {                                                                  \
+		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;                \
+		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;             \
+		if ((vsp)->tv_nsec < 0) {                                     \
+			(vsp)->tv_sec--;                                      \
+			(vsp)->tv_nsec += 1000000000L;                        \
+		}                                                             \
+	} while (0)
+#endif
+
+static bool
+timespec_is_valid(struct timespec const *ts)
 {
-	TimerFDCtx *ctx = arg;
+	return ts->tv_sec >= 0 && ts->tv_nsec >= 0 && ts->tv_nsec < 1000000000;
+}
 
-	uint64_t total_expirations = 0;
-
-	siginfo_t info;
-	sigset_t rt_set;
-	sigset_t block_set;
-
-	sigemptyset(&rt_set);
-	sigaddset(&rt_set, SIGRTMIN);
-	sigaddset(&rt_set, SIGRTMIN + 1);
-
-	sigfillset(&block_set);
-
-	(void)pthread_sigmask(SIG_BLOCK, &block_set, NULL);
-
-	struct kevent kev;
-	EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
-	    (void *)(intptr_t)pthread_getthreadid_np());
-	(void)kevent(ctx->kq, &kev, 1, NULL, 0, NULL);
-
-	for (;;) {
-		if (sigwaitinfo(&rt_set, &info) != SIGRTMIN) {
-			break;
-		}
-		int overrun = timer_getoverrun(ctx->complx.timer);
-		total_expirations += 1 + (uint64_t)MAX(0, overrun);
-		EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0,
-		    (void *)(uintptr_t)total_expirations);
-		(void)kevent(ctx->kq, &kev, 1, NULL, 0, NULL);
-	}
-
-	return NULL;
+static bool
+itimerspec_is_valid(struct itimerspec const *its)
+{
+	return timespec_is_valid(&its->it_value) &&
+	    timespec_is_valid(&its->it_interval);
 }
 
 static errno_t
-upgrade_to_complex_timer(TimerFDCtx *ctx, int clockid)
+timespecadd_safe(struct timespec const *tsp, struct timespec const *usp,
+    struct timespec *vsp)
 {
-	errno_t ec;
+	assert(timespec_is_valid(tsp));
+	assert(timespec_is_valid(usp));
 
-	if (ctx->kind == TIMERFD_KIND_COMPLEX) {
-		return 0;
+	if (__builtin_add_overflow(tsp->tv_sec, usp->tv_sec, &vsp->tv_sec)) {
+		return EINVAL;
+	}
+	vsp->tv_nsec = tsp->tv_nsec + usp->tv_nsec;
+
+	if (vsp->tv_nsec >= 1000000000L) {
+		if (__builtin_add_overflow(vsp->tv_sec, 1, &vsp->tv_sec)) {
+			return EINVAL;
+		}
+		vsp->tv_nsec -= 1000000000L;
 	}
 
-	if (ctx->kind == TIMERFD_KIND_SIMPLE) {
-		struct kevent kev[1];
-		EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-		(void)kevent(ctx->kq, kev, nitems(kev), NULL, 0, NULL);
+	return 0;
+}
 
-		ctx->kind = TIMERFD_KIND_UNDETERMINED;
+static errno_t
+timespecsub_safe(struct timespec const *tsp, struct timespec const *usp,
+    struct timespec *vsp)
+{
+	assert(timespec_is_valid(tsp));
+	assert(timespec_is_valid(usp));
+
+	if (__builtin_sub_overflow(tsp->tv_sec, usp->tv_sec, &vsp->tv_sec)) {
+		return EINVAL;
+	}
+	vsp->tv_nsec = tsp->tv_nsec - usp->tv_nsec;
+
+	if (vsp->tv_nsec < 0) {
+		if (__builtin_sub_overflow(vsp->tv_sec, 1, &vsp->tv_sec)) {
+			return EINVAL;
+		}
+		vsp->tv_nsec += 1000000000L;
 	}
 
-	assert(ctx->kind == TIMERFD_KIND_UNDETERMINED);
+	return 0;
+}
 
-	struct kevent kev;
-	EV_SET(&kev, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
-	if (kevent(ctx->kq, &kev, 1, NULL, 0, NULL) < 0) {
+static bool
+timerfd_ctx_is_disarmed(TimerFDCtx const *timerfd)
+{
+	return /**/
+	    timerfd->current_itimerspec.it_value.tv_sec == 0 &&
+	    timerfd->current_itimerspec.it_value.tv_nsec == 0;
+}
+
+static bool
+timerfd_ctx_is_interval_timer(TimerFDCtx const *timerfd)
+{
+	return /**/
+	    timerfd->current_itimerspec.it_interval.tv_sec != 0 ||
+	    timerfd->current_itimerspec.it_interval.tv_nsec != 0;
+}
+
+static void
+timerfd_ctx_disarm(TimerFDCtx *timerfd)
+{
+	timerfd->current_itimerspec.it_value.tv_sec = 0;
+	timerfd->current_itimerspec.it_value.tv_nsec = 0;
+}
+
+static void
+timerfd_ctx_update_to_current_time(TimerFDCtx *timerfd,
+    struct timespec const *current_time)
+{
+	if (timerfd_ctx_is_disarmed(timerfd)) {
+		return;
+	}
+
+	while (timespeccmp(/**/
+	    &timerfd->current_itimerspec.it_value, current_time, <=)) {
+		++timerfd->nr_expirations;
+
+		if (!timerfd_ctx_is_interval_timer(timerfd) ||
+		    timespecadd_safe(/**/
+			&timerfd->current_itimerspec.it_value,
+			&timerfd->current_itimerspec.it_interval,
+			&timerfd->current_itimerspec.it_value) != 0) {
+			timerfd_ctx_disarm(timerfd);
+			break;
+		}
+	}
+}
+
+static errno_t
+timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
+    struct timespec const *current_time)
+{
+	struct kevent kev[1];
+	struct timespec micros_ts;
+
+	assert(new->tv_sec != 0 || new->tv_nsec != 0);
+
+	if (timespecsub_safe(new, current_time, &micros_ts) != 0 ||
+	    micros_ts.tv_sec < 0) {
+		micros_ts.tv_sec = 0;
+		micros_ts.tv_nsec = 0;
+	}
+
+	int64_t micros;
+
+	if (__builtin_mul_overflow(micros_ts.tv_sec, 1000000, &micros) ||
+	    __builtin_add_overflow(micros, micros_ts.tv_nsec / 1000,
+		&micros)) {
+		return EINVAL;
+	}
+
+	if ((micros_ts.tv_nsec % 1000) &&
+	    __builtin_add_overflow(micros, 1, &micros)) {
+		return EINVAL;
+	}
+
+	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, NOTE_USECONDS,
+	    micros, 0);
+
+	if (kevent(timerfd->kq, kev, nitems(kev), /**/
+		NULL, 0, NULL) < 0) {
 		return errno;
 	}
 
-	if ((ec = pthread_create(&ctx->complx.worker, /**/
-		 NULL, worker_function, ctx)) != 0) {
-		return ec;
-	}
-
-	if (kevent(ctx->kq, NULL, 0, &kev, 1, NULL) < 0) {
-		ec = errno;
-		goto out;
-	}
-
-	int tid = (int)(intptr_t)kev.udata;
-
-	struct sigevent sigev = {
-	    .sigev_notify = SIGEV_THREAD_ID,
-	    .sigev_signo = SIGRTMIN,
-	    .sigev_notify_thread_id = tid,
-	};
-
-	if (timer_create(clockid, &sigev, &ctx->complx.timer) < 0) {
-		ec = errno;
-		goto out;
-	}
-
-	ctx->complx.current_expirations = 0;
-	ctx->kind = TIMERFD_KIND_COMPLEX;
 	return 0;
-
-out:
-	pthread_kill(ctx->complx.worker, SIGRTMIN + 1);
-	pthread_join(ctx->complx.worker, NULL);
-	return ec;
 }
 
 errno_t
@@ -113,18 +179,10 @@ timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 
 	assert(clockid == CLOCK_MONOTONIC || clockid == CLOCK_REALTIME);
 
-	*timerfd = (TimerFDCtx){.kq = kq, .kind = TIMERFD_KIND_UNDETERMINED};
+	*timerfd = (TimerFDCtx){.kq = kq, .clockid = clockid};
 
 	if ((ec = pthread_mutex_init(&timerfd->mutex, NULL)) != 0) {
 		return ec;
-	}
-
-	if (clockid == CLOCK_REALTIME) {
-		if ((ec = upgrade_to_complex_timer(timerfd, /**/
-			 CLOCK_REALTIME)) != 0) {
-			(void)pthread_mutex_destroy(&timerfd->mutex);
-			return ec;
-		}
 	}
 
 	return 0;
@@ -133,101 +191,76 @@ timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 errno_t
 timerfd_ctx_terminate(TimerFDCtx *timerfd)
 {
-	errno_t ec = 0;
-	errno_t ec_local = 0;
-
-	if (timerfd->kind == TIMERFD_KIND_COMPLEX) {
-		if (timer_delete(timerfd->complx.timer) < 0 && ec == 0) {
-			ec = errno;
-		}
-		ec_local = pthread_kill(timerfd->complx.worker, SIGRTMIN + 1);
-		ec = ec ? ec : ec_local;
-		ec_local = pthread_join(timerfd->complx.worker, NULL);
-		ec = ec ? ec : ec_local;
-	}
-
-	ec_local = pthread_mutex_destroy(&timerfd->mutex);
-	ec = ec ? ec : ec_local;
-
-	return ec;
+	return pthread_mutex_destroy(&timerfd->mutex);
 }
 
 static errno_t
 timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
-    const struct itimerspec *new, struct itimerspec *old)
+    struct itimerspec const *new, struct itimerspec *old)
 {
 	errno_t ec;
 
+	if (!itimerspec_is_valid(new)) {
+		return EINVAL;
+	}
+
 	assert((flags & ~(TIMER_ABSTIME)) == 0);
 
-	if ((flags & TIMER_ABSTIME) ||
-	    ((new->it_interval.tv_sec != 0 || new->it_interval.tv_nsec != 0) &&
-		(new->it_interval.tv_sec != new->it_value.tv_sec ||
-		    new->it_interval.tv_nsec != new->it_value.tv_nsec))) {
-		if ((ec = upgrade_to_complex_timer(timerfd, /**/
-			 CLOCK_MONOTONIC)) != 0) {
+	struct timespec current_time;
+	if (clock_gettime(timerfd->clockid, &current_time) < 0) {
+		return errno;
+	}
+
+	if (old) {
+		// TODO(jan): Refactor this out into timerfd_gettime.
+		timerfd_ctx_update_to_current_time(timerfd, &current_time);
+		*old = timerfd->current_itimerspec;
+		if (!timerfd_ctx_is_disarmed(timerfd)) {
+			assert(timespeccmp(&old->it_value, &current_time, >));
+			timespecsub(&old->it_value, &current_time,
+			    &old->it_value);
+		}
+	}
+
+	if (new->it_value.tv_sec == 0 && new->it_value.tv_nsec == 0) {
+		struct kevent kev[1];
+		EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
+		(void)kevent(timerfd->kq, kev, nitems(kev), NULL, 0, NULL);
+
+		timerfd_ctx_disarm(timerfd);
+		goto success;
+	}
+
+	struct itimerspec new_absolute;
+	if (flags & TIMER_ABSTIME) {
+		new_absolute = *new;
+	} else {
+		new_absolute = (struct itimerspec){
+		    .it_interval = new->it_interval,
+		    .it_value = current_time,
+		};
+
+		if ((ec = timespecadd_safe(&new_absolute.it_value,
+			 &new->it_value, &new_absolute.it_value)) != 0) {
 			return ec;
 		}
 	}
 
-	if (timerfd->kind == TIMERFD_KIND_COMPLEX) {
-		if (timer_settime(timerfd->complx.timer, /**/
-			flags, new, old) < 0) {
-			return errno;
-		}
-	} else {
-		struct kevent kev[1];
-		int oneshot_flag;
-		int64_t micros;
-
-		if (old) {
-			*old = timerfd->simple.current_itimerspec;
-		}
-
-		if (new->it_value.tv_sec == 0 && new->it_value.tv_nsec == 0) {
-			struct kevent kev[1];
-			EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-			(void)kevent(timerfd->kq, kev, nitems(kev), NULL, 0,
-			    NULL);
-		} else {
-			if (__builtin_mul_overflow(new->it_value.tv_sec,
-				1000000, &micros) ||
-			    __builtin_add_overflow(micros,
-				new->it_value.tv_nsec / 1000, &micros)) {
-				return EOVERFLOW;
-			}
-
-			if ((new->it_value.tv_nsec % 1000) &&
-			    __builtin_add_overflow(micros, 1, &micros)) {
-				return EOVERFLOW;
-			}
-
-			if (new->it_interval.tv_sec == 0 &&
-			    new->it_interval.tv_nsec == 0) {
-				oneshot_flag = EV_ONESHOT;
-			} else {
-				oneshot_flag = 0;
-			}
-
-			EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | oneshot_flag,
-			    NOTE_USECONDS, micros, 0);
-
-			if (kevent(timerfd->kq, kev, nitems(kev), /**/
-				NULL, 0, NULL) < 0) {
-				return errno;
-			}
-		}
-
-		timerfd->simple.current_itimerspec = *new;
-		timerfd->kind = TIMERFD_KIND_SIMPLE;
+	if ((ec = timerfd_ctx_register_event(timerfd, &new_absolute.it_value,
+		 &current_time)) != 0) {
+		return ec;
 	}
 
+	timerfd->current_itimerspec = new_absolute;
+
+success:
+	timerfd->nr_expirations = 0;
 	return 0;
 }
 
 errno_t
 timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
-    const struct itimerspec *new, struct itimerspec *old)
+    struct itimerspec const *new, struct itimerspec *old)
 {
 	errno_t ec;
 
@@ -241,8 +274,6 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
 static errno_t
 timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
 {
-	uint64_t nr_expired;
-
 	for (;;) {
 		struct kevent kev;
 
@@ -256,34 +287,33 @@ timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
 			return EAGAIN;
 		}
 
-		nr_expired = 0;
+		assert(kev.filter == EVFILT_TIMER);
 
-		if (timerfd->kind == TIMERFD_KIND_COMPLEX) {
-			uint64_t expired_new = (uint64_t)kev.udata;
+		struct timespec current_time;
+		if (clock_gettime(timerfd->clockid, &current_time) < 0) {
+			return errno;
+		}
 
-			assert(expired_new && kev.filter == EVFILT_USER);
+		timerfd_ctx_update_to_current_time(timerfd, &current_time);
 
-			if (expired_new >
-			    timerfd->complx.current_expirations) {
-				nr_expired = expired_new -
-				    timerfd->complx.current_expirations;
-				timerfd->complx.current_expirations =
-				    expired_new;
+		uint64_t nr_expirations = timerfd->nr_expirations;
+		timerfd->nr_expirations = 0;
+
+		if (!timerfd_ctx_is_disarmed(timerfd)) {
+			if (timerfd_ctx_register_event(timerfd,
+				&timerfd->current_itimerspec.it_value,
+				&current_time) != 0) {
+				timerfd_ctx_disarm(timerfd);
 			}
-		} else {
-			assert(!kev.udata && kev.filter == EVFILT_TIMER &&
-			    kev.data >= 0);
-
-			nr_expired = (uint64_t)kev.data;
 		}
 
-		if (nr_expired != 0) {
-			break;
+		if (nr_expirations == 0) {
+			return EAGAIN;
 		}
+
+		*value = nr_expirations;
+		return 0;
 	}
-
-	*value = nr_expired;
-	return 0;
 }
 
 errno_t
