@@ -194,6 +194,18 @@ timerfd_ctx_terminate(TimerFDCtx *timerfd)
 	return pthread_mutex_destroy(&timerfd->mutex);
 }
 
+static void
+timerfd_ctx_gettime_impl(TimerFDCtx *timerfd, struct itimerspec *cur,
+    struct timespec const *current_time)
+{
+	timerfd_ctx_update_to_current_time(timerfd, current_time);
+	*cur = timerfd->current_itimerspec;
+	if (!timerfd_ctx_is_disarmed(timerfd)) {
+		assert(timespeccmp(&cur->it_value, current_time, >));
+		timespecsub(&cur->it_value, current_time, &cur->it_value);
+	}
+}
+
 static errno_t
 timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
     struct itimerspec const *new, struct itimerspec *old)
@@ -212,14 +224,7 @@ timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
 	}
 
 	if (old) {
-		// TODO(jan): Refactor this out into timerfd_gettime.
-		timerfd_ctx_update_to_current_time(timerfd, &current_time);
-		*old = timerfd->current_itimerspec;
-		if (!timerfd_ctx_is_disarmed(timerfd)) {
-			assert(timespeccmp(&old->it_value, &current_time, >));
-			timespecsub(&old->it_value, &current_time,
-			    &old->it_value);
-		}
+		timerfd_ctx_gettime_impl(timerfd, old, &current_time);
 	}
 
 	if (new->it_value.tv_sec == 0 && new->it_value.tv_nsec == 0) {
@@ -269,6 +274,21 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
 	(void)pthread_mutex_unlock(&timerfd->mutex);
 
 	return ec;
+}
+
+errno_t
+timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur)
+{
+	struct timespec current_time;
+	if (clock_gettime(timerfd->clockid, &current_time) < 0) {
+		return errno;
+	}
+
+	(void)pthread_mutex_lock(&timerfd->mutex);
+	timerfd_ctx_gettime_impl(timerfd, cur, &current_time);
+	(void)pthread_mutex_unlock(&timerfd->mutex);
+
+	return 0;
 }
 
 static errno_t
