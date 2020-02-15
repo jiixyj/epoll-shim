@@ -326,19 +326,20 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__expire_five, tc)
 	ATF_REQUIRE(close(fd) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(timerfd__gettime_stub);
-ATF_TC_BODY_FD_LEAKCHECK(timerfd__gettime_stub, tc)
+ATF_TC_WITHOUT_HEAD(timerfd__simple_gettime);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_gettime, tc)
 {
 	struct itimerspec curr_value;
 
 	int fd = timerfd_create(CLOCK_MONOTONIC, 0);
 	ATF_REQUIRE(fd >= 0);
 
-#ifndef __linux__
-	atf_tc_expect_fail("timerfd_gettime is stubbed out currently");
-#endif
-
 	ATF_REQUIRE(timerfd_gettime(fd, &curr_value) == 0);
+
+	ATF_REQUIRE(curr_value.it_value.tv_sec == 0);
+	ATF_REQUIRE(curr_value.it_value.tv_nsec == 0);
+	ATF_REQUIRE(curr_value.it_interval.tv_sec == 0);
+	ATF_REQUIRE(curr_value.it_interval.tv_nsec == 0);
 
 	ATF_REQUIRE(close(fd) == 0);
 }
@@ -570,7 +571,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__reset_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__reenable_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__expire_five);
-	ATF_TP_ADD_TC(tp, timerfd__gettime_stub);
+	ATF_TP_ADD_TC(tp, timerfd__simple_gettime);
 	ATF_TP_ADD_TC(tp, timerfd__simple_blocking_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__argument_checks);
 	ATF_TP_ADD_TC(tp, timerfd__upgrade_simple_to_complex);
