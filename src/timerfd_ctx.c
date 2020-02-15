@@ -110,6 +110,29 @@ timerfd_ctx_disarm(TimerFDCtx *timerfd)
 	timerfd->current_itimerspec.it_value.tv_nsec = 0;
 }
 
+static errno_t
+ts_to_nanos(struct timespec const *ts, uint64_t *ts_nanos_out)
+{
+	uint64_t ts_nanos;
+
+	if (__builtin_mul_overflow(ts->tv_sec, 1000000000, &ts_nanos) ||
+	    __builtin_add_overflow(ts_nanos, ts->tv_nsec, &ts_nanos)) {
+		return EOVERFLOW;
+	}
+
+	*ts_nanos_out = ts_nanos;
+	return 0;
+}
+
+static struct timespec
+nanos_to_ts(uint64_t ts_nanos)
+{
+	return (struct timespec){
+	    .tv_sec = ts_nanos / 1000000000,
+	    .tv_nsec = ts_nanos % 1000000000,
+	};
+}
+
 static void
 timerfd_ctx_update_to_current_time(TimerFDCtx *timerfd,
     struct timespec const *current_time)
@@ -118,19 +141,65 @@ timerfd_ctx_update_to_current_time(TimerFDCtx *timerfd,
 		return;
 	}
 
-	while (timespeccmp(/**/
-	    &timerfd->current_itimerspec.it_value, current_time, <=)) {
-		++timerfd->nr_expirations;
+	if (timerfd_ctx_is_interval_timer(timerfd)) {
+		struct timespec diff_time;
 
-		if (!timerfd_ctx_is_interval_timer(timerfd) ||
-		    timespecadd_safe(/**/
+		if (timespecsub_safe(current_time,
 			&timerfd->current_itimerspec.it_value,
-			&timerfd->current_itimerspec.it_interval,
-			&timerfd->current_itimerspec.it_value) != 0) {
-			timerfd_ctx_disarm(timerfd);
-			break;
+			&diff_time) != 0) {
+			goto disarm;
+		}
+
+		if (diff_time.tv_sec >= 0) {
+			uint64_t diff_nanos;
+			if (ts_to_nanos(&diff_time, &diff_nanos)) {
+				goto disarm;
+			}
+
+			uint64_t interval_nanos;
+			if (ts_to_nanos(
+				&timerfd->current_itimerspec.it_interval,
+				&interval_nanos)) {
+				goto disarm;
+			}
+
+			uint64_t expirations = diff_nanos / interval_nanos;
+			if (expirations == UINT64_MAX) {
+				goto disarm;
+			}
+			++expirations;
+
+			uint64_t nanos_to_add;
+			if (__builtin_mul_overflow(expirations, interval_nanos,
+				&nanos_to_add)) {
+				goto disarm;
+			}
+
+			struct timespec next_ts = nanos_to_ts(nanos_to_add);
+			if (timespecadd_safe(&next_ts,
+				&timerfd->current_itimerspec.it_value,
+				&next_ts) != 0) {
+				goto disarm;
+			}
+
+			timerfd->nr_expirations += expirations;
+			timerfd->current_itimerspec.it_value = next_ts;
+		}
+	} else {
+		if (timespeccmp(current_time,
+			&timerfd->current_itimerspec.it_value, >=)) {
+			++timerfd->nr_expirations;
+			goto disarm;
 		}
 	}
+
+	assert(timespeccmp(current_time, /**/
+	    &timerfd->current_itimerspec.it_value, <));
+
+	return;
+
+disarm:
+	timerfd_ctx_disarm(timerfd);
 }
 
 static errno_t
@@ -156,7 +225,7 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 		return EINVAL;
 	}
 
-	if ((micros_ts.tv_nsec % 1000) &&
+	if ((micros_ts.tv_nsec % 1000) != 0 &&
 	    __builtin_add_overflow(micros, 1, &micros)) {
 		return EINVAL;
 	}
@@ -201,7 +270,7 @@ timerfd_ctx_gettime_impl(TimerFDCtx *timerfd, struct itimerspec *cur,
 	timerfd_ctx_update_to_current_time(timerfd, current_time);
 	*cur = timerfd->current_itimerspec;
 	if (!timerfd_ctx_is_disarmed(timerfd)) {
-		assert(timespeccmp(&cur->it_value, current_time, >));
+		assert(timespeccmp(current_time, &cur->it_value, <));
 		timespecsub(&cur->it_value, current_time, &cur->it_value);
 	}
 }
