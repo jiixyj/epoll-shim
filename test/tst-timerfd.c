@@ -134,6 +134,19 @@ nano_diff(struct timespec end, struct timespec begin)
 	return diff.tv_sec * 1000000000LL + diff.tv_nsec;
 }
 
+static void *
+th2_func(void *arg)
+{
+	int fd = *(int *)arg;
+	u64 counter2;
+	struct timespec before = steady_clock_now();
+	expect(read(fd, &counter2, sizeof(counter2)), (ssize_t)8);
+	expect(counter2, (u64)1);
+	struct timespec after = steady_clock_now();
+	expectge(nano_diff(after, before), (int64_t)MS_TO_NSEC(500));
+	return NULL;
+}
+
 void
 dotest(int clockid)
 {
@@ -242,26 +255,13 @@ dotest(int clockid)
 	after = steady_clock_now();
 	expectge(nano_diff(after, before), (int64_t)MS_TO_NSEC(400));
 
-#ifdef notyet
 	// Check blocking read, no interval, timer set after read blocks
-	std::thread th2([&] {
-		u64 counter2;
-		before = std::chrono::high_resolution_clock::now();
-		expect(read(fd, &counter2, sizeof(counter2)), (ssize_t)8);
-		expect(counter2, (u64)1);
-		after = std::chrono::high_resolution_clock::now();
-		expectge(
-		    (int64_t)
-			std::chrono::duration_cast<std::chrono::nanoseconds>(
-			    after - before)
-			    .count(),
-		    (int64_t)MS_TO_NSEC(500));
-	});
+	pthread_t th2;
+	expect(pthread_create(&th2, NULL, th2_func, &fd), 0);
 	usleep(400000);
 	struct itimerspec t6 = {{0, 0}, {0, MS_TO_NSEC(200)}};
 	expect_success(junk, timerfd_settime(fd, 0, &t6, NULL));
-	th2.join();
-#endif
+	expect(pthread_join(th2, NULL), 0);
 
 	// Check blocking read, with interval
 	struct itimerspec t7 = {{0, MS_TO_NSEC(200)}, {0, MS_TO_NSEC(500)}};
