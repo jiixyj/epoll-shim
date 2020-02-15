@@ -298,6 +298,7 @@ timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
 
 	if (new->it_value.tv_sec == 0 && new->it_value.tv_nsec == 0) {
 		struct kevent kev[1];
+
 		EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
 		(void)kevent(timerfd->kq, kev, nitems(kev), NULL, 0, NULL);
 
