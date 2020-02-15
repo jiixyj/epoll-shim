@@ -502,6 +502,64 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(timerfd__absolute_timer);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+
+	ATF_REQUIRE(timerfd >= 0);
+
+	struct timespec b, e;
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
+
+	struct itimerspec time = {
+	    .it_value = b,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 0,
+	};
+
+	struct timespec ts_600ms = {
+	    .tv_sec = 0,
+	    .tv_nsec = 600000000,
+	};
+
+	timespecadd(&time.it_value, &ts_600ms, &time.it_value);
+
+	ATF_REQUIRE(timerfd_settime(timerfd, /**/
+			TFD_TIMER_ABSTIME, &time, NULL) == 0);
+
+	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+
+	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+
+	// Don't read(2) here!
+
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
+	timespecsub(&e, &b, &e);
+	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 600000000 &&
+	    e.tv_nsec < 650000000);
+
+	struct itimerspec zeroed_its = {
+	    .it_value.tv_sec = 0,
+	    .it_value.tv_nsec = 0,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 0,
+	};
+	ATF_REQUIRE(timerfd_settime(timerfd, 0, &zeroed_its, NULL) == 0);
+
+	uint64_t timeouts;
+	ATF_REQUIRE_ERRNO(EAGAIN,
+	    read(timerfd, &timeouts, sizeof(timeouts)) < 0);
+
+	ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+
+#ifndef __linux__
+	ATF_REQUIRE(!is_fast_timer(timerfd));
+#endif
+	ATF_REQUIRE(close(timerfd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -515,6 +573,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__simple_blocking_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__argument_checks);
 	ATF_TP_ADD_TC(tp, timerfd__upgrade_simple_to_complex);
+	ATF_TP_ADD_TC(tp, timerfd__absolute_timer);
 
 	return atf_no_error();
 }
