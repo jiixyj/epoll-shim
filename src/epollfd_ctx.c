@@ -303,9 +303,13 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		 * Also ignore ENOENT -- this happens when trying to remove a
 		 * previously added fd where the EVFILT_WRITE registration
 		 * failed.
+		 *
+		 * Note that NetBSD returns EPERM on EVFILT_WRITE registration
+		 * failure.
 		 */
 		if (i == 1 &&
-		    (kev[i].data == EINVAL || kev[i].data == ENOENT)) {
+		    (kev[i].data == EINVAL || kev[i].data == EPERM ||
+			kev[i].data == ENOENT)) {
 			continue;
 		}
 
