@@ -12,6 +12,31 @@
 
 static_assert(sizeof(unsigned int) < sizeof(uint64_t), "");
 
+#ifndef EVFILT_USER
+
+errno_t
+eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
+{
+	return (ENOSYS);
+}
+errno_t
+eventfd_ctx_terminate(EventFDCtx *eventfd)
+{
+	return (ENOSYS);
+}
+errno_t
+eventfd_ctx_write(EventFDCtx *eventfd, uint64_t value)
+{
+	return (ENOSYS);
+}
+errno_t
+eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
+{
+	return (ENOSYS);
+}
+
+#else
+
 errno_t
 eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 {
@@ -135,3 +160,4 @@ eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? 1 : current_value;
 	return (0);
 }
+#endif
