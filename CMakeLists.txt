@@ -22,6 +22,12 @@ include(CTest)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_EXTENSIONS ON)
 
+include(CheckSymbolExists)
+check_symbol_exists(errno_t errno.h HAVE_ERRNO_T)
+if(NOT HAVE_ERRNO_T)
+  add_definitions(-Derrno_t=int)
+endif()
+
 add_subdirectory(src)
 
 if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
