@@ -209,31 +209,49 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
     struct timespec const *current_time)
 {
 	struct kevent kev[1];
-	struct timespec micros_ts;
+	struct timespec diff_time;
 
 	assert(new->tv_sec != 0 || new->tv_nsec != 0);
 
-	if (timespecsub_safe(new, current_time, &micros_ts) != 0 ||
-	    micros_ts.tv_sec < 0) {
-		micros_ts.tv_sec = 0;
-		micros_ts.tv_nsec = 0;
+	if (timespecsub_safe(new, current_time, &diff_time) != 0 ||
+	    diff_time.tv_sec < 0) {
+		diff_time.tv_sec = 0;
+		diff_time.tv_nsec = 0;
 	}
 
+#ifdef NOTE_USECONDS
 	int64_t micros;
 
-	if (__builtin_mul_overflow(micros_ts.tv_sec, 1000000, &micros) ||
-	    __builtin_add_overflow(micros, micros_ts.tv_nsec / 1000,
+	if (__builtin_mul_overflow(diff_time.tv_sec, 1000000, &micros) ||
+	    __builtin_add_overflow(micros, diff_time.tv_nsec / 1000,
 		&micros)) {
 		return EINVAL;
 	}
 
-	if ((micros_ts.tv_nsec % 1000) != 0 &&
+	if ((diff_time.tv_nsec % 1000) != 0 &&
 	    __builtin_add_overflow(micros, 1, &micros)) {
 		return EINVAL;
 	}
 
-	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, NOTE_USECONDS,
-	    micros, 0);
+	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
+	    NOTE_USECONDS, micros, 0);
+#else
+	int64_t millis;
+
+	if (__builtin_mul_overflow(diff_time.tv_sec, 1000, &millis) ||
+	    __builtin_add_overflow(millis, diff_time.tv_nsec / 1000000,
+		&millis)) {
+		return EINVAL;
+	}
+
+	if ((diff_time.tv_nsec % 1000000) != 0 &&
+	    __builtin_add_overflow(millis, 1, &millis)) {
+		return EINVAL;
+	}
+
+	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
+	    0, millis, 0);
+#endif
 
 	if (kevent(timerfd->kq, kev, nitems(kev), /**/
 		NULL, 0, NULL) < 0) {
