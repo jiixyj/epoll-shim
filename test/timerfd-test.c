@@ -315,10 +315,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__expire_five, tc)
 	kill(getpid(), SIGUSR1);
 
 	for (;;) {
-		struct pollfd pfd = {.fd = fd, .events = POLLIN};
-		int n;
-		ssize_t r;
-
 		uint64_t exp = wait_for_timerfd(fd);
 
 		printf("timer expired %u times\n", (unsigned)exp);
