@@ -12,6 +12,8 @@
 
 #include "eventfd_ctx.c"
 
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
+
 #define REQUIRE(x)                                                            \
 	do {                                                                  \
 		if (!(x)) {                                                   \
@@ -27,6 +29,13 @@ tc_init_terminate(void)
 	EventFDCtx eventfd;
 
 	REQUIRE((kq = kqueue()) >= 0);
+	errno_t ec =
+	    eventfd_ctx_init(&eventfd, kq, 0, EVENTFD_CTX_FLAG_SEMAPHORE);
+	if (ec == ENOSYS) {
+		/* Marks this test as 'skipped'. */
+		exit(99);
+	}
+	REQUIRE(ec == 0);
 	REQUIRE(eventfd_ctx_init(&eventfd, kq, 0,
 		    EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
 	{

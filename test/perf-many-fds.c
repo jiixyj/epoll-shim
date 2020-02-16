@@ -2,6 +2,7 @@
 
 #include <sys/eventfd.h>
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -25,7 +26,9 @@ ATF_TC_BODY(perf_many_fds__perf, tc)
 
 	for (long i = 0; i < NR_EVENTFDS; ++i) {
 		eventfds[i] = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-		ATF_REQUIRE(eventfds[i] >= 0);
+		if (eventfds[i] < 0) {
+			atf_tc_skip("could not create eventfd: %d", errno);
+		}
 	}
 
 	for (long i = 0; i < 2000000; ++i) {

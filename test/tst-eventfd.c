@@ -564,6 +564,20 @@ int api_test(void)
 
 int main(void)
 {
+    {
+        int efd = eventfd(5, EFD_CLOEXEC | EFD_NONBLOCK);
+        if (efd < 0) {
+            if (errno == ENOSYS) {
+                /* Marks this test as 'skipped'. */
+                return (99);
+            }
+            return (1);
+        }
+        if (close(efd) < 0) {
+            return (1);
+        }
+    }
+
     simple_test();
     semaphore_test();
     threaded_test();

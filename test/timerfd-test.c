@@ -61,13 +61,33 @@
 ATF_TC_WITHOUT_HEAD(timerfd__many_timers);
 ATF_TC_BODY(timerfd__many_timers, tc)
 {
-	int timer_fds[1024];
+	int timer_fds[512];
 	int i;
 
 	for (i = 0; i < (int)nitems(timer_fds); ++i) {
-		ATF_REQUIRE(
-		    (timer_fds[i] = timerfd_create(CLOCK_MONOTONIC, /**/
-			 TFD_CLOEXEC | TFD_NONBLOCK)) >= 0);
+		timer_fds[i] = timerfd_create(CLOCK_MONOTONIC, /**/
+		    TFD_CLOEXEC | TFD_NONBLOCK);
+		ATF_REQUIRE(timer_fds[i] >= 0);
+	}
+}
+
+static uint64_t
+wait_for_timerfd(int timerfd)
+{
+	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+
+	for (;;) {
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+
+		uint64_t timeouts;
+		ssize_t r = read(timerfd, &timeouts, sizeof(timeouts));
+		if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+			continue;
+		}
+
+		ATF_REQUIRE(r == (ssize_t)sizeof(timeouts));
+		ATF_REQUIRE(timeouts > 0);
+		return timeouts;
 	}
 }
 
@@ -86,11 +106,9 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_timer, tc)
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
-
 	struct timespec b, e;
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+	(void)wait_for_timerfd(timerfd);
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
 
@@ -117,21 +135,14 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_periodic_timer, tc)
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
-
 	struct timespec b, e;
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+	uint64_t timeouts = wait_for_timerfd(timerfd);
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
 
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 100000000 &&
 	    e.tv_nsec < 150000000);
-
-	poll(&pfd, 1, -1);
-	uint64_t timeouts;
-	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
-	    (ssize_t)sizeof(timeouts));
 	ATF_REQUIRE(timeouts == 1);
 
 	usleep(230000);
@@ -160,20 +171,14 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__complex_periodic_timer, tc)
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
-
 	struct timespec b, e;
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+	uint64_t timeouts = wait_for_timerfd(timerfd);
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 100000000 &&
 	    e.tv_nsec < 150000000);
 
-	poll(&pfd, 1, -1);
-	uint64_t timeouts;
-	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
-	    (ssize_t)sizeof(timeouts));
 	ATF_REQUIRE(timeouts == 1);
 
 	usleep(230000);
@@ -205,28 +210,24 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_periodic_timer, tc)
 	struct timespec b, e;
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+	(void)wait_for_timerfd(timerfd);
 
 	time = (struct itimerspec){
 	    .it_value.tv_sec = 0,
 	    .it_value.tv_nsec = 50000000,
 	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 50000000,
+	    .it_interval.tv_nsec = 100000000,
 	};
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 
-	uint64_t timeouts;
-	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
-	    (ssize_t)sizeof(timeouts));
+	uint64_t timeouts = wait_for_timerfd(timerfd);
 	ATF_REQUIRE(timeouts == 1);
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
-	    e.tv_nsec < 200000000);
+	    e.tv_nsec < 240000000);
 
 	ATF_REQUIRE(close(timerfd) == 0);
 }
@@ -251,12 +252,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 	struct timespec b, e;
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
-
-	uint64_t timeouts;
-	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
-	    (ssize_t)sizeof(timeouts));
+	uint64_t timeouts = wait_for_timerfd(timerfd);
 	ATF_REQUIRE(timeouts == 1);
 
 	time = (struct itimerspec){
@@ -267,13 +263,15 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 	};
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
-	ATF_REQUIRE(poll(&pfd, 1, 200) == 0);
+
+	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+	ATF_REQUIRE(poll(&pfd, 1, 250) == 0);
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
 
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 300000000 &&
-	    e.tv_nsec < 350000000);
+	    e.tv_nsec < 400000000);
 
 	time = (struct itimerspec){
 	    .it_value.tv_sec = 1,
@@ -320,12 +318,8 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__expire_five, tc)
 		struct pollfd pfd = {.fd = fd, .events = POLLIN};
 		int n;
 		ssize_t r;
-		uint64_t exp;
 
-		ATF_REQUIRE((n = poll(&pfd, 1, -1)) >= 0);
-
-		ATF_REQUIRE((r = read(fd, &exp, sizeof(uint64_t))) ==
-		    sizeof(uint64_t));
+		uint64_t exp = wait_for_timerfd(fd);
 
 		printf("timer expired %u times\n", (unsigned)exp);
 
@@ -449,8 +443,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	struct timespec b, e;
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+	(void)wait_for_timerfd(timerfd);
 
 	time = (struct itimerspec){
 	    .it_value.tv_sec = 0,
@@ -460,11 +453,8 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	};
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 
-	uint64_t timeouts;
-	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
-	    (ssize_t)sizeof(timeouts));
+	uint64_t timeouts = wait_for_timerfd(timerfd);
 	ATF_REQUIRE(timeouts == 1);
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
@@ -472,9 +462,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
 	    e.tv_nsec < 200000000);
 
-	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
-	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
-	    (ssize_t)sizeof(timeouts));
+	timeouts = wait_for_timerfd(timerfd);
 	ATF_REQUIRE(timeouts == 1);
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
@@ -513,14 +501,15 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
 			TFD_TIMER_ABSTIME, &time, NULL) == 0);
 
 	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
-
 	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 
 	// Don't read(2) here!
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
-	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 600000000 &&
+	ATF_REQUIRE(e.tv_sec == 0 &&
+	    /* Don't check for this because of spurious wakeups. */
+	    /* e.tv_nsec >= 600000000 && */
 	    e.tv_nsec < 650000000);
 
 	struct itimerspec zeroed_its = {

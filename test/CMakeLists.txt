@@ -51,6 +51,7 @@ add_executable(tst-eventfd tst-eventfd.c)
 target_link_libraries(tst-eventfd PRIVATE epoll-shim::epoll-shim
                                           Threads::Threads)
 add_test(NAME tst-eventfd COMMAND tst-eventfd)
+set_tests_properties(tst-eventfd PROPERTIES SKIP_RETURN_CODE 99)
 if(ENABLE_COMPILER_WARNINGS)
   target_compile_options(tst-eventfd PRIVATE "-w")
 endif()
@@ -77,4 +78,5 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_include_directories(eventfd-ctx-test
                              PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../src")
   add_test(NAME eventfd-ctx-test COMMAND eventfd-ctx-test)
+  set_tests_properties(eventfd-ctx-test PROPERTIES SKIP_RETURN_CODE 99)
 endif()
