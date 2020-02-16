@@ -319,6 +319,7 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		}
 	}
 
+#ifdef EV_FORCEONESHOT
 	if (op != EPOLL_CTL_DEL && is_not_yet_connected_stream_socket(fd2)) {
 		EV_SET(&kev[0], fd2, EVFILT_READ, EV_ENABLE | EV_FORCEONESHOT,
 		    0, 0, fd2_node);
@@ -329,6 +330,7 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 
 		new_flags |= KQUEUE_STATE_NYCSS;
 	}
+#endif
 
 out:
 	if (op == EPOLL_CTL_ADD) {
@@ -442,13 +444,16 @@ again:;
 	int j = 0;
 
 	for (int i = 0; i < ret; ++i) {
+		RegisteredFDsNode *fd2_node =
+		    (RegisteredFDsNode *)evlist[i].udata;
 		int events = 0;
+
 		if (evlist[i].filter == EVFILT_READ) {
 			events |= EPOLLIN;
 			if (evlist[i].flags & EV_ONESHOT) {
-				RegisteredFDsNode *fd2_node = evlist[i].udata;
 				uint16_t flags = fd2_node->flags;
 
+#ifdef EV_FORCEONESHOT
 				if (flags & KQUEUE_STATE_NYCSS) {
 					if (is_not_yet_connected_stream_socket(
 						(int)evlist[i].ident)) {
@@ -463,13 +468,13 @@ again:;
 						EV_SET(&nkev[0],
 						    evlist[i].ident,
 						    EVFILT_READ, EV_ADD, /**/
-						    0, 0, evlist[i].udata);
+						    0, 0, fd2_node);
 						EV_SET(&nkev[1],
 						    evlist[i].ident,
 						    EVFILT_READ,
 						    EV_ENABLE |
 							EV_FORCEONESHOT,
-						    0, 0, evlist[i].udata);
+						    0, 0, fd2_node);
 
 						kevent(epollfd->kq, nkev, 2,
 						    NULL, 0, NULL);
@@ -480,14 +485,14 @@ again:;
 						EV_SET(&nkev[0],
 						    evlist[i].ident,
 						    EVFILT_READ, EV_ADD, /**/
-						    0, 0, evlist[i].udata);
+						    0, 0, fd2_node);
 						EV_SET(&nkev[1],
 						    evlist[i].ident,
 						    EVFILT_READ,
 						    flags & KQUEUE_STATE_EPOLLIN
 							? EV_ENABLE
 							: EV_DISABLE,
-						    0, 0, evlist[i].udata);
+						    0, 0, fd2_node);
 
 						kevent(epollfd->kq, nkev, 2,
 						    NULL, 0, NULL);
@@ -497,6 +502,7 @@ again:;
 						continue;
 					}
 				}
+#endif
 			}
 		} else if (evlist[i].filter == EVFILT_WRITE) {
 			events |= EPOLLOUT;
@@ -525,8 +531,7 @@ again:;
 				events |= EPOLLERR;
 			}
 
-			uint16_t flags =
-			    ((RegisteredFDsNode *)evlist[i].udata)->flags;
+			uint16_t flags = fd2_node->flags;
 
 			int epoll_event;
 
@@ -618,7 +623,7 @@ again:;
 			events |= epoll_event;
 		}
 		ev[j].events = (uint32_t)events;
-		ev[j].data = ((RegisteredFDsNode *)evlist[i].udata)->data;
+		ev[j].data = fd2_node->data;
 		++j;
 	}
 
