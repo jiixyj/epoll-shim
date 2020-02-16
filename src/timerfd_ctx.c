@@ -9,7 +9,9 @@
 #include <assert.h>
 #include <signal.h>
 
-#include <pthread_np.h>
+#ifndef nitems
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
+#endif
 
 #ifndef timespeccmp
 #define timespeccmp(tvp, uvp, cmp)                                            \

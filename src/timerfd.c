@@ -8,7 +8,6 @@
 
 #include <poll.h>
 #include <pthread.h>
-#include <pthread_np.h>
 
 #include <assert.h>
 #include <errno.h>
