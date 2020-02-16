@@ -113,9 +113,9 @@ timerfd_ctx_disarm(TimerFDCtx *timerfd)
 }
 
 static errno_t
-ts_to_nanos(struct timespec const *ts, uint64_t *ts_nanos_out)
+ts_to_nanos(struct timespec const *ts, int64_t *ts_nanos_out)
 {
-	uint64_t ts_nanos;
+	int64_t ts_nanos;
 
 	if (__builtin_mul_overflow(ts->tv_sec, 1000000000, &ts_nanos) ||
 	    __builtin_add_overflow(ts_nanos, ts->tv_nsec, &ts_nanos)) {
@@ -127,7 +127,7 @@ ts_to_nanos(struct timespec const *ts, uint64_t *ts_nanos_out)
 }
 
 static struct timespec
-nanos_to_ts(uint64_t ts_nanos)
+nanos_to_ts(int64_t ts_nanos)
 {
 	return (struct timespec){
 	    .tv_sec = ts_nanos / 1000000000,
@@ -153,25 +153,25 @@ timerfd_ctx_update_to_current_time(TimerFDCtx *timerfd,
 		}
 
 		if (diff_time.tv_sec >= 0) {
-			uint64_t diff_nanos;
+			int64_t diff_nanos;
 			if (ts_to_nanos(&diff_time, &diff_nanos)) {
 				goto disarm;
 			}
 
-			uint64_t interval_nanos;
+			int64_t interval_nanos;
 			if (ts_to_nanos(
 				&timerfd->current_itimerspec.it_interval,
 				&interval_nanos)) {
 				goto disarm;
 			}
 
-			uint64_t expirations = diff_nanos / interval_nanos;
-			if (expirations == UINT64_MAX) {
+			int64_t expirations = diff_nanos / interval_nanos;
+			if (expirations == INT64_MAX) {
 				goto disarm;
 			}
 			++expirations;
 
-			uint64_t nanos_to_add;
+			int64_t nanos_to_add;
 			if (__builtin_mul_overflow(expirations, interval_nanos,
 				&nanos_to_add)) {
 				goto disarm;
@@ -184,7 +184,9 @@ timerfd_ctx_update_to_current_time(TimerFDCtx *timerfd,
 				goto disarm;
 			}
 
-			timerfd->nr_expirations += expirations;
+			assert(expirations >= 0);
+
+			timerfd->nr_expirations += (uint64_t)expirations;
 			timerfd->current_itimerspec.it_value = next_ts;
 		}
 	} else {
