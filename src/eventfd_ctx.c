@@ -10,6 +10,10 @@
 
 #include <assert.h>
 
+#ifndef nitems
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
+#endif
+
 static_assert(sizeof(unsigned int) < sizeof(uint64_t), "");
 
 errno_t

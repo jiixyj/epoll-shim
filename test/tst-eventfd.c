@@ -315,7 +315,7 @@ int poll_test(void)
         handle_error("write event on read fd is not expected");
     }
 
-#ifndef __FreeBSD__
+#ifdef __linux__
     /* no event count - write poll */
     pfd[0].fd = efd;
     pfd[0].events = POLLOUT;
@@ -355,7 +355,7 @@ int poll_test(void)
         handle_error("failed to write event.");
     }
 
-#ifndef __FreeBSD__
+#ifdef __linux__
     pfd[0].fd = efd;
     pfd[0].events = POLLOUT;
     pfd[1].fd = efd;
@@ -394,7 +394,7 @@ int poll_test(void)
         handle_perror("write");
     }
 
-#ifndef __FreeBSD__
+#ifdef __linux__
     pfd[0].fd = efd;
     pfd[0].events = POLLOUT;
     pfd[1].fd = efd;
