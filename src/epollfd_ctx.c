@@ -23,6 +23,7 @@ registered_fds_node_create(int fd, struct epoll_event *ev)
 
 	node->fd = fd;
 	node->flags = 0;
+	node->eof_state = 0;
 	node->data = ev->data;
 
 	return node;
@@ -497,6 +498,20 @@ again:;
 			events |= EPOLLOUT;
 		}
 
+		if (evlist[i].filter == EVFILT_READ) {
+			if (evlist[i].flags & EV_EOF) {
+				fd2_node->eof_state |= EOF_STATE_READ_EOF;
+			} else {
+				fd2_node->eof_state &= ~EOF_STATE_READ_EOF;
+			}
+		} else if (evlist[i].filter == EVFILT_WRITE) {
+			if (evlist[i].flags & EV_EOF) {
+				fd2_node->eof_state |= EOF_STATE_WRITE_EOF;
+			} else {
+				fd2_node->eof_state &= ~EOF_STATE_WRITE_EOF;
+			}
+		}
+
 		if (evlist[i].flags & EV_ERROR) {
 			events |= EPOLLERR;
 		}
@@ -552,7 +567,10 @@ again:;
 				};
 
 				if (poll(&pfd, 1, 0) == 1) {
-					if (pfd.revents & POLLHUP) {
+					if ((pfd.revents & POLLHUP) ||
+					    (fd2_node->eof_state ==
+						(EOF_STATE_READ_EOF |
+						    EOF_STATE_WRITE_EOF))) {
 						/*
 						 * We need to set these flags
 						 * so that readers still have a
