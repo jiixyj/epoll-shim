@@ -60,6 +60,7 @@ for the licenses and copyright statements of these projects.
 #include <stdlib.h>
 
 #include <poll.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include <sys/timerfd.h>
