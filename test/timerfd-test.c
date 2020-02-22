@@ -42,20 +42,20 @@
 	} while (0)
 #endif
 
-#ifndef nitems
-#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
+#ifndef timespecadd
+#define	timespecadd(tsp, usp, vsp)					\
+	do {								\
+		(vsp)->tv_sec = (tsp)->tv_sec + (usp)->tv_sec;		\
+		(vsp)->tv_nsec = (tsp)->tv_nsec + (usp)->tv_nsec;	\
+		if ((vsp)->tv_nsec >= 1000000000L) {			\
+			(vsp)->tv_sec++;				\
+			(vsp)->tv_nsec -= 1000000000L;			\
+		}							\
+	} while (0)
 #endif
 
-#ifndef __linux__
-static bool
-is_fast_timer(int fd)
-{
-	struct kevent kev[1];
-	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-
-	bool is_fast = kevent(fd, kev, nitems(kev), NULL, 0, NULL) == 0;
-	return (is_fast);
-}
+#ifndef nitems
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 #endif
 
 ATF_TC_WITHOUT_HEAD(timerfd__many_timers);
@@ -97,9 +97,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_timer, tc)
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 100000000 &&
 	    e.tv_nsec < 150000000);
 
-#ifndef __linux__
-	ATF_REQUIRE(is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -143,9 +140,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_periodic_timer, tc)
 	    (ssize_t)sizeof(timeouts));
 	ATF_REQUIRE(timeouts == 2);
 
-#ifndef __linux__
-	ATF_REQUIRE(is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -188,9 +182,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__complex_periodic_timer, tc)
 	    (ssize_t)sizeof(timeouts));
 	ATF_REQUIRE(timeouts == 2);
 
-#ifndef __linux__
-	ATF_REQUIRE(!is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -237,9 +228,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_periodic_timer, tc)
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
 	    e.tv_nsec < 200000000);
 
-#ifndef __linux__
-	ATF_REQUIRE(is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -295,9 +283,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 	};
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
-#ifndef __linux__
-	ATF_REQUIRE(is_fast_timer(timerfd));
-#endif
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -353,19 +338,20 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__expire_five, tc)
 	ATF_REQUIRE(close(fd) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(timerfd__gettime_stub);
-ATF_TC_BODY_FD_LEAKCHECK(timerfd__gettime_stub, tc)
+ATF_TC_WITHOUT_HEAD(timerfd__simple_gettime);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_gettime, tc)
 {
 	struct itimerspec curr_value;
 
 	int fd = timerfd_create(CLOCK_MONOTONIC, 0);
 	ATF_REQUIRE(fd >= 0);
 
-#ifndef __linux__
-	atf_tc_expect_fail("timerfd_gettime is stubbed out currently");
-#endif
-
 	ATF_REQUIRE(timerfd_gettime(fd, &curr_value) == 0);
+
+	ATF_REQUIRE(curr_value.it_value.tv_sec == 0);
+	ATF_REQUIRE(curr_value.it_value.tv_nsec == 0);
+	ATF_REQUIRE(curr_value.it_interval.tv_sec == 0);
+	ATF_REQUIRE(curr_value.it_interval.tv_nsec == 0);
 
 	ATF_REQUIRE(close(fd) == 0);
 }
@@ -496,9 +482,95 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 220000000 &&
 	    e.tv_nsec < 270000000);
 
-#ifndef __linux__
-	ATF_REQUIRE(!is_fast_timer(timerfd));
-#endif
+	ATF_REQUIRE(close(timerfd) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(timerfd__absolute_timer);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+
+	ATF_REQUIRE(timerfd >= 0);
+
+	struct timespec b, e;
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
+
+	struct itimerspec time = {
+	    .it_value = b,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 0,
+	};
+
+	struct timespec ts_600ms = {
+	    .tv_sec = 0,
+	    .tv_nsec = 600000000,
+	};
+
+	timespecadd(&time.it_value, &ts_600ms, &time.it_value);
+
+	ATF_REQUIRE(timerfd_settime(timerfd, /**/
+			TFD_TIMER_ABSTIME, &time, NULL) == 0);
+
+	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+
+	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+
+	// Don't read(2) here!
+
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
+	timespecsub(&e, &b, &e);
+	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 600000000 &&
+	    e.tv_nsec < 650000000);
+
+	struct itimerspec zeroed_its = {
+	    .it_value.tv_sec = 0,
+	    .it_value.tv_nsec = 0,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 0,
+	};
+	ATF_REQUIRE(timerfd_settime(timerfd, 0, &zeroed_its, NULL) == 0);
+
+	uint64_t timeouts;
+	ATF_REQUIRE_ERRNO(EAGAIN,
+	    read(timerfd, &timeouts, sizeof(timeouts)) < 0);
+
+	ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+
+	ATF_REQUIRE(close(timerfd) == 0);
+}
+
+ATF_TC(timerfd__periodic_timer_performance);
+ATF_TC_HEAD(timerfd__periodic_timer_performance, tc)
+{
+	atf_tc_set_md_var(tc, "timeout", "1");
+}
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__periodic_timer_performance, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+
+	ATF_REQUIRE(timerfd >= 0);
+
+	struct itimerspec time = {
+	    .it_value.tv_sec = 0,
+	    .it_value.tv_nsec = 1,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 1,
+	};
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
+
+	usleep(400000);
+
+	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+
+	uint64_t timeouts;
+	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
+	    (ssize_t)sizeof(timeouts));
+	ATF_REQUIRE(timeouts >= 400000000);
+
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
@@ -511,10 +583,12 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__reset_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__reenable_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__expire_five);
-	ATF_TP_ADD_TC(tp, timerfd__gettime_stub);
+	ATF_TP_ADD_TC(tp, timerfd__simple_gettime);
 	ATF_TP_ADD_TC(tp, timerfd__simple_blocking_periodic_timer);
 	ATF_TP_ADD_TC(tp, timerfd__argument_checks);
 	ATF_TP_ADD_TC(tp, timerfd__upgrade_simple_to_complex);
+	ATF_TP_ADD_TC(tp, timerfd__absolute_timer);
+	ATF_TP_ADD_TC(tp, timerfd__periodic_timer_performance);
 
 	return atf_no_error();
 }

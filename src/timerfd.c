@@ -8,7 +8,6 @@
 
 #include <poll.h>
 #include <pthread.h>
-#include <pthread_np.h>
 
 #include <assert.h>
 #include <errno.h>
@@ -162,12 +161,28 @@ timerfd_settime(int fd, int flags, const struct itimerspec *new,
 	return 0;
 }
 
+static int
+timerfd_gettime_impl(int fd, struct itimerspec *cur)
+{
+	FDContextMapNode *node;
+
+	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	if (!node || node->vtable != &timerfd_vtable) {
+		struct stat sb;
+		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
+	}
+
+	return timerfd_ctx_gettime(&node->ctx.timerfd, cur);
+}
+
 int
 timerfd_gettime(int fd, struct itimerspec *cur)
 {
-	(void)fd;
-	(void)cur;
+	errno_t ec = timerfd_gettime_impl(fd, cur);
+	if (ec != 0) {
+		errno = ec;
+		return -1;
+	}
 
-	errno = ENOSYS;
-	return -1;
+	return 0;
 }
