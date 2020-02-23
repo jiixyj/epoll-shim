@@ -27,6 +27,7 @@ add_test(\"${_name}\" \"${CMAKE_COMMAND}\"
           -D \"TIMEOUT=${_timeout}\"
           -P \"${TEST_RUN_SCRIPT}\")
 set_tests_properties(${_name} PROPERTIES TIMEOUT 0)
+set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION \"^-- result: 0, skipped.*$\")
 ")
 
   set(script

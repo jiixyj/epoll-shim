@@ -14,6 +14,10 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 {
 	*signalfd = (SignalFDCtx){.kq = kq};
 
+#ifndef _SIG_MAXSIG
+#define _SIG_MAXSIG (8 * sizeof(sigset_t))
+#endif
+
 	struct kevent kevs[_SIG_MAXSIG];
 	int n = 0;
 

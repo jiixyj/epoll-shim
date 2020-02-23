@@ -1,5 +1,6 @@
 #include <sys/param.h>
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -11,6 +12,8 @@
 #include "eventfd_ctx.h"
 
 #include "eventfd_ctx.c"
+
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 
 #define REQUIRE(x)                                                            \
 	do {                                                                  \

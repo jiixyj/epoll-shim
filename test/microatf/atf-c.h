@@ -111,6 +111,7 @@ atf_tp_init(atf_tp_t *tp)
 /**/
 
 typedef struct {
+	char const *result_file_path;
 	FILE *result_file;
 	bool do_close_result_file;
 	atf_tc_t *test_case;
@@ -132,7 +133,12 @@ microatf_context_write_result_pack(microatf_context_t *context,
 		return;
 	}
 
+#ifdef __NetBSD__
+	fclose(context->result_file);
+	context->result_file = fopen(context->result_file_path, "w");
+#else
 	context->result_file = freopen(NULL, "w", context->result_file);
+#endif
 	if (!context->result_file) {
 		return;
 	}
@@ -336,6 +342,29 @@ atf_tc_expect_fail(const char *msg, ...)
 
 	microatf_context.expect_previous_fail_count =
 	    microatf_context.expect_fail_count;
+}
+
+/**/
+
+static inline void
+atf_tc_skip(const char *reason, ...)
+{
+	microatf_context_t *context = &microatf_context;
+
+	if (context->expect == MICROATF_EXPECT_PASS) {
+		va_list args;
+		va_start(args, reason);
+		microatf_context_write_result_pack(context, /**/
+		    "skipped", -1, reason, args);
+		va_end(args);
+
+		microatf_context_exit(context, EXIT_SUCCESS);
+	} else {
+		microatf_context_write_result(context, "failed", -1,
+		    "Can only skip a test case when running in "
+		    "expect pass mode");
+		microatf_context_exit(context, EXIT_FAILURE);
+	}
 }
 
 /**/
@@ -547,8 +576,11 @@ microatf_tp_main(int argc, char **argv,
 	bool do_close_result_file = false;
 	FILE *result_file;
 
-	if (!result_file_path ||
-	    strcmp(result_file_path, "/dev/stdout") == 0) {
+	if (!result_file_path) {
+		result_file_path = "/dev/stdout";
+	}
+
+	if (strcmp(result_file_path, "/dev/stdout") == 0) {
 		result_file = stdout;
 	} else if (strcmp(result_file_path, "/dev/stderr") == 0) {
 		result_file = stderr;
@@ -565,6 +597,7 @@ microatf_tp_main(int argc, char **argv,
 	/* Run the test case. */
 
 	microatf_context = (microatf_context_t){
+	    .result_file_path = result_file_path,
 	    .result_file = result_file,
 	    .do_close_result_file = do_close_result_file,
 	    .test_case = matching_tc,

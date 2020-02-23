@@ -64,8 +64,12 @@ connector_client(void *arg)
 
 		for (int i = 0; i < 3; ++i) {
 			ret = epoll_wait(ep, &event, 1, 300);
+#ifndef EV_FORCEONESHOT
+			if (ret == 0) {
+				continue;
+			}
+#endif
 			ATF_REQUIRE(ret == 1);
-
 			ATF_REQUIRE(event.events == (EPOLLOUT | EPOLLHUP));
 		}
 	}
@@ -170,13 +174,19 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 	ATF_REQUIRE(close(fd) == 0);
 
 	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
-	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_ADD, invalid_fd, &event) < 0);
-	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_DEL, invalid_fd, &event) < 0);
-	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_MOD, invalid_fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EBADF,
+	    epoll_ctl(fd, EPOLL_CTL_ADD, invalid_fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EBADF,
+	    epoll_ctl(fd, EPOLL_CTL_DEL, invalid_fd, &event) < 0);
+	ATF_REQUIRE_ERRNO(EBADF,
+	    epoll_ctl(fd, EPOLL_CTL_MOD, invalid_fd, &event) < 0);
 	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, 42, invalid_fd, &event) < 0);
-	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_ADD, invalid_fd, NULL) < 0);
-	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_DEL, invalid_fd, NULL) < 0);
-	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_MOD, invalid_fd, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT,
+	    epoll_ctl(fd, EPOLL_CTL_ADD, invalid_fd, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EBADF,
+	    epoll_ctl(fd, EPOLL_CTL_DEL, invalid_fd, NULL) < 0);
+	ATF_REQUIRE_ERRNO(EFAULT,
+	    epoll_ctl(fd, EPOLL_CTL_MOD, invalid_fd, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, 42, invalid_fd, NULL) < 0);
 	ATF_REQUIRE(close(fd) == 0);
 
@@ -197,7 +207,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 	/**/
 
 	ATF_REQUIRE_ERRNO(EFAULT, epoll_ctl(fd, EPOLL_CTL_ADD, fd2, NULL) < 0);
-	ATF_REQUIRE_ERRNO(EBADF, epoll_ctl(fd, EPOLL_CTL_ADD, fd2, &event) < 0);
+	ATF_REQUIRE_ERRNO(EBADF,
+	    epoll_ctl(fd, EPOLL_CTL_ADD, fd2, &event) < 0);
 
 	ATF_REQUIRE_ERRNO(EINVAL, epoll_wait(fd, NULL, 0, 0) < 0);
 	struct epoll_event ev;
@@ -225,6 +236,26 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__event_size, tc)
 	// this check works on 32bit _and_ 64bit, since
 	// sizeof(epoll_event) == sizeof(uint32_t) + sizeof(uint64_t)
 	ATF_REQUIRE(sizeof(event) == 12);
+}
+
+ATF_TC_WITHOUT_HEAD(epoll__recursive_register);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__recursive_register, tcptr)
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	int ep_inner = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep_inner >= 0);
+
+	struct epoll_event event;
+	event.events = EPOLLOUT;
+	event.data.fd = ep_inner;
+
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, ep_inner, &event) == 0);
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_DEL, ep_inner, NULL) == 0);
+
+	ATF_REQUIRE(close(ep_inner) == 0);
+	ATF_REQUIRE(close(ep) == 0);
 }
 
 static void
@@ -531,6 +562,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__no_epollin_on_closed_empty_pipe, tcptr)
 ATF_TC_WITHOUT_HEAD(epoll__write_to_pipe_until_full);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__write_to_pipe_until_full, tcptr)
 {
+#ifdef __NetBSD__
+	atf_tc_skip("test assumes a pipe buffer size of 65536");
+#endif
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
@@ -730,6 +764,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__socket_shutdown, tcptr)
 ATF_TC_WITHOUT_HEAD(epoll__epollhup_on_fresh_socket);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__epollhup_on_fresh_socket, tcptr)
 {
+#ifdef __NetBSD__
+	atf_tc_skip("NetBSD does not support EV_FORCEONESHOT");
+#endif
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	ATF_REQUIRE(sock >= 0);
 
@@ -1066,26 +1103,6 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_own_shutdown, tcptr)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__recursive_register);
-ATF_TC_BODY_FD_LEAKCHECK(epoll__recursive_register, tcptr)
-{
-	int ep = epoll_create1(EPOLL_CLOEXEC);
-	ATF_REQUIRE(ep >= 0);
-
-	int ep_inner = epoll_create1(EPOLL_CLOEXEC);
-	ATF_REQUIRE(ep_inner >= 0);
-
-	struct epoll_event event;
-	event.events = EPOLLOUT;
-	event.data.fd = ep_inner;
-
-	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, ep_inner, &event) == 0);
-	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_DEL, ep_inner, NULL) == 0);
-
-	ATF_REQUIRE(close(ep_inner) == 0);
-	ATF_REQUIRE(close(ep) == 0);
-}
-
 ATF_TC_WITHOUT_HEAD(epoll__remove_closed);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__remove_closed, tcptr)
 {
@@ -1238,6 +1255,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__invalid_op);
 	ATF_TP_ADD_TC(tp, epoll__simple_wait);
 	ATF_TP_ADD_TC(tp, epoll__event_size);
+	ATF_TP_ADD_TC(tp, epoll__recursive_register);
 	ATF_TP_ADD_TC(tp, epoll__simple_epollin);
 	ATF_TP_ADD_TC(tp, epoll__sleep_argument);
 	ATF_TP_ADD_TC(tp, epoll__remove_nonexistent);
@@ -1257,7 +1275,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__shutdown_behavior);
 	ATF_TP_ADD_TC(tp, epoll__datagram_connection);
 	ATF_TP_ADD_TC(tp, epoll__epollout_on_own_shutdown);
-	ATF_TP_ADD_TC(tp, epoll__recursive_register);
 	ATF_TP_ADD_TC(tp, epoll__remove_closed);
 	ATF_TP_ADD_TC(tp, epoll__add_different_file_with_same_fd_value);
 	ATF_TP_ADD_TC(tp, epoll__invalid_writes);
