@@ -57,6 +57,7 @@ for the licenses and copyright statements of these projects.
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <poll.h>
