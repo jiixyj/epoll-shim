@@ -75,3 +75,8 @@ add_executable(eventfd-ctx-test eventfd-ctx-test.c)
 target_link_libraries(eventfd-ctx-test PRIVATE epoll-shim::epoll-shim
                                                Threads::Threads atf::atf-c)
 atf_discover_tests(eventfd-ctx-test)
+
+add_executable(pipe-test pipe-test.c)
+target_link_libraries(pipe-test PRIVATE epoll-shim::epoll-shim Threads::Threads
+                                        atf::atf-c)
+atf_discover_tests(pipe-test)
