@@ -133,14 +133,17 @@ microatf_context_write_result_pack(microatf_context_t *context,
 		return;
 	}
 
-#ifdef __NetBSD__
-	fclose(context->result_file);
-	context->result_file = fopen(context->result_file_path, "w");
+	if (context->do_close_result_file) {
+#if defined(__NetBSD__) || defined(__linux__)
+		fclose(context->result_file);
+		context->result_file = fopen(context->result_file_path, "w");
 #else
-	context->result_file = freopen(NULL, "w", context->result_file);
+		context->result_file =
+		    freopen(NULL, "w", context->result_file);
 #endif
-	if (!context->result_file) {
-		return;
+		if (!context->result_file) {
+			return;
+		}
 	}
 
 	fprintf(context->result_file, "%s", result);
