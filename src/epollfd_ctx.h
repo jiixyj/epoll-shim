@@ -15,10 +15,16 @@
 struct registered_fds_node_;
 typedef struct registered_fds_node_ RegisteredFDsNode;
 
+typedef enum {
+	EOF_STATE_READ_EOF = 0x01,
+	EOF_STATE_WRITE_EOF = 0x02,
+} EOFState;
+
 struct registered_fds_node_ {
 	RB_ENTRY(registered_fds_node_) entry;
 	int fd;
 	uint16_t flags;
+	int eof_state;
 	epoll_data_t data;
 };
 

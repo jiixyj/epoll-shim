@@ -55,6 +55,14 @@ if(ENABLE_COMPILER_WARNINGS)
   target_compile_options(tst-eventfd PRIVATE "-w")
 endif()
 
+add_executable(tst-timerfd tst-timerfd.c)
+target_link_libraries(tst-timerfd PRIVATE epoll-shim::epoll-shim
+                                          Threads::Threads)
+add_test(NAME tst-timerfd COMMAND tst-timerfd)
+if(ENABLE_COMPILER_WARNINGS)
+  target_compile_options(tst-timerfd PRIVATE "-w")
+endif()
+
 add_executable(perf-many-fds perf-many-fds.c)
 target_link_libraries(perf-many-fds PRIVATE epoll-shim::epoll-shim atf::atf-c)
 atf_discover_tests(perf-many-fds)
@@ -63,10 +71,7 @@ add_executable(atf-test atf-test.c)
 target_link_libraries(atf-test PRIVATE epoll-shim::epoll-shim atf::atf-c)
 atf_discover_tests(atf-test)
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  add_executable(eventfd-ctx-test eventfd-ctx-test.c)
-  target_link_libraries(eventfd-ctx-test PRIVATE Threads::Threads)
-  target_include_directories(eventfd-ctx-test
-                             PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../src")
-  add_test(NAME eventfd-ctx-test COMMAND eventfd-ctx-test)
-endif()
+add_executable(eventfd-ctx-test eventfd-ctx-test.c)
+target_link_libraries(eventfd-ctx-test PRIVATE epoll-shim::epoll-shim
+                                               Threads::Threads atf::atf-c)
+atf_discover_tests(eventfd-ctx-test)

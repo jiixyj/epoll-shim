@@ -1,5 +1,11 @@
+#define _GNU_SOURCE
+
+#include <atf-c.h>
+
+#include <sys/eventfd.h>
 #include <sys/param.h>
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -8,136 +14,114 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#include "eventfd_ctx.h"
+#include "atf-c-leakcheck.h"
 
-#include "eventfd_ctx.c"
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 
-#define REQUIRE(x)                                                            \
-	do {                                                                  \
-		if (!(x)) {                                                   \
-			fprintf(stderr, "failed assertion: %d\n", __LINE__);  \
-			abort();                                              \
-		}                                                             \
-	} while (0)
-
-static void
-tc_init_terminate(void)
+ATF_TC_WITHOUT_HEAD(eventfd__init_terminate);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__init_terminate, tc)
 {
-	int kq;
-	EventFDCtx eventfd;
+	int efd;
 
-	REQUIRE((kq = kqueue()) >= 0);
-	REQUIRE(eventfd_ctx_init(&eventfd, kq, 0,
-		    EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
+	ATF_REQUIRE((efd = eventfd(0,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 	{
-		struct pollfd pfd = {.fd = kq, .events = POLLIN};
-		REQUIRE(poll(&pfd, 1, 0) == 0);
+		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
-	REQUIRE(eventfd_ctx_terminate(&eventfd) == 0);
-	REQUIRE(close(kq) == 0);
+	ATF_REQUIRE(close(efd) == 0);
 
-	REQUIRE((kq = kqueue()) >= 0);
-	REQUIRE(eventfd_ctx_init(&eventfd, kq, 1,
-		    EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
+	ATF_REQUIRE((efd = eventfd(1,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 	{
-		struct pollfd pfd = {.fd = kq, .events = POLLIN};
-		REQUIRE(poll(&pfd, 1, 0) == 1);
-		REQUIRE(pfd.revents == POLLIN);
+		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
-	REQUIRE(eventfd_ctx_terminate(&eventfd) == 0);
-	REQUIRE(close(kq) == 0);
+	ATF_REQUIRE(close(efd) == 0);
 }
 
-static void
-tc_simple_write(void)
+ATF_TC_WITHOUT_HEAD(eventfd__simple_write);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_write, tc)
 {
-	int kq;
-	EventFDCtx eventfd;
+	int efd;
 
-	REQUIRE((kq = kqueue()) >= 0);
-	REQUIRE(eventfd_ctx_init(&eventfd, kq, 0, 0) == 0);
+	ATF_REQUIRE((efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) >= 0);
 	{
-		REQUIRE(eventfd_ctx_write(&eventfd, UINT64_MAX) == EINVAL);
-		REQUIRE(eventfd_ctx_write(&eventfd, UINT64_MAX - 1) == 0);
-		REQUIRE(eventfd_ctx_write(&eventfd, 1) == EAGAIN);
-		REQUIRE(eventfd_ctx_write(&eventfd, 1) == EAGAIN);
+		ATF_REQUIRE_ERRNO(EINVAL, eventfd_write(efd, UINT64_MAX) < 0);
+		ATF_REQUIRE(eventfd_write(efd, UINT64_MAX - 1) == 0);
+		ATF_REQUIRE_ERRNO(EAGAIN, eventfd_write(efd, 1) < 0);
+		ATF_REQUIRE_ERRNO(EAGAIN, eventfd_write(efd, 1) < 0);
 
-		struct pollfd pfd = {.fd = kq, .events = POLLIN};
-		REQUIRE(poll(&pfd, 1, 0) == 1);
-		REQUIRE(pfd.revents == POLLIN);
+		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
 
 		uint64_t value;
-		REQUIRE(eventfd_ctx_read(&eventfd, &value) == 0);
-		REQUIRE(value == UINT64_MAX - 1);
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == UINT64_MAX - 1);
 
-		REQUIRE(poll(&pfd, 1, 0) == 0);
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
-	REQUIRE(eventfd_ctx_terminate(&eventfd) == 0);
-	REQUIRE(close(kq) == 0);
+	ATF_REQUIRE(close(efd) == 0);
 }
 
-static void
-tc_simple_read(void)
+ATF_TC_WITHOUT_HEAD(eventfd__simple_read);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_read, tc)
 {
-	int kq;
-	EventFDCtx eventfd;
+	int efd;
 	uint64_t value;
 
-	REQUIRE((kq = kqueue()) >= 0);
-	REQUIRE(eventfd_ctx_init(&eventfd, kq, 3,
-		    EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
+	ATF_REQUIRE((efd = eventfd(3,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 	{
-		struct pollfd pfd = {.fd = kq, .events = POLLIN};
-		REQUIRE(poll(&pfd, 1, 0) == 1);
-		REQUIRE(pfd.revents == POLLIN);
+		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
 
-		REQUIRE(eventfd_ctx_read(&eventfd, &value) == 0);
-		REQUIRE(value == 1);
-		REQUIRE(eventfd_ctx_read(&eventfd, &value) == 0);
-		REQUIRE(value == 1);
-		REQUIRE(eventfd_ctx_read(&eventfd, &value) == 0);
-		REQUIRE(value == 1);
-		REQUIRE(eventfd_ctx_read(&eventfd, &value) == EAGAIN);
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == 1);
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == 1);
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == 1);
+		ATF_REQUIRE_ERRNO(EAGAIN, eventfd_read(efd, &value) < 0);
 
-		REQUIRE(poll(&pfd, 1, 0) == 0);
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
-	REQUIRE(eventfd_ctx_terminate(&eventfd) == 0);
-	REQUIRE(close(kq) == 0);
+	ATF_REQUIRE(close(efd) == 0);
 }
 
-static void
-tc_simple_write_read(void)
+ATF_TC_WITHOUT_HEAD(eventfd__simple_write_read);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_write_read, tc)
 {
-	int kq;
-	EventFDCtx eventfd;
+	int efd;
 	uint64_t value;
 
-	REQUIRE((kq = kqueue()) >= 0);
-	REQUIRE(eventfd_ctx_init(&eventfd, kq, 0,
-		    EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
+	ATF_REQUIRE((efd = eventfd(0,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 	{
-		struct pollfd pfd = {.fd = kq, .events = POLLIN};
-		REQUIRE(poll(&pfd, 1, 0) == 0);
+		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 
-		REQUIRE(eventfd_ctx_write(&eventfd, 2) == 0);
+		ATF_REQUIRE(eventfd_write(efd, 2) == 0);
 
-		REQUIRE(poll(&pfd, 1, 0) == 1);
-		REQUIRE(pfd.revents == POLLIN);
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
 
-		REQUIRE(eventfd_ctx_read(&eventfd, &value) == 0);
-		REQUIRE(value == 1);
-		REQUIRE(eventfd_ctx_read(&eventfd, &value) == 0);
-		REQUIRE(value == 1);
-		REQUIRE(eventfd_ctx_read(&eventfd, &value) == EAGAIN);
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == 1);
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == 1);
+		ATF_REQUIRE_ERRNO(EAGAIN, eventfd_read(efd, &value) < 0);
 
-		REQUIRE(poll(&pfd, 1, 0) == 0);
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
-	REQUIRE(eventfd_ctx_terminate(&eventfd) == 0);
-	REQUIRE(close(kq) == 0);
+	ATF_REQUIRE(close(efd) == 0);
 }
 
 typedef struct {
-	EventFDCtx *eventfd;
+	int efd;
 	int signal_pipe[2];
 } ReadThreadArgs;
 
@@ -147,31 +131,29 @@ static void *
 read_fun(void *arg)
 {
 	ReadThreadArgs *args = arg;
-	EventFDCtx *eventfd = args->eventfd;
+	int efd = args->efd;
 
 	for (;;) {
 		uint64_t value;
-		errno_t err;
 
-		if ((err = eventfd_ctx_read(eventfd, &value)) == 0) {
+		if (eventfd_read(efd, &value) == 0) {
 			int current_counter =
 			    atomic_fetch_add(&read_counter, 1);
 
 			if (current_counter % 10 == 0 &&
 			    current_counter < 100) {
-				REQUIRE(eventfd_ctx_write(eventfd, /**/
-					    10) == 0);
+				ATF_REQUIRE(eventfd_write(efd, 10) == 0);
 			}
 
 			continue;
 		}
 
-		REQUIRE(err == EAGAIN);
+		ATF_REQUIRE(errno == EAGAIN);
 
 		struct pollfd pfds[2] = {/**/
-		    {.fd = eventfd->kq_, .events = POLLIN},
+		    {.fd = efd, .events = POLLIN},
 		    {.fd = args->signal_pipe[0], .events = POLLIN}};
-		REQUIRE(poll(pfds, nitems(pfds), -1) > 0);
+		ATF_REQUIRE(poll(pfds, nitems(pfds), -1) > 0);
 
 		if (pfds[1].revents) {
 			break;
@@ -181,53 +163,52 @@ read_fun(void *arg)
 	return (NULL);
 }
 
-static void
-tc_threads_read(void)
+ATF_TC_WITHOUT_HEAD(eventfd__threads_read);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_read, tc)
 {
-	int kq;
-	EventFDCtx eventfd;
+	int efd;
 	pthread_t threads[4];
 	ReadThreadArgs thread_args[4];
 
 	for (int i = 0; i < 1000; ++i) {
 		read_counter = 0;
-		REQUIRE((kq = kqueue()) >= 0);
-		REQUIRE(eventfd_ctx_init(&eventfd, kq, 0,
-			    EVENTFD_CTX_FLAG_SEMAPHORE) == 0);
+		ATF_REQUIRE(
+		    (efd = eventfd(0,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 
 		uint64_t counter_val = 100;
 
 		for (int i = 0; i < (int)nitems(threads); ++i) {
-			thread_args[i].eventfd = &eventfd;
-			REQUIRE(pipe2(thread_args[i].signal_pipe,
-				    O_CLOEXEC | O_NONBLOCK) == 0);
-			REQUIRE(pthread_create(&threads[i], NULL, /**/
-				    read_fun, &thread_args[i]) == 0);
+			thread_args[i].efd = efd;
+			ATF_REQUIRE(pipe2(thread_args[i].signal_pipe,
+					O_CLOEXEC | O_NONBLOCK) == 0);
+			ATF_REQUIRE(pthread_create(&threads[i], NULL, /**/
+					read_fun, &thread_args[i]) == 0);
 		}
 
-		REQUIRE(eventfd_ctx_write(&eventfd, counter_val) == 0);
+		ATF_REQUIRE(eventfd_write(efd, counter_val) == 0);
 
 		while (atomic_load(&read_counter) != 2 * (int)counter_val) {
 		}
 
 		for (int i = 0; i < (int)nitems(threads); ++i) {
-			REQUIRE(close(thread_args[i].signal_pipe[1]) == 0);
-			REQUIRE(pthread_join(threads[i], NULL) == 0);
-			REQUIRE(close(thread_args[i].signal_pipe[0]) == 0);
+			ATF_REQUIRE(close(thread_args[i].signal_pipe[1]) == 0);
+			ATF_REQUIRE(pthread_join(threads[i], NULL) == 0);
+			ATF_REQUIRE(close(thread_args[i].signal_pipe[0]) == 0);
 		}
 
-		REQUIRE(eventfd_ctx_terminate(&eventfd) == 0);
-		REQUIRE(close(kq) == 0);
-		REQUIRE(read_counter == 2 * counter_val);
+		ATF_REQUIRE(close(efd) == 0);
+		ATF_REQUIRE(read_counter == 2 * counter_val);
 	}
 }
 
-int
-main()
+ATF_TP_ADD_TCS(tp)
 {
-	tc_init_terminate();
-	tc_simple_write();
-	tc_simple_read();
-	tc_simple_write_read();
-	tc_threads_read();
+	ATF_TP_ADD_TC(tp, eventfd__init_terminate);
+	ATF_TP_ADD_TC(tp, eventfd__simple_write);
+	ATF_TP_ADD_TC(tp, eventfd__simple_read);
+	ATF_TP_ADD_TC(tp, eventfd__simple_write_read);
+	ATF_TP_ADD_TC(tp, eventfd__threads_read);
+
+	return atf_no_error();
 }
