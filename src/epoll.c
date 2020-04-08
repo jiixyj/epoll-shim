@@ -102,25 +102,27 @@ epoll_create1(int flags)
 	return epoll_create_common();
 }
 
+static errno_t
+epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
+{
+	if (!ev && op != EPOLL_CTL_DEL) {
+		return EFAULT;
+	}
+
+	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	if (!node || node->vtable != &epollfd_vtable) {
+		struct stat sb;
+		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
+	}
+
+	return epollfd_ctx_ctl(&node->ctx.epollfd, op, fd2, ev);
+}
+
 int
 epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
-	errno_t ec;
-	FDContextMapNode *node;
-
-	if (!ev && op != EPOLL_CTL_DEL) {
-		errno = EFAULT;
-		return -1;
-	}
-
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &epollfd_vtable) {
-		struct stat sb;
-		errno = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
-		return -1;
-	}
-
-	if ((ec = epollfd_ctx_ctl(&node->ctx.epollfd, op, fd2, ev)) != 0) {
+	errno_t ec = epoll_ctl_impl(fd, op, fd2, ev);
+	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
@@ -186,6 +188,8 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 static errno_t
 timeout_to_deadline(struct timespec *deadline, int to)
 {
+	assert(to >= 0);
+
 	if (to == 0) {
 		*deadline = (struct timespec){0, 0};
 	} else if (to > 0) {
@@ -209,34 +213,38 @@ timeout_to_deadline(struct timespec *deadline, int to)
 	return 0;
 }
 
+static errno_t
+epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
+    sigset_t const *sigs, int *actual_cnt)
+{
+	if (cnt < 1 || cnt > (int)(INT_MAX / sizeof(struct epoll_event))) {
+		return EINVAL;
+	}
+
+	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	if (!node || node->vtable != &epollfd_vtable) {
+		struct stat sb;
+		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
+	}
+
+	struct timespec deadline;
+	errno_t ec;
+	if (to >= 0 && (ec = timeout_to_deadline(&deadline, to)) != 0) {
+		return ec;
+	}
+
+	return epollfd_ctx_wait_or_block(&node->ctx.epollfd, ev, cnt,
+	    actual_cnt, (to >= 0) ? &deadline : NULL, sigs);
+}
+
 int
 epoll_pwait(int fd, struct epoll_event *ev, int cnt, int to,
     sigset_t const *sigs)
 {
-	errno_t ec;
-	FDContextMapNode *node;
-
-	if (cnt < 1 || cnt > (int)(INT_MAX / sizeof(struct epoll_event))) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &epollfd_vtable) {
-		struct stat sb;
-		errno = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
-		return -1;
-	}
-
-	struct timespec deadline;
-	if ((ec = timeout_to_deadline(&deadline, to)) != 0) {
-		errno = ec;
-		return -1;
-	}
-
 	int actual_cnt;
-	if ((ec = epollfd_ctx_wait_or_block(&node->ctx.epollfd, ev, cnt,
-		 &actual_cnt, (to >= 0) ? &deadline : NULL, sigs)) != 0) {
+
+	errno_t ec = epoll_pwait_impl(fd, ev, cnt, to, sigs, &actual_cnt);
+	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
