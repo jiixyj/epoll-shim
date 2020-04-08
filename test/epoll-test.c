@@ -227,6 +227,15 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 	    epoll_ctl(fd, EPOLL_CTL_MOD, fd2, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EFAULT, /**/
 	    epoll_ctl(fd, 42, fd2, NULL) < 0);
+
+	{
+		struct epoll_event ev = {.events = POLLIN};
+		ATF_REQUIRE(epoll_ctl(fd, EPOLL_CTL_ADD, fd2, &ev) == 0);
+	}
+	{
+		struct epoll_event ev = {.events = ~(uint32_t)0};
+		ATF_REQUIRE(epoll_ctl(fd, EPOLL_CTL_DEL, fd2, &ev) == 0);
+	}
 	ATF_REQUIRE(close(fd2) == 0);
 	ATF_REQUIRE(close(fd) == 0);
 

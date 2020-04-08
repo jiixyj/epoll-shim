@@ -136,7 +136,7 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 		return EINVAL;
 	}
 
-	if (ev &&
+	if (op != EPOLL_CTL_DEL &&
 	    ((ev->events &
 		~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLHUP /**/
 		    | EPOLLRDHUP | EPOLLERR))
