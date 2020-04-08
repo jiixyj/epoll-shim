@@ -224,8 +224,33 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op, tc)
 	    epoll_ctl(fd, EPOLL_CTL_ADD, fd2, &event) < 0);
 
 	struct epoll_event ev;
-	ATF_REQUIRE_ERRNO(EINVAL, /**/
-	    epoll_wait(fd, &ev, 0, 0) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_wait(fd, &ev, -1, 0) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_wait(fd, &ev, 0, 0) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, epoll_wait(fd, &ev, 1, 0) < 0);
+}
+
+ATF_TC_WITHOUT_HEAD(epoll__invalid_op2);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op2, tc)
+{
+	int fd;
+	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
+	ATF_REQUIRE(close(fd) == 0);
+
+	struct epoll_event *evs = malloc(INT_MAX / sizeof(struct epoll_event) *
+	    sizeof(struct epoll_event));
+	if (evs == NULL) {
+		atf_tc_skip("could not alloc enough memory for test");
+	}
+
+	ATF_REQUIRE_ERRNO(EBADF,
+	    epoll_wait(fd, evs, /**/
+		INT_MAX / sizeof(struct epoll_event), 0) < 0);
+
+	free(evs);
+
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    epoll_wait(fd, evs, /**/
+		INT_MAX / sizeof(struct epoll_event) + 1, 0) < 0);
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__simple_wait);
@@ -1299,6 +1324,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__simple);
 	ATF_TP_ADD_TC(tp, epoll__leakcheck);
 	ATF_TP_ADD_TC(tp, epoll__invalid_op);
+	ATF_TP_ADD_TC(tp, epoll__invalid_op2);
 	ATF_TP_ADD_TC(tp, epoll__simple_wait);
 	ATF_TP_ADD_TC(tp, epoll__event_size);
 	ATF_TP_ADD_TC(tp, epoll__recursive_register);

@@ -216,9 +216,15 @@ epoll_pwait(int fd, struct epoll_event *ev, int cnt, int to,
 	errno_t ec;
 	FDContextMapNode *node;
 
+	if (cnt < 1 || cnt > (int)(INT_MAX / sizeof(struct epoll_event))) {
+		errno = EINVAL;
+		return -1;
+	}
+
 	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &epollfd_vtable) {
-		errno = EINVAL;
+		struct stat sb;
+		errno = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 		return -1;
 	}
 
