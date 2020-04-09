@@ -124,12 +124,201 @@ is_not_yet_connected_stream_socket(int s)
 }
 
 static errno_t
+epollfd_ctx__register_events(EpollFDCtx *epollfd, struct kevent kev[2],
+    int fd2, RegisteredFDsNode *fd2_node, struct epoll_event const *ev)
+{
+	errno_t ec = 0;
+
+	for (int i = 0; i < 2; ++i) {
+		kev[i].flags |= EV_RECEIPT;
+	}
+
+	int ret = kevent(epollfd->kq, kev, 2, kev, 2, NULL);
+	if (ret < 0) {
+		ec = errno;
+		goto out;
+	}
+
+	if (ret != 2) {
+		ec = EINVAL;
+		goto out;
+	}
+
+	for (int i = 0; i < 2; ++i) {
+		if (!(kev[i].flags & EV_ERROR)) {
+			ec = EINVAL;
+			goto out;
+		}
+
+		/* Check for fds that only support poll. */
+		if (kev[i].data == ENODEV && fd2 >= 0 &&
+		    !(ev->events & ~(uint32_t)(EPOLLIN | EPOLLOUT)) &&
+		    (epollfd->pfds[0].fd < 0 || epollfd->pfds[0].fd == fd2)) {
+			epollfd->pfds[0] = (struct pollfd){
+			    .fd = fd2,
+			    .events = ((ev->events & EPOLLIN) ? POLLIN : 0) |
+				((ev->events & EPOLLOUT) ? POLLOUT : 0),
+			};
+			epollfd->pollfd_data = ev->data;
+
+			goto out;
+		}
+
+		/*
+		 * Ignore EVFILT_WRITE registration EINVAL errors (some fd
+		 * types such as kqueues themselves don't support it).
+		 *
+		 * Note that NetBSD returns EPERM on EVFILT_WRITE registration
+		 * failure.
+		 */
+		if (i == 1 &&
+		    (kev[i].data == EINVAL || kev[i].data == EPERM)) {
+			continue;
+		}
+
+		if (kev[i].data != 0) {
+			ec = (int)kev[i].data;
+			goto out;
+		}
+	}
+
+#ifdef EV_FORCEONESHOT
+	if (is_not_yet_connected_stream_socket(fd2)) {
+		EV_SET(&kev[0], fd2, EVFILT_READ, EV_ENABLE | EV_FORCEONESHOT,
+		    0, 0, fd2_node);
+		if (kevent(epollfd->kq, kev, 1, NULL, 0, NULL) < 0) {
+			ec = errno;
+			goto out;
+		}
+
+		fd2_node->flags |= KQUEUE_STATE_NYCSS;
+	}
+#endif
+
+	ec = 0;
+
+out:
+	return ec;
+}
+
+static void
+epollfd_ctx_remove_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
+{
+	int fd2 = fd2_node->fd;
+
+	if (fd2 >= 0 && fd2 == epollfd->pfds[0].fd) {
+		epollfd->pfds[0].fd = -1;
+	}
+
+	struct kevent kev[2];
+	EV_SET(&kev[0], fd2, EVFILT_READ, EV_DELETE | EV_RECEIPT, 0, 0, 0);
+	EV_SET(&kev[1], fd2, EVFILT_WRITE, EV_DELETE | EV_RECEIPT, 0, 0, 0);
+	(void)kevent(epollfd->kq, kev, 2, kev, 2, NULL);
+
+	RB_REMOVE(registered_fds_set_, &epollfd->registered_fds, fd2_node);
+
+	registered_fds_node_destroy(fd2_node);
+}
+
+static errno_t
+epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2, struct epoll_event *ev,
+    struct stat const *statbuf)
+{
+	RegisteredFDsNode *fd2_node = registered_fds_node_create(fd2, ev);
+	if (!fd2_node) {
+		return ENOMEM;
+	}
+
+	{
+		uint16_t new_flags = 0;
+
+		if (S_ISFIFO(statbuf->st_mode)) {
+			new_flags |= KQUEUE_STATE_ISFIFO;
+		} else if (S_ISSOCK(statbuf->st_mode)) {
+			new_flags |= KQUEUE_STATE_ISSOCK;
+		}
+
+#define SET_FLAG(flag)                                                        \
+	do {                                                                  \
+		if (ev->events & (flag)) {                                    \
+			new_flags |= KQUEUE_STATE_##flag;                     \
+		}                                                             \
+	} while (0)
+
+		SET_FLAG(EPOLLIN);
+		SET_FLAG(EPOLLOUT);
+		SET_FLAG(EPOLLRDHUP);
+#undef SET_FLAG
+
+		fd2_node->flags = new_flags;
+	}
+
+	if (RB_INSERT(registered_fds_set_, &epollfd->registered_fds,
+		fd2_node)) {
+		assert(0);
+	}
+
+	struct kevent kev[2];
+	EV_SET(&kev[0], fd2, EVFILT_READ,
+	    EV_ADD | (ev->events & EPOLLIN ? 0 : EV_DISABLE), 0, 0, fd2_node);
+	EV_SET(&kev[1], fd2, EVFILT_WRITE,
+	    EV_ADD | (ev->events & EPOLLOUT ? 0 : EV_DISABLE), 0, 0, fd2_node);
+
+	errno_t ec = epollfd_ctx__register_events(epollfd, /**/
+	    kev, fd2, fd2_node, ev);
+	if (ec != 0) {
+		epollfd_ctx_remove_node(epollfd, fd2_node);
+		return ec;
+	}
+
+	return 0;
+}
+
+static errno_t
+epollfd_ctx_modify_node(EpollFDCtx *epollfd, int fd2,
+    RegisteredFDsNode *fd2_node, struct epoll_event *ev)
+{
+	{
+		uint16_t new_flags = fd2_node->flags;
+
+#define SET_FLAG(flag)                                                        \
+	do {                                                                  \
+		if (ev->events & (flag)) {                                    \
+			new_flags |= KQUEUE_STATE_##flag;                     \
+		} else {                                                      \
+			new_flags &= ~KQUEUE_STATE_##flag;                    \
+		}                                                             \
+	} while (0)
+
+		SET_FLAG(EPOLLIN);
+		SET_FLAG(EPOLLOUT);
+		SET_FLAG(EPOLLRDHUP);
+#undef SET_FLAG
+
+		fd2_node->flags = new_flags;
+		fd2_node->data = ev->data;
+	}
+
+	struct kevent kev[2];
+	EV_SET(&kev[0], fd2, EVFILT_READ,
+	    (ev->events & EPOLLIN) ? EV_ENABLE : EV_DISABLE, 0, 0, fd2_node);
+	EV_SET(&kev[1], fd2, EVFILT_WRITE,
+	    (ev->events & EPOLLOUT) ? EV_ENABLE : EV_DISABLE, 0, 0, fd2_node);
+
+	errno_t ec = epollfd_ctx__register_events(epollfd, /**/
+	    kev, fd2, fd2_node, ev);
+	if (ec != 0) {
+		epollfd_ctx_remove_node(epollfd, fd2_node);
+		return ec;
+	}
+
+	return 0;
+}
+
+static errno_t
 epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
     struct epoll_event *ev)
 {
-	errno_t ec = 0;
-	struct kevent kev[2];
-
 	assert(op == EPOLL_CTL_DEL || ev != NULL);
 
 	if (epollfd->kq == fd2) {
@@ -158,214 +347,34 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 
 	struct stat statbuf;
 	if (fstat(fd2, &statbuf) < 0) {
-		ec = errno;
+		errno_t ec = errno;
 
 		/* If the fstat fails for any reason we must clear
 		 * internal state to avoid EEXIST errors in future
 		 * calls to epoll_ctl. */
 		if (fd2_node) {
-			op = EPOLL_CTL_DEL;
-			goto out;
+			epollfd_ctx_remove_node(epollfd, fd2_node);
 		}
 
 		return ec;
 	}
 
-	if (op != EPOLL_CTL_ADD && /**/
-	    op != EPOLL_CTL_DEL && /**/
-	    op != EPOLL_CTL_MOD) {
-		return EINVAL;
-	}
-
-	uint16_t new_flags;
+	errno_t ec;
 
 	if (op == EPOLL_CTL_ADD) {
-		if (fd2_node) {
-			return EEXIST;
-		}
-
-		new_flags = 0;
-
-		if (S_ISFIFO(statbuf.st_mode)) {
-			new_flags |= KQUEUE_STATE_ISFIFO;
-		} else if (S_ISSOCK(statbuf.st_mode)) {
-			new_flags |= KQUEUE_STATE_ISSOCK;
-		}
-
-		fd2_node = registered_fds_node_create(fd2, ev);
-		if (!fd2_node) {
-			return ENOMEM;
-		}
-
-		EV_SET(&kev[0], fd2, EVFILT_READ,
-		    EV_ADD | (ev->events & EPOLLIN ? 0 : EV_DISABLE), 0, 0,
-		    fd2_node);
-		EV_SET(&kev[1], fd2, EVFILT_WRITE,
-		    EV_ADD | (ev->events & EPOLLOUT ? 0 : EV_DISABLE), 0, 0,
-		    fd2_node);
-
-#define SET_FLAG(flag)                                                        \
-	do {                                                                  \
-		if (ev->events & (flag)) {                                    \
-			new_flags |= KQUEUE_STATE_##flag;                     \
-		}                                                             \
-	} while (0)
-
-		SET_FLAG(EPOLLIN);
-		SET_FLAG(EPOLLOUT);
-		SET_FLAG(EPOLLRDHUP);
-
-#undef SET_FLAG
-
+		ec = fd2_node
+		    ? EEXIST
+		    : epollfd_ctx_add_node(epollfd, fd2, ev, &statbuf);
 	} else if (op == EPOLL_CTL_DEL) {
-		if (!fd2_node) {
-			return ENOENT;
-		}
-
-		if (fd2 >= 0 && fd2 == epollfd->pfds[0].fd) {
-			goto out;
-		}
-
-		EV_SET(&kev[0], fd2, EVFILT_READ, EV_DELETE, 0, 0, 0);
-		EV_SET(&kev[1], fd2, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
-
+		ec = !fd2_node
+		    ? ENOENT
+		    : (epollfd_ctx_remove_node(epollfd, fd2_node), 0);
 	} else if (op == EPOLL_CTL_MOD) {
-		if (!fd2_node) {
-			return ENOENT;
-		}
-
-		EV_SET(&kev[0], fd2, EVFILT_READ,
-		    (ev->events & EPOLLIN) ? EV_ENABLE : EV_DISABLE, 0, 0,
-		    fd2_node);
-		EV_SET(&kev[1], fd2, EVFILT_WRITE,
-		    (ev->events & EPOLLOUT) ? EV_ENABLE : EV_DISABLE, 0, 0,
-		    fd2_node);
-
-		new_flags = fd2_node->flags;
-
-#define SET_FLAG(flag)                                                        \
-	do {                                                                  \
-		if (ev->events & (flag)) {                                    \
-			new_flags |= KQUEUE_STATE_##flag;                     \
-		} else {                                                      \
-			new_flags &= ~KQUEUE_STATE_##flag;                    \
-		}                                                             \
-	} while (0)
-
-		SET_FLAG(EPOLLIN);
-		SET_FLAG(EPOLLOUT);
-		SET_FLAG(EPOLLRDHUP);
-
-#undef SET_FLAG
-
+		ec = !fd2_node
+		    ? ENOENT
+		    : epollfd_ctx_modify_node(epollfd, fd2, fd2_node, ev);
 	} else {
-		__builtin_unreachable();
-	}
-
-	for (int i = 0; i < 2; ++i) {
-		kev[i].flags |= EV_RECEIPT;
-	}
-
-	int ret = kevent(epollfd->kq, kev, 2, kev, 2, NULL);
-	if (ret < 0) {
-		ec = errno;
-		goto out;
-	}
-
-	if (ret != 2) {
 		ec = EINVAL;
-		goto out;
-	}
-
-	for (int i = 0; i < 2; ++i) {
-		if (!(kev[i].flags & EV_ERROR)) {
-			ec = EINVAL;
-			goto out;
-		}
-
-		/* Check for fds that only support poll. */
-		if (kev[i].data == ENODEV && op != EPOLL_CTL_DEL && fd2 >= 0 &&
-		    !(ev->events & ~(uint32_t)(EPOLLIN | EPOLLOUT)) &&
-		    (epollfd->pfds[0].fd < 0 || epollfd->pfds[0].fd == fd2)) {
-			epollfd->pfds[0] = (struct pollfd){
-			    .fd = fd2,
-			    .events = ((ev->events & EPOLLIN) ? POLLIN : 0) |
-				((ev->events & EPOLLOUT) ? POLLOUT : 0),
-			};
-			epollfd->pollfd_data = ev->data;
-
-			goto out;
-		}
-
-		/*
-		 * Ignore EVFILT_WRITE registration EINVAL errors (some fd
-		 * types such as kqueues themselves don't support it).
-		 * Also ignore ENOENT -- this happens when trying to remove a
-		 * previously added fd where the EVFILT_WRITE registration
-		 * failed.
-		 *
-		 * Note that NetBSD returns EPERM on EVFILT_WRITE registration
-		 * failure.
-		 */
-		if (i == 1 &&
-		    (kev[i].data == EINVAL || kev[i].data == EPERM ||
-			kev[i].data == ENOENT)) {
-			continue;
-		}
-
-		if (kev[i].data != 0) {
-			ec = (int)kev[i].data;
-			goto out;
-		}
-	}
-
-#ifdef EV_FORCEONESHOT
-	if (op != EPOLL_CTL_DEL && is_not_yet_connected_stream_socket(fd2)) {
-		EV_SET(&kev[0], fd2, EVFILT_READ, EV_ENABLE | EV_FORCEONESHOT,
-		    0, 0, fd2_node);
-		if (kevent(epollfd->kq, kev, 1, NULL, 0, NULL) < 0) {
-			ec = errno;
-			goto out;
-		}
-
-		new_flags |= KQUEUE_STATE_NYCSS;
-	}
-#endif
-
-out:
-	if (op == EPOLL_CTL_ADD) {
-		if (ec == 0) {
-			fd2_node->flags = new_flags;
-
-			if (RB_INSERT(registered_fds_set_,
-				&epollfd->registered_fds, fd2_node)) {
-				assert(0);
-			}
-		} else {
-			registered_fds_node_destroy(fd2_node);
-		}
-
-	} else if (op == EPOLL_CTL_DEL) {
-		RB_REMOVE(registered_fds_set_, /**/
-		    &epollfd->registered_fds, fd2_node);
-		registered_fds_node_destroy(fd2_node);
-
-		if (fd2 >= 0 && fd2 == epollfd->pfds[0].fd) {
-			epollfd->pfds[0].fd = -1;
-		}
-
-	} else if (op == EPOLL_CTL_MOD) {
-		if (ec == 0) {
-			fd2_node->flags = new_flags;
-			fd2_node->data = ev->data;
-		} else if (ec == ENOENT || ec == EBADF) {
-			RB_REMOVE(registered_fds_set_, /**/
-			    &epollfd->registered_fds, fd2_node);
-			registered_fds_node_destroy(fd2_node);
-		}
-
-	} else {
-		__builtin_unreachable();
 	}
 
 	return ec;
