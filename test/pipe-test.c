@@ -20,6 +20,10 @@
 #include <poll.h>
 #include <unistd.h>
 
+#ifndef nitems
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
+#endif
+
 /*
  * These tests show that on Linux, POLLOUT and POLLERR may happen at the same
  * time on a write end of a pipe after the read end was closed depending on the
@@ -64,6 +68,8 @@ ATF_TC_BODY(pipe__poll_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLERR));
+#elif defined(__NetBSD__)
+		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -93,6 +99,8 @@ ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == POLLERR);
+#elif defined(__NetBSD__)
+		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -124,6 +132,8 @@ ATF_TC_BODY(pipe__poll_full_minus_1b_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == POLLERR);
+#elif defined(__NetBSD__)
+		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -157,6 +167,8 @@ ATF_TC_BODY(pipe__poll_full_minus_511b_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == POLLERR);
+#elif defined(__NetBSD__)
+		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -190,6 +202,8 @@ ATF_TC_BODY(pipe__poll_full_minus_512b_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLERR));
+#elif defined(__NetBSD__)
+		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -217,6 +231,18 @@ print_statbuf(struct stat *sb)
 #endif
 }
 
+static int const SPURIOUS_EV_ADD = 0
+#ifdef __NetBSD__
+    | EV_ADD
+#endif
+    ;
+
+static int const SPURIOUS_EV_ONESHOT = 0
+#ifdef __FreeBSD__
+    | EV_ONESHOT
+#endif
+    ;
+
 ATF_TC_WITHOUT_HEAD(pipe__pipe_event_poll);
 ATF_TC_BODY(pipe__pipe_event_poll, tc)
 {
@@ -239,7 +265,9 @@ ATF_TC_BODY(pipe__pipe_event_poll, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+
+	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD), "%x",
+	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -287,7 +315,7 @@ ATF_TC_BODY(pipe__pipe_event_poll, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -303,7 +331,7 @@ ATF_TC_BODY(pipe__pipe_event_poll, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -318,9 +346,13 @@ ATF_TC_BODY(pipe__pipe_event_poll, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | EV_EOF | EV_ONESHOT),
+	ATF_REQUIRE_MSG(kev[0].flags ==
+		(EV_CLEAR | SPURIOUS_EV_ADD | EV_EOF | SPURIOUS_EV_ONESHOT),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
+	if (kev[0].data == 0) {
+		atf_tc_skip("kev.data == 0 is a valid value on EV_EOF");
+	}
 	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #else
@@ -366,7 +398,16 @@ ATF_TC_BODY(pipe__fifo_event_poll, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+
+	/*
+	 * NetBSD still suffers from the bug fixed by
+	 * https://github.com/freebsd/freebsd/commit/4681aa72a96557236594d33069de3b60506be886
+	 */
+	if (kev[0].flags & EV_EOF) {
+		atf_tc_skip("EVFILT_WRITE broken on FIFOs");
+	}
+
+	ATF_REQUIRE_MSG(kev[0].flags == EV_CLEAR, "%x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -485,7 +526,7 @@ ATF_TC_BODY(pipe__fifo_event_poll, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+	ATF_REQUIRE_MSG(kev[0].flags == EV_CLEAR, "%x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 65023, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -594,13 +635,18 @@ ATF_TC_BODY(pipe__closed_read_end, tc)
 	ATF_REQUIRE((kev[0].flags & EV_ERROR) != 0);
 	ATF_REQUIRE(kev[0].data == 0);
 	ATF_REQUIRE((kev[1].flags & EV_ERROR) != 0);
+#ifdef __NetBSD__
+	ATF_REQUIRE(kev[1].data == EBADF);
+#else
 	ATF_REQUIRE(kev[1].data == EPIPE);
+#endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
-	ATF_REQUIRE_MSG(kev[0].flags == (EV_EOF | EV_CLEAR | EV_RECEIPT),
+	ATF_REQUIRE_MSG(kev[0].flags ==
+		(EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | EV_RECEIPT),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
@@ -661,16 +707,7 @@ ATF_TC_BODY(pipe__closed_read_end_register_before_close, tc)
 	ATF_REQUIRE(p[0] >= 0);
 	ATF_REQUIRE(p[1] >= 0);
 
-#if defined(__linux__)
-	{
-		int fl = fcntl(p[0], F_GETFL, 0);
-		ATF_REQUIRE((fl & O_ACCMODE) == O_RDONLY);
-	}
-	{
-		int fl = fcntl(p[1], F_GETFL, 0);
-		ATF_REQUIRE((fl & O_ACCMODE) == O_WRONLY);
-	}
-#elif defined(__FreeBSD__)
+#if defined(__FreeBSD__)
 	{
 		int fl = fcntl(p[0], F_GETFL, 0);
 		ATF_REQUIRE((fl & O_ACCMODE) == O_RDWR);
@@ -680,7 +717,14 @@ ATF_TC_BODY(pipe__closed_read_end_register_before_close, tc)
 		ATF_REQUIRE((fl & O_ACCMODE) == O_RDWR);
 	}
 #else
-	atf_tc_skip("Check F_GETFL output");
+	{
+		int fl = fcntl(p[0], F_GETFL, 0);
+		ATF_REQUIRE((fl & O_ACCMODE) == O_RDONLY);
+	}
+	{
+		int fl = fcntl(p[1], F_GETFL, 0);
+		ATF_REQUIRE((fl & O_ACCMODE) == O_WRONLY);
+	}
 #endif
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
@@ -706,24 +750,29 @@ ATF_TC_BODY(pipe__closed_read_end_register_before_close, tc)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 2);
 	{
-		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
-		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-		ATF_REQUIRE_MSG(kev[0].flags ==
-			(EV_EOF | EV_CLEAR | EV_ONESHOT | EV_RECEIPT),
-		    "%04x", kev[0].flags);
-		ATF_REQUIRE(kev[0].fflags == 0);
-		ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[0].data);
-		ATF_REQUIRE(kev[0].udata == 0);
-	}
-	{
 		ATF_REQUIRE(kev[1].ident == (uintptr_t)p[1]);
 		ATF_REQUIRE(kev[1].filter == EVFILT_READ);
 		ATF_REQUIRE_MSG(kev[1].flags ==
-			(EV_EOF | EV_CLEAR | EV_RECEIPT),
+			(EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | EV_RECEIPT),
 		    "%04x", kev[1].flags);
 		ATF_REQUIRE(kev[1].fflags == 0);
 		ATF_REQUIRE_MSG(kev[1].data == 0, "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[1].udata == 0);
+	}
+	{
+		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
+		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
+		ATF_REQUIRE_MSG(kev[0].flags ==
+			(EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD |
+			    SPURIOUS_EV_ONESHOT | EV_RECEIPT),
+		    "%04x", kev[0].flags);
+		ATF_REQUIRE(kev[0].fflags == 0);
+		if (kev[0].data == 0) {
+			atf_tc_skip(
+			    "kev.data == 0 is a valid value on EV_EOF");
+		}
+		ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[0].data);
+		ATF_REQUIRE(kev[0].udata == 0);
 	}
 #else
 	int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -778,16 +827,28 @@ ATF_TC_BODY(pipe__closed_write_end, tc)
 	ATF_REQUIRE((kev[0].flags & EV_ERROR) != 0);
 	ATF_REQUIRE(kev[0].data == 0);
 	ATF_REQUIRE((kev[1].flags & EV_ERROR) != 0);
+#ifdef __NetBSD__
+	ATF_REQUIRE(kev[1].data == EBADF);
+#else
 	ATF_REQUIRE(kev[1].data == EPIPE);
+#endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
-	ATF_REQUIRE_MSG(kev[0].flags == (EV_EOF | EV_CLEAR | EV_RECEIPT),
+	ATF_REQUIRE_MSG(kev[0].flags ==
+		(EV_EOF | (EV_CLEAR | SPURIOUS_EV_ADD) | EV_RECEIPT),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == 65536, "%d", (int)kev[0].data);
+	int const pipe_read_size =
+#ifdef __NetBSD__
+	    16384
+#else
+	    65536
+#endif
+	    ;
+	ATF_REQUIRE_MSG(kev[0].data == pipe_read_size, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #else
 	{
@@ -881,6 +942,7 @@ ATF_TC_BODY(pipe__closed_write_end_register_before_close, tc)
 	ATF_REQUIRE(close(p[1]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
+#ifdef __FreeBSD__
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 2);
 	{
@@ -903,6 +965,20 @@ ATF_TC_BODY(pipe__closed_write_end_register_before_close, tc)
 		ATF_REQUIRE_MSG(kev[1].data == 65536, "%d", (int)kev[1].data);
 		ATF_REQUIRE(kev[1].udata == 0);
 	}
+#else
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0}) == 1);
+	{
+		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
+		ATF_REQUIRE(kev[0].filter == EVFILT_READ);
+		ATF_REQUIRE_MSG(kev[0].flags ==
+			(EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | EV_RECEIPT),
+		    "%04x", kev[0].flags);
+		ATF_REQUIRE(kev[0].fflags == 0);
+		ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[1].data);
+		ATF_REQUIRE(kev[0].udata == 0);
+	}
+#endif
 #else
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 	ATF_REQUIRE(eps[0].events == (EPOLLIN | EPOLLHUP));
