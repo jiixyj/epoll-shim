@@ -13,6 +13,10 @@
 
 #include "epoll_shim_ctx.h"
 
+#ifdef __NetBSD__
+#define ppoll pollts
+#endif
+
 // TODO(jan): Remove this once the definition is exposed in <sys/time.h> in
 // all supported FreeBSD versions.
 #ifndef timespecsub
