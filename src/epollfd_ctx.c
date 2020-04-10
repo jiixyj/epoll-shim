@@ -674,9 +674,8 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 #endif
 
 again:;
-	struct kevent evlist[32];
-	n = kevent(epollfd->kq, NULL, 0, evlist, cnt,
-	    &(struct timespec){0, 0});
+	struct kevent kevs[32];
+	n = kevent(epollfd->kq, NULL, 0, kevs, cnt, &(struct timespec){0, 0});
 	if (n < 0) {
 		return errno;
 	}
@@ -687,12 +686,12 @@ again:;
 
 	for (int i = 0; i < n; ++i) {
 		RegisteredFDsNode *fd2_node =
-		    (RegisteredFDsNode *)evlist[i].udata;
+		    (RegisteredFDsNode *)kevs[i].udata;
 
 #ifdef SUPPORT_POLL_ONLY_FDS
 		if (!fd2_node) {
-			assert(evlist[i].filter == EVFILT_USER);
-			assert(evlist[i].udata == NULL);
+			assert(kevs[i].filter == EVFILT_USER);
+			assert(kevs[i].udata == NULL);
 			continue;
 		}
 #endif
@@ -705,7 +704,7 @@ again:;
 		}
 
 		if (!registered_fds_node_feed_event(fd2_node, epollfd,
-			&evlist[i])) {
+			&kevs[i])) {
 			fd2_node->del_list = del_list;
 			del_list = fd2_node;
 		} else {
