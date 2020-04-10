@@ -79,6 +79,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
     EpollFDCtx *epollfd, struct kevent const *kev)
 {
 	assert(fd2_node->events == 0);
+	assert(kev->filter == EVFILT_READ || kev->filter == EVFILT_WRITE);
 
 	int events = 0;
 
@@ -172,8 +173,6 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 			} else if (kev->filter == EVFILT_WRITE) {
 				epoll_event = EPOLLERR;
 			} else {
-				/* should not happen */
-				assert(0);
 				__builtin_unreachable();
 			}
 		} else if (flags & KQUEUE_STATE_ISSOCK) {
@@ -193,8 +192,6 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 			} else if (kev->filter == EVFILT_WRITE) {
 				epoll_event = EPOLLOUT;
 			} else {
-				/* should not happen */
-				assert(0);
 				__builtin_unreachable();
 			}
 
