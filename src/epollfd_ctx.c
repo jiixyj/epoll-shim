@@ -254,13 +254,18 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 					revents &= ~EPOLLIN;
 				}
 			} else if (kev->filter == EVFILT_WRITE) {
-				if (fd2_node->node_data.fifo.readable &&
+				if (fd2_node->events &
+					(EPOLLIN | EPOLLRDHUP) &&
+				    fd2_node->node_data.fifo.readable &&
 				    fd2_node->node_data.fifo.writable) {
 					/* Leave revents untouched. */
 					return true;
 				}
 
 				epoll_event = EPOLLERR;
+				if (kev->data < PIPE_BUF) {
+					revents &= ~EPOLLOUT;
+				}
 			} else {
 				__builtin_unreachable();
 			}

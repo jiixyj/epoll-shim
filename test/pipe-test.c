@@ -46,12 +46,34 @@ ATF_TC_BODY(pipe__simple_poll, tc)
 		struct pollfd pfd = {.fd = p[0], .events = POLLIN};
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 		ATF_REQUIRE(pfd.revents == 0);
+
+		int ep = epoll_create1(EPOLL_CLOEXEC);
+		ATF_REQUIRE(ep >= 0);
+
+		struct epoll_event eps[32];
+		eps[0] = (struct epoll_event){.events = EPOLLIN | EPOLLET};
+		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
+
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+		ATF_REQUIRE(close(ep) == 0);
 	}
 
 	{
 		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 		ATF_REQUIRE(pfd.revents == POLLOUT);
+
+		int ep = epoll_create1(EPOLL_CLOEXEC);
+		ATF_REQUIRE(ep >= 0);
+
+		struct epoll_event eps[32];
+		eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
+
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+		ATF_REQUIRE(eps[0].events == EPOLLOUT);
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+		ATF_REQUIRE(close(ep) == 0);
 	}
 }
 
@@ -63,6 +85,13 @@ ATF_TC_BODY(pipe__poll_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
 	ATF_REQUIRE(p[1] >= 0);
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 	ATF_REQUIRE(close(p[0]) == 0);
 
@@ -77,6 +106,15 @@ ATF_TC_BODY(pipe__poll_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
 	}
+
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+	if (eps[0].events == POLLERR) {
+		atf_tc_skip(
+		    "kqueue based emulation may return just POLLERR here");
+	}
+	ATF_REQUIRE(eps[0].events == (EPOLLOUT | POLLERR));
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	ATF_REQUIRE(close(ep) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_write_end_after_read_end_close);
@@ -95,6 +133,13 @@ ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(r < 0);
 	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
 
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
+
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
@@ -108,6 +153,15 @@ ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
 	}
+
+	int ret = epoll_wait(ep, eps, 32, 0);
+	if (ret == 0) {
+		atf_tc_skip("NetBSD hangs here");
+	}
+	ATF_REQUIRE(ret == 1);
+	ATF_REQUIRE(eps[0].events == POLLERR);
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	ATF_REQUIRE(close(ep) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_1b_write_end_after_read_end_close);
@@ -128,6 +182,13 @@ ATF_TC_BODY(pipe__poll_full_minus_1b_write_end_after_read_end_close, tc)
 
 	ATF_REQUIRE(read(p[0], &c, 1) == 1);
 
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
+
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
@@ -141,6 +202,15 @@ ATF_TC_BODY(pipe__poll_full_minus_1b_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
 	}
+
+	int ret = epoll_wait(ep, eps, 32, 0);
+	if (ret == 0) {
+		atf_tc_skip("NetBSD hangs here");
+	}
+	ATF_REQUIRE(ret == 1);
+	ATF_REQUIRE(eps[0].events == POLLERR);
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	ATF_REQUIRE(close(ep) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_511b_write_end_after_read_end_close);
@@ -163,6 +233,13 @@ ATF_TC_BODY(pipe__poll_full_minus_511b_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(read(p[0], &c, 1) == 1);
 	}
 
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
+
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
@@ -176,6 +253,15 @@ ATF_TC_BODY(pipe__poll_full_minus_511b_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
 	}
+
+	int ret = epoll_wait(ep, eps, 32, 0);
+	if (ret == 0) {
+		atf_tc_skip("NetBSD hangs here");
+	}
+	ATF_REQUIRE(ret == 1);
+	ATF_REQUIRE(eps[0].events == POLLERR);
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	ATF_REQUIRE(close(ep) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_512b_write_end_after_read_end_close);
@@ -198,11 +284,19 @@ ATF_TC_BODY(pipe__poll_full_minus_512b_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(read(p[0], &c, 1) == 1);
 	}
 
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
+
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
 		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLERR));
 #elif defined(__NetBSD__)
@@ -211,6 +305,15 @@ ATF_TC_BODY(pipe__poll_full_minus_512b_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
 	}
+
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+	if (eps[0].events == POLLERR) {
+		atf_tc_skip(
+		    "kqueue based emulation may return just POLLERR here");
+	}
+	ATF_REQUIRE(eps[0].events == (POLLOUT | POLLERR));
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	ATF_REQUIRE(close(ep) == 0);
 }
 
 // #define FORCE_EPOLL

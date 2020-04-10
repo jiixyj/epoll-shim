@@ -949,6 +949,12 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollerr_on_closed_pipe, tcptr)
 			// continue
 		} else if (event_result.events == (EPOLLOUT | EPOLLERR)) {
 			break;
+#ifndef __linux__
+		} else if (event_result.events == EPOLLERR) {
+			/* kqueue based emulation may
+			 * return just POLLERR here */
+			break;
+#endif
 		} else {
 			ATF_REQUIRE(false);
 		}
