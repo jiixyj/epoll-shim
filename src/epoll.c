@@ -173,10 +173,6 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 			}
 		}
 
-		/*
-		 * We should add a notification mechanism when a new poll-only
-		 * fd gets registered when this thread sleeps...
-		 */
 		struct pollfd pfds[2];
 		(void)pthread_mutex_lock(&epollfd->mutex);
 		epollfd_ctx_fill_pollfds(epollfd, pfds);

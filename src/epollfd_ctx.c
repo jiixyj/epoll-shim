@@ -292,6 +292,12 @@ epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
 		return ec;
 	}
 
+#ifdef SUPPORT_POLL_ONLY_FDS
+	struct kevent kev[1];
+	EV_SET(&kev[0], 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
+	(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
+#endif
+
 	return 0;
 }
 
@@ -386,12 +392,15 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 		if (!fd2_node->is_registered) {
 			EV_SET(&kev[0], (uintptr_t)fd2_node, EVFILT_USER,
-			    EV_ADD, 0, 0, fd2_node);
+			    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
 			if (kevent(epollfd->kq, kev, 1, NULL, 0, NULL) < 0) {
 				ec = errno;
 				goto out;
 			}
 		}
+
+		EV_SET(&kev[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
+		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
 
 		fd2_node->node_type = NODE_TYPE_POLL;
 		epollfd->poll_node = fd2_node;
@@ -460,6 +469,9 @@ epollfd_ctx_remove_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 		struct kevent kev[1];
 		EV_SET(&kev[0], (uintptr_t)fd2_node, EVFILT_USER,
 		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
+		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
+
+		EV_SET(&kev[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
 		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
 	} else
 #endif
@@ -676,6 +688,14 @@ again:;
 	for (int i = 0; i < n; ++i) {
 		RegisteredFDsNode *fd2_node =
 		    (RegisteredFDsNode *)evlist[i].udata;
+
+#ifdef SUPPORT_POLL_ONLY_FDS
+		if (!fd2_node) {
+			assert(evlist[i].filter == EVFILT_USER);
+			assert(evlist[i].udata == NULL);
+			continue;
+		}
+#endif
 
 		for (RegisteredFDsNode *it = del_list; it != NULL;
 		     it = it->del_list) {

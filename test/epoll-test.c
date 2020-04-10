@@ -555,6 +555,17 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__modify_nonexisting, tc)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
+static void *
+poll_only_fd_thread_fun(void *arg)
+{
+	int ep = *(int *)arg;
+
+	struct epoll_event event_result;
+	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, -1) == 1);
+
+	return NULL;
+}
+
 ATF_TC_WITHOUT_HEAD(epoll__poll_only_fd);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 {
@@ -567,18 +578,24 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 	}
 
 	struct epoll_event event;
-	event.events = EPOLLIN | EPOLLRDHUP;
+	event.events = 0;
 	event.data.fd = fd;
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) == 0);
+
+	pthread_t thread;
+	ATF_REQUIRE(
+	    pthread_create(&thread, NULL, &poll_only_fd_thread_fun, &ep) == 0);
+
+	usleep(200000);
 
 	event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fd, &event) == 0);
 
-	struct epoll_event event_result;
-	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, -1) == 1);
+	ATF_REQUIRE(pthread_join(thread, NULL) == 0);
 
 	ATF_REQUIRE(close(fd) == 0);
 
+	struct epoll_event event_result;
 	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, 0) == 0);
 
 	ATF_REQUIRE_ERRNO(EBADF, /**/
