@@ -7,6 +7,7 @@
 #include <sys/tree.h>
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <poll.h>
@@ -20,19 +21,33 @@ typedef enum {
 	EOF_STATE_WRITE_EOF = 0x02,
 } EOFState;
 
+typedef enum {
+	NODE_TYPE_FIFO = 1,
+	NODE_TYPE_SOCKET = 2,
+	NODE_TYPE_KQUEUE = 3,
+	NODE_TYPE_OTHER = 4,
+	NODE_TYPE_POLL = 5,
+} NodeType;
+
 struct registered_fds_node_ {
 	RB_ENTRY(registered_fds_node_) entry;
+
 	int fd;
-	uint16_t flags;
-	int eof_state;
 	epoll_data_t data;
-	uint32_t events;
+
+	NodeType node_type;
+	union {
+		struct {
+			bool is_nycss;
+		} socket;
+	} node_data;
+	int eof_state;
+
+	uint16_t events;
+	uint32_t revents;
 };
 
 typedef RB_HEAD(registered_fds_set_, registered_fds_node_) RegisteredFDsSet;
-
-RegisteredFDsNode *registered_fds_node_create(int fd, struct epoll_event *ev);
-void registered_fds_node_destroy(RegisteredFDsNode *node);
 
 typedef struct {
 	int kq; // non owning

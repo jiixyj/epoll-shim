@@ -308,12 +308,20 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__recursive_register, tcptr)
 	int ep_inner = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep_inner >= 0);
 
-	struct epoll_event event;
-	event.events = EPOLLOUT;
-	event.data.fd = ep_inner;
+	{
+		struct epoll_event event = {.events = EPOLLOUT};
+		ATF_REQUIRE(epoll_ctl(ep, /**/
+				EPOLL_CTL_ADD, ep_inner, &event) == 0);
+	}
+	{
+		struct epoll_event event = {.events = EPOLLIN};
+		ATF_REQUIRE(epoll_ctl(ep, /**/
+				EPOLL_CTL_MOD, ep_inner, &event) == 0);
+	}
 
-	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, ep_inner, &event) == 0);
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_DEL, ep_inner, NULL) == 0);
+	ATF_REQUIRE_ERRNO(ENOENT,
+	    epoll_ctl(ep, EPOLL_CTL_DEL, ep_inner, NULL) < 0);
 
 	ATF_REQUIRE(close(ep_inner) == 0);
 	ATF_REQUIRE(close(ep) == 0);
@@ -558,8 +566,11 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 	struct epoll_event event;
 	event.events = EPOLLIN;
 	event.data.fd = fd;
-
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) == 0);
+
+	event.events = EPOLLOUT;
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fd, &event) == 0);
+
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) == 0);
 	ATF_REQUIRE_ERRNO(ENOENT, /**/
 	    epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) < 0);
