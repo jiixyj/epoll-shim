@@ -628,8 +628,9 @@ no_epollin_on_closed_empty_pipe_impl(bool do_write_data)
 	struct epoll_event event_result;
 	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, -1) == 1);
 
-	ATF_REQUIRE(event_result.events ==
-	    (EPOLLHUP | (do_write_data ? EPOLLIN : 0)));
+	ATF_REQUIRE_MSG(event_result.events ==
+		(EPOLLHUP | (do_write_data ? EPOLLIN : 0)),
+	    "%x", event_result.events);
 
 	ATF_REQUIRE(read(fds[0], &data, 1) >= 0);
 
@@ -861,7 +862,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollhup_on_fresh_socket, tcptr)
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event event;
-	event.events = EPOLLIN;
+	event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
 	event.data.fd = sock;
 
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == 0);
@@ -872,7 +873,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollhup_on_fresh_socket, tcptr)
 		ret = epoll_wait(ep, &event, 1, 100);
 		ATF_REQUIRE(ret == 1);
 
-		ATF_REQUIRE(event.events == EPOLLHUP);
+		ATF_REQUIRE(event.events == (EPOLLOUT | EPOLLHUP));
 
 		usleep(100000);
 	}

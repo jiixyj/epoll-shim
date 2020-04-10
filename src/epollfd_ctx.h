@@ -43,6 +43,10 @@ struct registered_fds_node_ {
 		struct {
 			bool is_nycss;
 		} socket;
+		struct {
+			bool readable;
+			bool writable;
+		} fifo;
 	} node_data;
 	int eof_state;
 
