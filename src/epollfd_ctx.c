@@ -114,10 +114,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 				if (is_not_yet_connected_stream_socket(
 					fd2_node->fd)) {
 
-					revents = EPOLLHUP;
-					if (fd2_node->events & EPOLLOUT) {
-						revents |= EPOLLOUT;
-					}
+					revents = EPOLLHUP | EPOLLOUT;
 
 					struct kevent nkev[2];
 					EV_SET(&nkev[0], fd2_node->fd,
@@ -203,11 +200,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 				 * sure that we can't receive any more,
 				 * so use EPOLLIN/EPOLLRDHUP per
 				 * default */
-				epoll_event = EPOLLIN;
-
-				if (fd2_node->events & EPOLLRDHUP) {
-					epoll_event |= EPOLLRDHUP;
-				}
+				epoll_event = EPOLLIN | EPOLLRDHUP;
 			} else if (kev->filter == EVFILT_WRITE) {
 				epoll_event = EPOLLOUT;
 			} else {
@@ -234,28 +227,15 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 					 * when coming from an
 					 * EVFILT_WRITE event.
 					 */
-					if (fd2_node->events & EPOLLIN) {
-						epoll_event |= EPOLLIN;
-					}
-					if (fd2_node->events & EPOLLRDHUP) {
-						epoll_event |= EPOLLRDHUP;
-					}
-
+					epoll_event |= EPOLLIN;
+					epoll_event |= EPOLLRDHUP;
 					epoll_event |= EPOLLHUP;
 				}
 
 				/* might as well steal flags from the
 				 * poll call while we're here */
-
-				if ((pfd.revents & POLLIN) &&
-				    (fd2_node->events & EPOLLIN)) {
-					epoll_event |= EPOLLIN;
-				}
-
-				if ((pfd.revents & POLLOUT) &&
-				    (fd2_node->events & EPOLLOUT)) {
-					epoll_event |= EPOLLOUT;
-				}
+				epoll_event |=
+				    (pfd.revents & (POLLIN | POLLOUT));
 			}
 		} else {
 			epoll_event = EPOLLHUP;
@@ -264,8 +244,9 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 		revents |= epoll_event;
 	}
 
-	assert(revents != 0);
 	fd2_node->revents = (uint32_t)revents;
+	fd2_node->revents &= (fd2_node->events | EPOLLHUP | EPOLLERR);
+	assert(fd2_node->revents != 0);
 
 	return true;
 }
