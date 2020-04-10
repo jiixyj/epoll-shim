@@ -31,6 +31,7 @@ typedef enum {
 
 struct registered_fds_node_ {
 	RB_ENTRY(registered_fds_node_) entry;
+	RegisteredFDsNode *del_list;
 
 	int fd;
 	epoll_data_t data;
