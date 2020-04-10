@@ -21,10 +21,10 @@ registered_fds_node_create(int fd, struct epoll_event *ev)
 		return NULL;
 	}
 
-	node->fd = fd;
-	node->flags = 0;
-	node->eof_state = 0;
-	node->data = ev->data;
+	*node = (RegisteredFDsNode){
+	    .fd = fd,
+	    .data = ev->data,
+	};
 
 	return node;
 }
@@ -33,6 +33,223 @@ void
 registered_fds_node_destroy(RegisteredFDsNode *node)
 {
 	free(node);
+}
+
+#define KQUEUE_STATE_EPOLLIN 0x2u
+#define KQUEUE_STATE_EPOLLOUT 0x4u
+#define KQUEUE_STATE_EPOLLRDHUP 0x8u
+#define KQUEUE_STATE_NYCSS 0x10u
+#define KQUEUE_STATE_ISFIFO 0x20u
+#define KQUEUE_STATE_ISSOCK 0x40u
+
+static int
+is_not_yet_connected_stream_socket(int s)
+{
+	{
+		int val;
+		socklen_t length = sizeof(int);
+
+		if (getsockopt(s, SOL_SOCKET, SO_ACCEPTCONN, /**/
+			&val, &length) == 0 &&
+		    val) {
+			return 0;
+		}
+	}
+
+	{
+		int type;
+		socklen_t length = sizeof(int);
+
+		if (getsockopt(s, SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
+		    (type == SOCK_STREAM || type == SOCK_SEQPACKET)) {
+			struct sockaddr name;
+			socklen_t namelen = 0;
+			if (getpeername(s, &name, &namelen) < 0 &&
+			    errno == ENOTCONN) {
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+static void
+registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
+    EpollFDCtx *epollfd, struct kevent const *kev)
+{
+	assert(fd2_node->events == 0);
+
+	int events = 0;
+
+	if (kev->filter == EVFILT_READ) {
+		events |= EPOLLIN;
+		if (kev->flags & EV_ONESHOT) {
+			uint16_t flags = fd2_node->flags;
+
+#ifdef EV_FORCEONESHOT
+			if (flags & KQUEUE_STATE_NYCSS) {
+				if (is_not_yet_connected_stream_socket(
+					(int)kev->ident)) {
+
+					events = EPOLLHUP;
+					if (flags & KQUEUE_STATE_EPOLLOUT) {
+						events |= EPOLLOUT;
+					}
+
+					struct kevent nkev[2];
+					EV_SET(&nkev[0], kev->ident,
+					    EVFILT_READ, EV_ADD, /**/
+					    0, 0, fd2_node);
+					EV_SET(&nkev[1], kev->ident,
+					    EVFILT_READ,
+					    EV_ENABLE | EV_FORCEONESHOT, 0, 0,
+					    fd2_node);
+
+					kevent(epollfd->kq, nkev, 2, NULL, 0,
+					    NULL);
+				} else {
+					flags &= ~KQUEUE_STATE_NYCSS;
+
+					struct kevent nkev[2];
+					EV_SET(&nkev[0], kev->ident,
+					    EVFILT_READ, EV_ADD, /**/
+					    0, 0, fd2_node);
+					EV_SET(&nkev[1], kev->ident,
+					    EVFILT_READ,
+					    flags & KQUEUE_STATE_EPOLLIN
+						? EV_ENABLE
+						: EV_DISABLE,
+					    0, 0, fd2_node);
+
+					kevent(epollfd->kq, nkev, 2, NULL, 0,
+					    NULL);
+
+					fd2_node->flags = flags;
+
+					return;
+				}
+			}
+#endif
+		}
+	} else if (kev->filter == EVFILT_WRITE) {
+		events |= EPOLLOUT;
+	}
+
+	if (kev->filter == EVFILT_READ) {
+		if (kev->flags & EV_EOF) {
+			fd2_node->eof_state |= EOF_STATE_READ_EOF;
+		} else {
+			fd2_node->eof_state &= ~EOF_STATE_READ_EOF;
+		}
+	} else if (kev->filter == EVFILT_WRITE) {
+		if (kev->flags & EV_EOF) {
+			fd2_node->eof_state |= EOF_STATE_WRITE_EOF;
+		} else {
+			fd2_node->eof_state &= ~EOF_STATE_WRITE_EOF;
+		}
+	}
+
+	if (kev->flags & EV_ERROR) {
+		events |= EPOLLERR;
+	}
+
+	if (kev->flags & EV_EOF) {
+		if (kev->fflags) {
+			events |= EPOLLERR;
+		}
+
+		uint16_t flags = fd2_node->flags;
+
+		int epoll_event;
+
+		if (flags & KQUEUE_STATE_ISFIFO) {
+			if (kev->filter == EVFILT_READ) {
+				epoll_event = EPOLLHUP;
+				if (kev->data == 0) {
+					events &= ~EPOLLIN;
+				}
+			} else if (kev->filter == EVFILT_WRITE) {
+				epoll_event = EPOLLERR;
+			} else {
+				/* should not happen */
+				assert(0);
+				__builtin_unreachable();
+			}
+		} else if (flags & KQUEUE_STATE_ISSOCK) {
+			if (kev->filter == EVFILT_READ) {
+				/* do some special EPOLLRDHUP handling
+				 * for sockets */
+
+				/* if we are reading, we just know for
+				 * sure that we can't receive any more,
+				 * so use EPOLLIN/EPOLLRDHUP per
+				 * default */
+				epoll_event = EPOLLIN;
+
+				if (flags & KQUEUE_STATE_EPOLLRDHUP) {
+					epoll_event |= EPOLLRDHUP;
+				}
+			} else if (kev->filter == EVFILT_WRITE) {
+				epoll_event = EPOLLOUT;
+			} else {
+				/* should not happen */
+				assert(0);
+				__builtin_unreachable();
+			}
+
+			struct pollfd pfd = {
+			    .fd = (int)kev->ident,
+			    .events = POLLIN | POLLOUT | POLLHUP,
+			};
+
+			if (poll(&pfd, 1, 0) == 1) {
+				if ((pfd.revents & POLLHUP) ||
+				    (fd2_node->eof_state ==
+					(EOF_STATE_READ_EOF |
+					    EOF_STATE_WRITE_EOF))) {
+					/*
+					 * We need to set these flags
+					 * so that readers still have a
+					 * chance to read the last data
+					 * from the socket. This is
+					 * very important to preserve
+					 * Linux poll/epoll semantics
+					 * when coming from an
+					 * EVFILT_WRITE event.
+					 */
+					if (flags & KQUEUE_STATE_EPOLLIN) {
+						epoll_event |= EPOLLIN;
+					}
+					if (flags & KQUEUE_STATE_EPOLLRDHUP) {
+						epoll_event |= EPOLLRDHUP;
+					}
+
+					epoll_event |= EPOLLHUP;
+				}
+
+				/* might as well steal flags from the
+				 * poll call while we're here */
+
+				if ((pfd.revents & POLLIN) &&
+				    (flags & KQUEUE_STATE_EPOLLIN)) {
+					epoll_event |= EPOLLIN;
+				}
+
+				if ((pfd.revents & POLLOUT) &&
+				    (flags & KQUEUE_STATE_EPOLLOUT)) {
+					epoll_event |= EPOLLOUT;
+				}
+			}
+		} else {
+			epoll_event = EPOLLHUP;
+		}
+
+		events |= epoll_event;
+	}
+
+	assert(events != 0);
+	fd2_node->events = (uint32_t)events;
 }
 
 static int
@@ -82,45 +299,6 @@ epollfd_ctx_terminate(EpollFDCtx *epollfd)
 	}
 
 	return ec;
-}
-
-#define KQUEUE_STATE_EPOLLIN 0x2u
-#define KQUEUE_STATE_EPOLLOUT 0x4u
-#define KQUEUE_STATE_EPOLLRDHUP 0x8u
-#define KQUEUE_STATE_NYCSS 0x10u
-#define KQUEUE_STATE_ISFIFO 0x20u
-#define KQUEUE_STATE_ISSOCK 0x40u
-
-static int
-is_not_yet_connected_stream_socket(int s)
-{
-	{
-		int val;
-		socklen_t length = sizeof(int);
-
-		if (getsockopt(s, SOL_SOCKET, SO_ACCEPTCONN, /**/
-			&val, &length) == 0 &&
-		    val) {
-			return 0;
-		}
-	}
-
-	{
-		int type;
-		socklen_t length = sizeof(int);
-
-		if (getsockopt(s, SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
-		    (type == SOCK_STREAM || type == SOCK_SEQPACKET)) {
-			struct sockaddr name;
-			socklen_t namelen = 0;
-			if (getpeername(s, &name, &namelen) < 0 &&
-			    errno == ENOTCONN) {
-				return 1;
-			}
-		}
-	}
-
-	return 0;
 }
 
 static errno_t
@@ -455,185 +633,16 @@ again:;
 	for (int i = 0; i < ret; ++i) {
 		RegisteredFDsNode *fd2_node =
 		    (RegisteredFDsNode *)evlist[i].udata;
-		int events = 0;
 
-		if (evlist[i].filter == EVFILT_READ) {
-			events |= EPOLLIN;
-			if (evlist[i].flags & EV_ONESHOT) {
-				uint16_t flags = fd2_node->flags;
+		registered_fds_node_feed_event(fd2_node, epollfd, &evlist[i]);
 
-#ifdef EV_FORCEONESHOT
-				if (flags & KQUEUE_STATE_NYCSS) {
-					if (is_not_yet_connected_stream_socket(
-						(int)evlist[i].ident)) {
+		if (fd2_node->events) {
+			ev[j].events = fd2_node->events;
+			ev[j].data = fd2_node->data;
+			++j;
 
-						events = EPOLLHUP;
-						if (flags &
-						    KQUEUE_STATE_EPOLLOUT) {
-							events |= EPOLLOUT;
-						}
-
-						struct kevent nkev[2];
-						EV_SET(&nkev[0],
-						    evlist[i].ident,
-						    EVFILT_READ, EV_ADD, /**/
-						    0, 0, fd2_node);
-						EV_SET(&nkev[1],
-						    evlist[i].ident,
-						    EVFILT_READ,
-						    EV_ENABLE |
-							EV_FORCEONESHOT,
-						    0, 0, fd2_node);
-
-						kevent(epollfd->kq, nkev, 2,
-						    NULL, 0, NULL);
-					} else {
-						flags &= ~KQUEUE_STATE_NYCSS;
-
-						struct kevent nkev[2];
-						EV_SET(&nkev[0],
-						    evlist[i].ident,
-						    EVFILT_READ, EV_ADD, /**/
-						    0, 0, fd2_node);
-						EV_SET(&nkev[1],
-						    evlist[i].ident,
-						    EVFILT_READ,
-						    flags & KQUEUE_STATE_EPOLLIN
-							? EV_ENABLE
-							: EV_DISABLE,
-						    0, 0, fd2_node);
-
-						kevent(epollfd->kq, nkev, 2,
-						    NULL, 0, NULL);
-
-						fd2_node->flags = flags;
-
-						continue;
-					}
-				}
-#endif
-			}
-		} else if (evlist[i].filter == EVFILT_WRITE) {
-			events |= EPOLLOUT;
+			fd2_node->events = 0;
 		}
-
-		if (evlist[i].filter == EVFILT_READ) {
-			if (evlist[i].flags & EV_EOF) {
-				fd2_node->eof_state |= EOF_STATE_READ_EOF;
-			} else {
-				fd2_node->eof_state &= ~EOF_STATE_READ_EOF;
-			}
-		} else if (evlist[i].filter == EVFILT_WRITE) {
-			if (evlist[i].flags & EV_EOF) {
-				fd2_node->eof_state |= EOF_STATE_WRITE_EOF;
-			} else {
-				fd2_node->eof_state &= ~EOF_STATE_WRITE_EOF;
-			}
-		}
-
-		if (evlist[i].flags & EV_ERROR) {
-			events |= EPOLLERR;
-		}
-
-		if (evlist[i].flags & EV_EOF) {
-			if (evlist[i].fflags) {
-				events |= EPOLLERR;
-			}
-
-			uint16_t flags = fd2_node->flags;
-
-			int epoll_event;
-
-			if (flags & KQUEUE_STATE_ISFIFO) {
-				if (evlist[i].filter == EVFILT_READ) {
-					epoll_event = EPOLLHUP;
-					if (evlist[i].data == 0) {
-						events &= ~EPOLLIN;
-					}
-				} else if (evlist[i].filter == EVFILT_WRITE) {
-					epoll_event = EPOLLERR;
-				} else {
-					/* should not happen */
-					assert(0);
-					return EIO;
-				}
-			} else if (flags & KQUEUE_STATE_ISSOCK) {
-				if (evlist[i].filter == EVFILT_READ) {
-					/* do some special EPOLLRDHUP handling
-					 * for sockets */
-
-					/* if we are reading, we just know for
-					 * sure that we can't receive any more,
-					 * so use EPOLLIN/EPOLLRDHUP per
-					 * default */
-					epoll_event = EPOLLIN;
-
-					if (flags & KQUEUE_STATE_EPOLLRDHUP) {
-						epoll_event |= EPOLLRDHUP;
-					}
-				} else if (evlist[i].filter == EVFILT_WRITE) {
-					epoll_event = EPOLLOUT;
-				} else {
-					/* should not happen */
-					assert(0);
-					return EIO;
-				}
-
-				struct pollfd pfd = {
-				    .fd = (int)evlist[i].ident,
-				    .events = POLLIN | POLLOUT | POLLHUP,
-				};
-
-				if (poll(&pfd, 1, 0) == 1) {
-					if ((pfd.revents & POLLHUP) ||
-					    (fd2_node->eof_state ==
-						(EOF_STATE_READ_EOF |
-						    EOF_STATE_WRITE_EOF))) {
-						/*
-						 * We need to set these flags
-						 * so that readers still have a
-						 * chance to read the last data
-						 * from the socket. This is
-						 * very important to preserve
-						 * Linux poll/epoll semantics
-						 * when coming from an
-						 * EVFILT_WRITE event.
-						 */
-						if (flags &
-						    KQUEUE_STATE_EPOLLIN) {
-							epoll_event |= EPOLLIN;
-						}
-						if (flags &
-						    KQUEUE_STATE_EPOLLRDHUP) {
-							epoll_event |=
-							    EPOLLRDHUP;
-						}
-
-						epoll_event |= EPOLLHUP;
-					}
-
-					/* might as well steal flags from the
-					 * poll call while we're here */
-
-					if ((pfd.revents & POLLIN) &&
-					    (flags & KQUEUE_STATE_EPOLLIN)) {
-						epoll_event |= EPOLLIN;
-					}
-
-					if ((pfd.revents & POLLOUT) &&
-					    (flags & KQUEUE_STATE_EPOLLOUT)) {
-						epoll_event |= EPOLLOUT;
-					}
-				}
-			} else {
-				epoll_event = EPOLLHUP;
-			}
-
-			events |= epoll_event;
-		}
-		ev[j].events = (uint32_t)events;
-		ev[j].data = fd2_node->data;
-		++j;
 	}
 
 	if (ret && j == 0) {
