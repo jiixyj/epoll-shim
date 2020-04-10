@@ -27,6 +27,10 @@ execute_process(
 file(STRINGS "${_wd}/result" _result_line)
 file(STRINGS "${_wd}/stderr" _stderr_lines)
 
+foreach(line IN LISTS _stderr_lines)
+  message(STATUS "stderr: ${line}")
+endforeach()
+
 execute_process(COMMAND "${CMAKE_COMMAND}" -E remove_directory "${_wd}")
 
 list(LENGTH _result_line _result_line_length)
