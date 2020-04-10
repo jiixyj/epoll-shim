@@ -43,14 +43,14 @@
 #endif
 
 #ifndef timespecadd
-#define	timespecadd(tsp, usp, vsp)					\
-	do {								\
-		(vsp)->tv_sec = (tsp)->tv_sec + (usp)->tv_sec;		\
-		(vsp)->tv_nsec = (tsp)->tv_nsec + (usp)->tv_nsec;	\
-		if ((vsp)->tv_nsec >= 1000000000L) {			\
-			(vsp)->tv_sec++;				\
-			(vsp)->tv_nsec -= 1000000000L;			\
-		}							\
+#define timespecadd(tsp, usp, vsp)                                            \
+	do {                                                                  \
+		(vsp)->tv_sec = (tsp)->tv_sec + (usp)->tv_sec;                \
+		(vsp)->tv_nsec = (tsp)->tv_nsec + (usp)->tv_nsec;             \
+		if ((vsp)->tv_nsec >= 1000000000L) {                          \
+			(vsp)->tv_sec++;                                      \
+			(vsp)->tv_nsec -= 1000000000L;                        \
+		}                                                             \
 	} while (0)
 #endif
 
@@ -455,8 +455,9 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
-	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
-	    e.tv_nsec < 200000000);
+	ATF_REQUIRE_MSG(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
+		e.tv_nsec < 220000000,
+	    "%ld", e.tv_nsec);
 
 	timeouts = wait_for_timerfd(timerfd);
 	ATF_REQUIRE(timeouts == 1);
@@ -464,7 +465,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 220000000 &&
-	    e.tv_nsec < 270000000);
+	    e.tv_nsec < 310000000);
 
 	ATF_REQUIRE(close(timerfd) == 0);
 }
