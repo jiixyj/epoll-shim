@@ -574,11 +574,14 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 	event.events = EPOLLOUT;
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fd, &event) == 0);
 
-	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) == 0);
-	ATF_REQUIRE_ERRNO(ENOENT, /**/
+	ATF_REQUIRE(close(fd) == 0);
+
+	struct epoll_event event_result;
+	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, 0) == 0);
+
+	ATF_REQUIRE_ERRNO(EBADF, /**/
 	    epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) < 0);
 
-	ATF_REQUIRE(close(fd) == 0);
 	ATF_REQUIRE(close(ep) == 0);
 }
 

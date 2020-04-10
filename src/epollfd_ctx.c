@@ -402,7 +402,7 @@ epollfd_ctx_remove_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 	int const fd2 = fd2_node->fd;
 
 	if (fd2_node->node_type == NODE_TYPE_POLL) {
-		assert(epollfd->poll_node != NULL);
+		assert(epollfd->poll_node == fd2_node);
 		epollfd->poll_node = NULL;
 	} else {
 		struct kevent kev[2];
@@ -567,8 +567,6 @@ epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2, struct epoll_event *ev)
 	return ec;
 }
 
-#define SUPPORTED_POLLFLAGS (POLLIN | POLLOUT | POLLERR | POLLHUP | POLLNVAL)
-
 static errno_t
 epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
     int *actual_cnt)
@@ -577,24 +575,29 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		return EINVAL;
 	}
 
-	{
-		struct pollfd pfds[2];
-		epollfd_ctx_fill_pollfds(epollfd, pfds);
+	struct pollfd pfds[2];
+	epollfd_ctx_fill_pollfds(epollfd, pfds);
 
-		int n = poll(pfds, 2, 0);
-		if (n < 0) {
-			return errno;
-		}
-		if (n == 0) {
-			*actual_cnt = 0;
-			return 0;
-		}
+	int n = poll(pfds, 2, 0);
+	if (n < 0) {
+		return errno;
+	}
+	if (n == 0) {
+		*actual_cnt = 0;
+		return 0;
+	}
 
-		if (pfds[0].revents & SUPPORTED_POLLFLAGS) {
-			/* Depends on the equivalence of POLL* and EPOLL*
-			 * flag values. */
-			ev[0].events =
-			    (uint32_t)(pfds[0].revents & SUPPORTED_POLLFLAGS);
+	if (pfds[0].revents & POLLNVAL) {
+		epollfd_ctx_remove_node(epollfd, epollfd->poll_node);
+	} else {
+		uint32_t revents = (uint32_t)(pfds[0].revents);
+		assert(!(revents &
+		    ~(uint32_t)(POLLIN | POLLOUT | POLLERR | POLLHUP)));
+
+		if (revents) {
+			/* Depends on the equivalence of POLL* and
+			 * EPOLL* flag values. */
+			ev[0].events = revents;
 			ev[0].data = epollfd->poll_node->data;
 			*actual_cnt = 1;
 			return 0;
@@ -603,7 +606,7 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 
 again:;
 	struct kevent evlist[32];
-	int n = kevent(epollfd->kq, NULL, 0, evlist, cnt,
+	n = kevent(epollfd->kq, NULL, 0, evlist, cnt,
 	    &(struct timespec){0, 0});
 	if (n < 0) {
 		return errno;
