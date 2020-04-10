@@ -80,6 +80,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 {
 	assert(fd2_node->events == 0);
 	assert(kev->filter == EVFILT_READ || kev->filter == EVFILT_WRITE);
+	assert((int)kev->ident == fd2_node->fd);
 
 	int events = 0;
 
@@ -91,7 +92,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 #ifdef EV_FORCEONESHOT
 			if (flags & KQUEUE_STATE_NYCSS) {
 				if (is_not_yet_connected_stream_socket(
-					(int)kev->ident)) {
+					fd2_node->fd)) {
 
 					events = EPOLLHUP;
 					if (flags & KQUEUE_STATE_EPOLLOUT) {
@@ -99,10 +100,10 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 					}
 
 					struct kevent nkev[2];
-					EV_SET(&nkev[0], kev->ident,
+					EV_SET(&nkev[0], fd2_node->fd,
 					    EVFILT_READ, EV_ADD, /**/
 					    0, 0, fd2_node);
-					EV_SET(&nkev[1], kev->ident,
+					EV_SET(&nkev[1], fd2_node->fd,
 					    EVFILT_READ,
 					    EV_ENABLE | EV_FORCEONESHOT, 0, 0,
 					    fd2_node);
@@ -113,10 +114,10 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 					flags &= ~KQUEUE_STATE_NYCSS;
 
 					struct kevent nkev[2];
-					EV_SET(&nkev[0], kev->ident,
+					EV_SET(&nkev[0], fd2_node->fd,
 					    EVFILT_READ, EV_ADD, /**/
 					    0, 0, fd2_node);
-					EV_SET(&nkev[1], kev->ident,
+					EV_SET(&nkev[1], fd2_node->fd,
 					    EVFILT_READ,
 					    flags & KQUEUE_STATE_EPOLLIN
 						? EV_ENABLE
@@ -196,7 +197,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 			}
 
 			struct pollfd pfd = {
-			    .fd = (int)kev->ident,
+			    .fd = fd2_node->fd,
 			    .events = POLLIN | POLLOUT | POLLHUP,
 			};
 
