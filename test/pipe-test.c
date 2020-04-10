@@ -164,6 +164,62 @@ ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(pipe__poll_full_write_end_after_read_end_close_hup);
+ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close_hup, tc)
+{
+	int p[2] = {-1, -1};
+
+	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
+	ATF_REQUIRE(p[0] >= 0);
+	ATF_REQUIRE(p[1] >= 0);
+
+#if defined(__FreeBSD__)
+	{
+		cap_rights_t rights;
+		ATF_REQUIRE(cap_rights_get(p[1], &rights) == 0);
+		cap_rights_clear(&rights, CAP_READ);
+		ATF_REQUIRE(cap_rights_limit(p[1], &rights) == 0);
+	}
+#endif
+
+	char c = 0;
+	ssize_t r;
+	while ((r = write(p[1], &c, 1)) == 1) {
+	}
+	ATF_REQUIRE(r < 0);
+	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+	eps[0] = (struct epoll_event){.events = EPOLLET};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
+
+	ATF_REQUIRE(close(p[0]) == 0);
+
+	{
+		struct pollfd pfd = {.fd = p[1]};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+#ifdef __linux__
+		ATF_REQUIRE(pfd.revents == POLLERR);
+#elif defined(__NetBSD__)
+		ATF_REQUIRE(pfd.revents == POLLHUP);
+#else
+		ATF_REQUIRE(pfd.revents == POLLHUP);
+#endif
+	}
+
+	int ret = epoll_wait(ep, eps, 32, 0);
+	if (ret == 0) {
+		atf_tc_skip("NetBSD hangs here");
+	}
+	ATF_REQUIRE(ret == 1);
+	ATF_REQUIRE(eps[0].events == POLLERR);
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	ATF_REQUIRE(close(ep) == 0);
+}
+
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_1b_write_end_after_read_end_close);
 ATF_TC_BODY(pipe__poll_full_minus_1b_write_end_after_read_end_close, tc)
 {
@@ -1123,6 +1179,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pipe__simple_poll);
 	ATF_TP_ADD_TC(tp, pipe__poll_write_end_after_read_end_close);
 	ATF_TP_ADD_TC(tp, pipe__poll_full_write_end_after_read_end_close);
+	ATF_TP_ADD_TC(tp, pipe__poll_full_write_end_after_read_end_close_hup);
 	ATF_TP_ADD_TC(tp,
 	    pipe__poll_full_minus_1b_write_end_after_read_end_close);
 	ATF_TP_ADD_TC(tp,
