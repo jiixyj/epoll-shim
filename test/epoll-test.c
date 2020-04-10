@@ -550,31 +550,21 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
-	int fd = open("/dev/dsp", O_WRONLY | O_CLOEXEC);
+	int fd = open("/dev/random", O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
-		// Don't fail the test when there is no sound card.
-		goto out;
+		atf_tc_skip("This test needs /dev/random");
 	}
 
 	struct epoll_event event;
-	event.events = EPOLLOUT;
+	event.events = EPOLLIN;
 	event.data.fd = fd;
 
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) == 0);
-
-	struct epoll_event event_result;
-	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, 300) == 1);
-
-	ATF_REQUIRE(event_result.events == EPOLLOUT);
-	ATF_REQUIRE(event_result.data.fd == fd);
-
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) == 0);
-
 	ATF_REQUIRE_ERRNO(ENOENT, /**/
 	    epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) < 0);
 
 	ATF_REQUIRE(close(fd) == 0);
-out:
 	ATF_REQUIRE(close(ep) == 0);
 }
 
