@@ -179,8 +179,7 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		 */
 		struct pollfd pfds[2];
 		(void)pthread_mutex_lock(&epollfd->mutex);
-		pfds[0] = epollfd->pfds[0];
-		pfds[1] = epollfd->pfds[1];
+		epollfd_ctx_fill_pollfds(epollfd, pfds);
 		(void)pthread_mutex_unlock(&epollfd->mutex);
 
 		if (ppoll(pfds, 2, deadline ? &timeout : NULL, sigs) < 0) {

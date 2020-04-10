@@ -35,6 +35,8 @@ struct registered_fds_node_ {
 	int fd;
 	epoll_data_t data;
 
+	bool is_registered;
+
 	NodeType node_type;
 	union {
 		struct {
@@ -53,14 +55,15 @@ typedef struct {
 	int kq; // non owning
 	pthread_mutex_t mutex;
 
-	struct pollfd pfds[2];
-	epoll_data_t pollfd_data;
+	RegisteredFDsNode *poll_node;
 
 	RegisteredFDsSet registered_fds;
 } EpollFDCtx;
 
 errno_t epollfd_ctx_init(EpollFDCtx *epollfd, int kq);
 errno_t epollfd_ctx_terminate(EpollFDCtx *epollfd);
+
+void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, struct pollfd pfds[2]);
 
 errno_t epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2,
     struct epoll_event *ev);
