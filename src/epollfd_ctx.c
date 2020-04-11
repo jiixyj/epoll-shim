@@ -1099,7 +1099,6 @@ again:;
 			fd2_node->del_list = del_list;
 			del_list = fd2_node;
 		} else {
-			/* TODO(jan): re-register needed kevents here */
 			if (fd2_node->node_type != NODE_TYPE_POLL &&
 			    !(fd2_node->is_edge_triggered &&
 				fd2_node->eof_state ==
