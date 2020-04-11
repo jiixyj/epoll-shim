@@ -447,7 +447,8 @@ out:
 }
 
 static void
-registered_fds_node_complete(RegisteredFDsNode *fd2_node)
+registered_fds_node_register_for_completion(int *kq,
+    RegisteredFDsNode *fd2_node)
 {
 	struct kevent kev[2];
 	int n = 0;
@@ -467,19 +468,39 @@ registered_fds_node_complete(RegisteredFDsNode *fd2_node)
 
 	// printf("need to open kqueue\n");
 
-	int kq = kqueue();
-	if (kq >= 0) {
-		(void)kevent(kq, kev, n, kev, n, NULL);
-		n = kevent(kq, NULL, 0, kev, n, &(struct timespec){0, 0});
-		if (n > 0) {
-			for (int i = 0; i < n; ++i) {
-				registered_fds_node_feed_event(fd2_node, NULL,
-				    &kev[i]);
+	if (*kq < 0) {
+		*kq = kqueue();
+	}
+
+	if (*kq >= 0) {
+		(void)kevent(*kq, kev, n, kev, n, NULL);
+	}
+}
+
+static void
+registered_fds_node_complete(int kq)
+{
+	if (kq < 0) {
+		return;
+	}
+
+	struct kevent kevs[32];
+	int n;
+
+	while ((n = kevent(kq, /**/
+		    NULL, 0, kevs, 32, &(struct timespec){0, 0})) > 0) {
+		for (int i = 0; i < n; ++i) {
+			RegisteredFDsNode *fd2_node =
+			    (RegisteredFDsNode *)kevs[i].udata;
+
+			if (!registered_fds_node_feed_event(fd2_node, NULL,
+				&kevs[i])) {
+				assert(0);
 			}
 		}
-
-		(void)close(kq);
 	}
+
+	(void)close(kq);
 }
 
 static int
@@ -1115,13 +1136,25 @@ again:;
 		it = next_it;
 	}
 
+	{
+		int completion_kq = -1;
+
+		for (int i = 0; i < j; ++i) {
+			RegisteredFDsNode *fd2_node =
+			    (RegisteredFDsNode *)ev[i].data.ptr;
+
+			if (n == cnt || fd2_node->is_edge_triggered) {
+				registered_fds_node_register_for_completion(
+				    &completion_kq, fd2_node);
+			}
+		}
+
+		registered_fds_node_complete(completion_kq);
+	}
+
 	for (int i = 0; i < j; ++i) {
 		RegisteredFDsNode *fd2_node =
 		    (RegisteredFDsNode *)ev[i].data.ptr;
-
-		if (n == cnt || fd2_node->is_edge_triggered) {
-			registered_fds_node_complete(fd2_node);
-		}
 
 		ev[i].events = fd2_node->revents;
 		ev[i].data = fd2_node->data;
