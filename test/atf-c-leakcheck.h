@@ -12,20 +12,29 @@
 
 static int fd_leak_test_a;
 static int fd_leak_test_b;
+static int fd_leak_test_c;
+static int fd_leak_test_d;
 
 static void
 init_fd_checking(void)
 {
 	/* We check for fd leaks after each test. Remember fd numbers for
 	 * checking here. */
-	int fds[2];
-	ATF_REQUIRE(pipe2(fds, O_CLOEXEC) == 0);
+	int fds_1[2];
+	ATF_REQUIRE(pipe2(fds_1, O_CLOEXEC) == 0);
 
-	fd_leak_test_a = fds[0];
-	fd_leak_test_b = fds[1];
+	fd_leak_test_a = fds_1[0];
+	fd_leak_test_b = fds_1[1];
 
-	ATF_REQUIRE(close(fds[0]) == 0);
-	ATF_REQUIRE(close(fds[1]) == 0);
+	int fds_2[2];
+	ATF_REQUIRE(pipe2(fds_2, O_CLOEXEC) == 0);
+	fd_leak_test_c = fds_2[0];
+	fd_leak_test_d = fds_2[1];
+
+	ATF_REQUIRE(close(fds_1[0]) == 0);
+	ATF_REQUIRE(close(fds_1[1]) == 0);
+	ATF_REQUIRE(close(fds_2[0]) == 0);
+	ATF_REQUIRE(close(fds_2[1]) == 0);
 }
 
 static void
@@ -34,14 +43,21 @@ check_for_fd_leaks(void)
 	/* Test that all fds of previous tests
 	 * have been closed successfully. */
 
-	int fds[2];
-	ATF_REQUIRE(pipe2(fds, O_CLOEXEC) == 0);
+	int fds_1[2];
+	ATF_REQUIRE(pipe2(fds_1, O_CLOEXEC) == 0);
 
-	ATF_REQUIRE(fds[0] == fd_leak_test_a);
-	ATF_REQUIRE(fds[1] == fd_leak_test_b);
+	int fds_2[2];
+	ATF_REQUIRE(pipe2(fds_2, O_CLOEXEC) == 0);
 
-	ATF_REQUIRE(close(fds[0]) == 0);
-	ATF_REQUIRE(close(fds[1]) == 0);
+	ATF_REQUIRE(fds_1[0] == fd_leak_test_a);
+	ATF_REQUIRE(fds_1[1] == fd_leak_test_b);
+	ATF_REQUIRE(fds_2[0] == fd_leak_test_c);
+	ATF_REQUIRE(fds_2[1] == fd_leak_test_d);
+
+	ATF_REQUIRE(close(fds_1[0]) == 0);
+	ATF_REQUIRE(close(fds_1[1]) == 0);
+	ATF_REQUIRE(close(fds_2[0]) == 0);
+	ATF_REQUIRE(close(fds_2[1]) == 0);
 }
 
 #define ATF_TC_BODY_FD_LEAKCHECK(tc, tcptr)                                   \

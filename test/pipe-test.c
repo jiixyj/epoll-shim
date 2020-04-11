@@ -23,6 +23,8 @@
 #include <poll.h>
 #include <unistd.h>
 
+#include "atf-c-leakcheck.h"
+
 #ifndef nitems
 #define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 #endif
@@ -34,7 +36,7 @@
  */
 
 ATF_TC_WITHOUT_HEAD(pipe__simple_poll);
-ATF_TC_BODY(pipe__simple_poll, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__simple_poll, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -75,10 +77,13 @@ ATF_TC_BODY(pipe__simple_poll, tc)
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 		ATF_REQUIRE(close(ep) == 0);
 	}
+
+	ATF_REQUIRE(close(p[0]) == 0);
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_write_end_after_read_end_close);
-ATF_TC_BODY(pipe__poll_write_end_after_read_end_close, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_write_end_after_read_end_close, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -115,10 +120,12 @@ ATF_TC_BODY(pipe__poll_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(eps[0].events == (EPOLLOUT | POLLERR));
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_write_end_after_read_end_close);
-ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -162,10 +169,13 @@ ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(eps[0].events == POLLERR);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_write_end_after_read_end_close_hup);
-ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close_hup, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close_hup,
+    tc)
 {
 	int p[2] = {-1, -1};
 
@@ -218,10 +228,13 @@ ATF_TC_BODY(pipe__poll_full_write_end_after_read_end_close_hup, tc)
 	ATF_REQUIRE(eps[0].events == POLLERR);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_1b_write_end_after_read_end_close);
-ATF_TC_BODY(pipe__poll_full_minus_1b_write_end_after_read_end_close, tc)
+ATF_TC_BODY_FD_LEAKCHECK(
+    pipe__poll_full_minus_1b_write_end_after_read_end_close, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -267,10 +280,13 @@ ATF_TC_BODY(pipe__poll_full_minus_1b_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(eps[0].events == POLLERR);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_511b_write_end_after_read_end_close);
-ATF_TC_BODY(pipe__poll_full_minus_511b_write_end_after_read_end_close, tc)
+ATF_TC_BODY_FD_LEAKCHECK(
+    pipe__poll_full_minus_511b_write_end_after_read_end_close, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -318,10 +334,13 @@ ATF_TC_BODY(pipe__poll_full_minus_511b_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(eps[0].events == POLLERR);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_512b_write_end_after_read_end_close);
-ATF_TC_BODY(pipe__poll_full_minus_512b_write_end_after_read_end_close, tc)
+ATF_TC_BODY_FD_LEAKCHECK(
+    pipe__poll_full_minus_512b_write_end_after_read_end_close, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -370,6 +389,8 @@ ATF_TC_BODY(pipe__poll_full_minus_512b_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(eps[0].events == (POLLOUT | POLLERR));
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 // #define FORCE_EPOLL
@@ -406,7 +427,7 @@ static int const SPURIOUS_EV_ONESHOT = 0
     ;
 
 ATF_TC_WITHOUT_HEAD(pipe__pipe_event_poll);
-ATF_TC_BODY(pipe__pipe_event_poll, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -524,13 +545,17 @@ ATF_TC_BODY(pipe__pipe_event_poll, tc)
 	}
 	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
+	ATF_REQUIRE(close(kq) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 	ATF_REQUIRE(eps[0].events == (EPOLLOUT | EPOLLERR));
+	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__fifo_event_poll);
-ATF_TC_BODY(pipe__fifo_event_poll, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -762,13 +787,18 @@ ATF_TC_BODY(pipe__fifo_event_poll, tc)
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 1, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
+	ATF_REQUIRE(close(kq) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 	ATF_REQUIRE(eps[0].events == EPOLLIN);
+	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[0]) == 0);
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__closed_read_end);
-ATF_TC_BODY(pipe__closed_read_end, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -818,6 +848,7 @@ ATF_TC_BODY(pipe__closed_read_end, tc)
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
+	ATF_REQUIRE(close(kq) == 0);
 #endif
 	{
 		int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -871,10 +902,12 @@ ATF_TC_BODY(pipe__closed_read_end, tc)
 
 		ATF_REQUIRE(close(ep) == 0);
 	}
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__closed_read_end_register_before_close);
-ATF_TC_BODY(pipe__closed_read_end_register_before_close, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -965,16 +998,18 @@ ATF_TC_BODY(pipe__closed_read_end_register_before_close, tc)
 		ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
 	}
+	ATF_REQUIRE(close(kq) == 0);
 #endif
 
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 	ATF_REQUIRE(eps[0].events == (EPOLLOUT | EPOLLERR));
-
 	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__closed_write_end);
-ATF_TC_BODY(pipe__closed_write_end, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -1039,6 +1074,7 @@ ATF_TC_BODY(pipe__closed_write_end, tc)
 	    ;
 	ATF_REQUIRE_MSG(kev[0].data == pipe_read_size, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
+	ATF_REQUIRE(close(kq) == 0);
 #endif
 	{
 		int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -1084,10 +1120,12 @@ ATF_TC_BODY(pipe__closed_write_end, tc)
 
 		ATF_REQUIRE(close(ep) == 0);
 	}
+
+	ATF_REQUIRE(close(p[0]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__closed_write_end_register_before_close);
-ATF_TC_BODY(pipe__closed_write_end_register_before_close, tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -1169,9 +1207,13 @@ ATF_TC_BODY(pipe__closed_write_end_register_before_close, tc)
 		ATF_REQUIRE(kev[0].udata == 0);
 	}
 #endif
+	ATF_REQUIRE(close(kq) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 	ATF_REQUIRE(eps[0].events == (EPOLLIN | EPOLLHUP));
+	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[0]) == 0);
 }
 
 ATF_TP_ADD_TCS(tp)
