@@ -533,6 +533,8 @@ epollfd_ctx_make_kevs_space(EpollFDCtx *epollfd, size_t cnt)
 	}
 
 	epollfd->kevs = new_kevs;
+	epollfd->kevs_length = cnt;
+
 	return 0;
 }
 
