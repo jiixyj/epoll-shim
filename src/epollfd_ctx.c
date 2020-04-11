@@ -562,12 +562,6 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 {
 	errno_t ec = 0;
 
-	/* For now, support edge triggering only for FIFOs/pipes. */
-	if (fd2_node->is_edge_triggered &&
-	    fd2_node->node_type != NODE_TYPE_FIFO) {
-		return EINVAL;
-	}
-
 	/* Only sockets support EPOLLRDHUP. */
 	if (fd2_node->node_type != NODE_TYPE_SOCKET) {
 		fd2_node->events &= ~(uint32_t)EPOLLRDHUP;
@@ -1070,7 +1064,9 @@ again:;
 		RegisteredFDsNode *fd2_node =
 		    (RegisteredFDsNode *)ev[i].data.ptr;
 
-		registered_fds_node_complete(fd2_node);
+		if (n == cnt || fd2_node->is_edge_triggered) {
+			registered_fds_node_complete(fd2_node);
+		}
 
 		ev[i].events = fd2_node->revents;
 		ev[i].data = fd2_node->data;
