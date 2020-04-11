@@ -513,6 +513,25 @@ epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
 	return 0;
 }
 
+static errno_t
+epollfd_ctx_make_kevs_space(EpollFDCtx *epollfd, size_t cnt)
+{
+	assert(cnt > 0);
+
+	if (cnt <= epollfd->kevs_length) {
+		return 0;
+	}
+
+	struct kevent *new_kevs =
+	    reallocarray(epollfd->kevs, cnt, sizeof(struct kevent));
+	if (!new_kevs) {
+		return errno;
+	}
+
+	epollfd->kevs = new_kevs;
+	return 0;
+}
+
 errno_t
 epollfd_ctx_terminate(EpollFDCtx *epollfd)
 {
@@ -530,6 +549,8 @@ epollfd_ctx_terminate(EpollFDCtx *epollfd)
 		RB_REMOVE(registered_fds_set_, &epollfd->registered_fds, np);
 		registered_fds_node_destroy(np);
 	}
+
+	free(epollfd->kevs);
 
 	return ec;
 }
@@ -739,6 +760,8 @@ epollfd_ctx_remove_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 	}
 
 	RB_REMOVE(registered_fds_set_, &epollfd->registered_fds, fd2_node);
+	assert(epollfd->registered_fds_size > 0);
+	--epollfd->registered_fds_size;
 
 	registered_fds_node_destroy(fd2_node);
 }
@@ -830,6 +853,7 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2, struct epoll_event *ev,
 		fd2_node)) {
 		assert(0);
 	}
+	++epollfd->registered_fds_size;
 
 	errno_t ec = epollfd_ctx__register_events(epollfd, fd2_node);
 	if (ec != 0) {
@@ -953,7 +977,9 @@ static errno_t
 epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
     int *actual_cnt)
 {
-	if (cnt < 1 || cnt > 32) {
+	errno_t ec;
+
+	if (cnt < 1) {
 		return EINVAL;
 	}
 
@@ -985,7 +1011,30 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 #endif
 
 again:;
-	struct kevent kevs[32];
+
+	/*
+	 * Each registered fd can produce a maximum of 3 kevents. If the
+	 * provided space in 'ev' is large enough to hold results for all
+	 * registered fds, provide enough space for the kevent call as well.
+	 * Add some wiggle room for the 'poll only fd' notification mechanism.
+	 */
+	if ((size_t)cnt >= epollfd->registered_fds_size) {
+		if (__builtin_add_overflow(cnt, 1, &cnt)) {
+			return ENOMEM;
+		}
+		if (__builtin_mul_overflow(cnt, 3, &cnt)) {
+			return ENOMEM;
+		}
+	}
+
+	ec = epollfd_ctx_make_kevs_space(epollfd, (size_t)cnt);
+	if (ec != 0) {
+		return ec;
+	}
+
+	struct kevent *kevs = epollfd->kevs;
+	assert(kevs != NULL);
+
 	n = kevent(epollfd->kq, NULL, 0, kevs, cnt, &(struct timespec){0, 0});
 	if (n < 0) {
 		return errno;

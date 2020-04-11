@@ -71,6 +71,10 @@ typedef struct {
 	RegisteredFDsNode *poll_node;
 
 	RegisteredFDsSet registered_fds;
+	size_t registered_fds_size;
+
+	struct kevent *kevs;
+	size_t kevs_length;
 } EpollFDCtx;
 
 errno_t epollfd_ctx_init(EpollFDCtx *epollfd, int kq);
