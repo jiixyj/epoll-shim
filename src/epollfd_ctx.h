@@ -60,6 +60,7 @@ struct registered_fds_node_ {
 	uint32_t revents;
 
 	bool is_edge_triggered;
+	bool is_oneshot;
 };
 
 typedef RB_HEAD(registered_fds_set_, registered_fds_node_) RegisteredFDsSet;
