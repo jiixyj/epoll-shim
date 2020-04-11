@@ -80,3 +80,8 @@ add_executable(pipe-test pipe-test.c)
 target_link_libraries(pipe-test PRIVATE epoll-shim::epoll-shim Threads::Threads
                                         atf::atf-c)
 atf_discover_tests(pipe-test)
+
+add_executable(socketpair-test socketpair-test.c)
+target_link_libraries(socketpair-test PRIVATE epoll-shim::epoll-shim
+                                              Threads::Threads atf::atf-c)
+atf_discover_tests(socketpair-test)
