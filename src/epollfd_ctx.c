@@ -522,8 +522,12 @@ epollfd_ctx_make_kevs_space(EpollFDCtx *epollfd, size_t cnt)
 		return 0;
 	}
 
-	struct kevent *new_kevs =
-	    reallocarray(epollfd->kevs, cnt, sizeof(struct kevent));
+	size_t size;
+	if (__builtin_mul_overflow(cnt, sizeof(struct kevent), &size)) {
+		return ENOMEM;
+	}
+
+	struct kevent *new_kevs = realloc(epollfd->kevs, size);
 	if (!new_kevs) {
 		return errno;
 	}
