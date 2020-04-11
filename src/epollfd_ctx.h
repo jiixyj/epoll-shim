@@ -38,6 +38,12 @@ struct registered_fds_node_ {
 
 	bool is_registered;
 
+	bool has_evfilt_read;
+	bool has_evfilt_write;
+
+	bool got_evfilt_read;
+	bool got_evfilt_write;
+
 	NodeType node_type;
 	union {
 		struct {

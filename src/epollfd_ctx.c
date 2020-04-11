@@ -11,10 +11,12 @@
 #include <sys/stat.h>
 
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <poll.h>
+#include <unistd.h>
 
 #ifdef EVFILT_USER
 #define SUPPORT_POLL_ONLY_FDS
@@ -75,68 +77,156 @@ is_not_yet_connected_stream_socket(int s)
 	return 0;
 }
 
-static bool
-needs_evfilt_read(RegisteredFDsNode *fd2_node, bool *clear)
+typedef struct {
+	int evfilt_read;
+	int evfilt_write;
+} NeededFilters;
+
+static NeededFilters
+get_needed_filters(RegisteredFDsNode *fd2_node)
 {
+	NeededFilters needed_filters;
+
 	if (fd2_node->node_type == NODE_TYPE_FIFO) {
-		if (!fd2_node->node_data.fifo.readable) {
-			return false;
+		if (fd2_node->node_data.fifo.readable &&
+		    fd2_node->node_data.fifo.writable) {
+			needed_filters.evfilt_read =
+			    !!(fd2_node->events & EPOLLIN);
+			needed_filters.evfilt_write =
+			    !!(fd2_node->events & EPOLLOUT);
+
+			if (fd2_node->events == 0) {
+				needed_filters.evfilt_read =
+				    fd2_node->eof_state ? 1 : EV_CLEAR;
+			}
+
+		} else if (fd2_node->node_data.fifo.readable) {
+			needed_filters.evfilt_read =
+			    !!(fd2_node->events & EPOLLIN);
+			needed_filters.evfilt_write = 0;
+
+			if (needed_filters.evfilt_read == 0) {
+				needed_filters.evfilt_read =
+				    fd2_node->eof_state ? 1 : EV_CLEAR;
+			}
+		} else if (fd2_node->node_data.fifo.writable) {
+			needed_filters.evfilt_read = 0;
+			needed_filters.evfilt_write =
+			    !!(fd2_node->events & EPOLLOUT);
+
+			if (needed_filters.evfilt_write == 0) {
+				needed_filters.evfilt_write =
+				    fd2_node->eof_state ? 1 : EV_CLEAR;
+			}
+		} else {
+			__builtin_unreachable();
 		}
 
-		if (!fd2_node->node_data.fifo.writable) {
-			*clear = !(fd2_node->events & EPOLLIN);
-			return true;
-		}
+		goto out;
 	}
 
 	if (fd2_node->node_type == NODE_TYPE_KQUEUE) {
-		*clear = !(fd2_node->events & EPOLLIN);
-		return true;
-	}
+		needed_filters.evfilt_read = !!(fd2_node->events & EPOLLIN);
+		needed_filters.evfilt_write = 0;
 
-	if (fd2_node->events == 0 ||
-	    ((fd2_node->events & (EPOLLIN | EPOLLRDHUP)) == EPOLLRDHUP)) {
-		*clear = true;
-		return true;
-	}
+		assert(fd2_node->eof_state == 0);
 
-	*clear = false;
-	return fd2_node->events & (EPOLLIN | EPOLLRDHUP);
-}
-
-static bool
-needs_evfilt_write(RegisteredFDsNode *fd2_node, bool *clear)
-{
-	if (fd2_node->node_type == NODE_TYPE_FIFO) {
-		if (!fd2_node->node_data.fifo.writable) {
-			return false;
+		if (needed_filters.evfilt_read == 0) {
+			needed_filters.evfilt_read = EV_CLEAR;
 		}
 
-		if (!fd2_node->node_data.fifo.readable) {
-			*clear = !(fd2_node->events & EPOLLOUT);
-			return true;
+		goto out;
+	}
+
+	if (fd2_node->node_type == NODE_TYPE_SOCKET) {
+		needed_filters.evfilt_read = !!(fd2_node->events & EPOLLIN);
+		if (needed_filters.evfilt_read == 0 &&
+		    (fd2_node->events & EPOLLRDHUP)) {
+			needed_filters.evfilt_read =
+			    (fd2_node->eof_state & EOF_STATE_READ_EOF)
+			    ? 1
+			    : EV_CLEAR;
+		}
+
+		needed_filters.evfilt_write = !!(fd2_node->events & EPOLLOUT);
+
+		/* Let's use EVFILT_READ to drive the POLLHUP. */
+		if (fd2_node->eof_state ==
+		    (EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF)) {
+			if (needed_filters.evfilt_read != 1 &&
+			    needed_filters.evfilt_write != 1) {
+				needed_filters.evfilt_read = 1;
+			}
+
+			if (needed_filters.evfilt_read) {
+				needed_filters.evfilt_write = 0;
+			} else {
+				needed_filters.evfilt_read = 0;
+			}
+		}
+
+		/* We need something to detect POLLHUP. */
+		if (fd2_node->eof_state == 0 &&
+		    needed_filters.evfilt_read == 0 &&
+		    needed_filters.evfilt_write == 0) {
+			needed_filters.evfilt_read = EV_CLEAR;
+		}
+
+		if (fd2_node->eof_state == EOF_STATE_READ_EOF) {
+			if (needed_filters.evfilt_write == 0) {
+				needed_filters.evfilt_write = EV_CLEAR;
+			}
+		}
+
+		if (fd2_node->eof_state == EOF_STATE_WRITE_EOF) {
+			if (needed_filters.evfilt_read == 0) {
+				needed_filters.evfilt_read = EV_CLEAR;
+			}
+		}
+
+		goto out;
+	}
+
+	needed_filters.evfilt_read = !!(fd2_node->events & EPOLLIN);
+	needed_filters.evfilt_write = !!(fd2_node->events & EPOLLOUT);
+
+	if (fd2_node->events == 0) {
+		needed_filters.evfilt_read =
+		    fd2_node->eof_state ? 1 : EV_CLEAR;
+	}
+
+out:
+	if (fd2_node->is_edge_triggered) {
+		if (needed_filters.evfilt_read) {
+			needed_filters.evfilt_read = EV_CLEAR;
+		}
+		if (needed_filters.evfilt_write) {
+			needed_filters.evfilt_write = EV_CLEAR;
 		}
 	}
 
-	if (fd2_node->node_type == NODE_TYPE_KQUEUE) {
-		return false;
-	}
+	assert(needed_filters.evfilt_read || needed_filters.evfilt_write);
+	assert(needed_filters.evfilt_read == 0 ||
+	    needed_filters.evfilt_read == 1 ||
+	    needed_filters.evfilt_read == EV_CLEAR);
+	assert(needed_filters.evfilt_write == 0 ||
+	    needed_filters.evfilt_write == 1 ||
+	    needed_filters.evfilt_write == EV_CLEAR);
 
-	*clear = false;
-	return fd2_node->events & (EPOLLOUT);
+	return needed_filters;
 }
 
 static bool
 registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
     EpollFDCtx *epollfd, struct kevent const *kev)
 {
-	assert(fd2_node->revents == 0);
-
 	int revents = 0;
 
 #ifdef SUPPORT_POLL_ONLY_FDS
 	if (kev->filter == EVFILT_USER &&
 	    fd2_node->node_type == NODE_TYPE_POLL) {
+		assert(fd2_node->revents == 0);
+
 		struct pollfd pfd = {
 		    .fd = fd2_node->fd,
 		    .events = (short)fd2_node->events,
@@ -149,10 +239,8 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 		}
 
 		fd2_node->revents = (uint32_t)revents;
-
 		assert(!(fd2_node->revents &
 		    ~(uint32_t)(POLLIN | POLLOUT | POLLERR | POLLHUP)));
-
 		return true;
 	}
 #endif
@@ -160,7 +248,11 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 #ifdef SUPPORT_NYCSS
 	if (kev->filter == EVFILT_USER &&
 	    fd2_node->node_type == NODE_TYPE_SOCKET) {
-		assert(fd2_node->node_data.socket.is_nycss);
+		if (!fd2_node->node_data.socket.is_nycss) {
+			return true;
+		}
+
+		assert(fd2_node->revents == 0);
 
 		if (is_not_yet_connected_stream_socket(fd2_node->fd)) {
 			revents = EPOLLHUP | EPOLLOUT;
@@ -173,7 +265,6 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 			goto out;
 		} else {
 			fd2_node->node_data.socket.is_nycss = false;
-			fd2_node->revents = 0;
 			return true;
 		}
 	}
@@ -182,20 +273,22 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 #ifdef SUPPORT_EPIPE_FIFOS
 	if (kev->filter == EVFILT_USER &&
 	    fd2_node->node_type == NODE_TYPE_FIFO) {
+		assert(fd2_node->revents == 0);
 
-		bool clear;
-		if (!needs_evfilt_write(fd2_node, &clear)) {
-			assert(0);
-			__builtin_unreachable();
-		}
+		assert(!fd2_node->has_evfilt_read);
+		assert(!fd2_node->has_evfilt_write);
+
+		NeededFilters needed_filters = get_needed_filters(fd2_node);
+		assert(needed_filters.evfilt_write);
 
 		struct kevent nkev[1];
 		EV_SET(&nkev[0], fd2_node->fd, EVFILT_WRITE,
-		    EV_ADD | (clear ? EV_CLEAR : 0) | EV_DISPATCH, 0, 0,
-		    fd2_node);
+		    EV_ADD | (needed_filters.evfilt_write & EV_CLEAR) |
+			EV_RECEIPT,
+		    0, 0, fd2_node);
 
 		if (kevent(epollfd->kq, nkev, 1, nkev, 1, NULL) != 1 ||
-		    nkev[0].data == EPIPE) {
+		    nkev[0].data != 0) {
 			revents = EPOLLERR | EPOLLOUT;
 
 			if (!fd2_node->is_edge_triggered) {
@@ -208,6 +301,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 
 			goto out;
 		} else {
+			fd2_node->has_evfilt_write = true;
 			return true;
 		}
 	}
@@ -216,23 +310,47 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 	assert(kev->filter == EVFILT_READ || kev->filter == EVFILT_WRITE);
 	assert((int)kev->ident == fd2_node->fd);
 
+	/* As soon as any EVFILT_READ/EVFILT_WRITE event comes for a
+	 * stream socket, it must be connected. */
+	if (fd2_node->node_type == NODE_TYPE_SOCKET) {
+		fd2_node->node_data.socket.is_nycss = false;
+	}
+
 	if (kev->filter == EVFILT_READ) {
 		revents |= EPOLLIN;
 	} else if (kev->filter == EVFILT_WRITE) {
 		revents |= EPOLLOUT;
 	}
 
-	if (kev->filter == EVFILT_READ) {
-		if (kev->flags & EV_EOF) {
-			fd2_node->eof_state |= EOF_STATE_READ_EOF;
-		} else {
-			fd2_node->eof_state &= ~EOF_STATE_READ_EOF;
+	if (fd2_node->node_type == NODE_TYPE_SOCKET) {
+		if (kev->filter == EVFILT_READ) {
+			if (kev->flags & EV_EOF) {
+				fd2_node->eof_state |= EOF_STATE_READ_EOF;
+			} else {
+				fd2_node->eof_state &= ~EOF_STATE_READ_EOF;
+			}
+		} else if (kev->filter == EVFILT_WRITE) {
+			if (kev->flags & EV_EOF) {
+				fd2_node->eof_state |= EOF_STATE_WRITE_EOF;
+			} else {
+				fd2_node->eof_state &= ~EOF_STATE_WRITE_EOF;
+			}
 		}
-	} else if (kev->filter == EVFILT_WRITE) {
-		if (kev->flags & EV_EOF) {
-			fd2_node->eof_state |= EOF_STATE_WRITE_EOF;
-		} else {
-			fd2_node->eof_state &= ~EOF_STATE_WRITE_EOF;
+	} else {
+		if (kev->filter == EVFILT_READ) {
+			if (kev->flags & EV_EOF) {
+				fd2_node->eof_state =
+				    EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF;
+			} else {
+				fd2_node->eof_state = 0;
+			}
+		} else if (kev->filter == EVFILT_WRITE) {
+			if (kev->flags & EV_EOF) {
+				fd2_node->eof_state =
+				    EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF;
+			} else {
+				fd2_node->eof_state = 0;
+			}
 		}
 	}
 
@@ -244,7 +362,9 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 		if (kev->fflags) {
 			revents |= EPOLLERR;
 		}
+	}
 
+	if (fd2_node->eof_state) {
 		int epoll_event;
 
 		if (fd2_node->node_type == NODE_TYPE_FIFO) {
@@ -254,11 +374,31 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 					revents &= ~EPOLLIN;
 				}
 			} else if (kev->filter == EVFILT_WRITE) {
-				if (fd2_node->events &
-					(EPOLLIN | EPOLLRDHUP) &&
-				    fd2_node->node_data.fifo.readable &&
-				    fd2_node->node_data.fifo.writable) {
-					/* Leave revents untouched. */
+				if (fd2_node->has_evfilt_read) {
+					assert(
+					    fd2_node->node_data.fifo.readable);
+					assert(
+					    fd2_node->node_data.fifo.writable);
+
+					/*
+					 * Any non-zero revents must have come
+					 * from the EVFILT_READ filter. It
+					 * could either be "POLLIN",
+					 * "POLLIN | POLLHUP" or "POLLHUP", so
+					 * we know if there is data to read.
+					 * But we also know that the FIFO is
+					 * done, so set POLLHUP because it
+					 * would be set anyway.
+					 *
+					 * If revents is zero, not setting it
+					 * will simply ignore this EVFILT_WRITE
+					 * and wait for the next EVFILT_READ
+					 * (which will be EOF).
+					 */
+
+					if (fd2_node->revents != 0) {
+						fd2_node->revents |= POLLHUP;
+					}
 					return true;
 				}
 
@@ -270,50 +410,19 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 				__builtin_unreachable();
 			}
 		} else if (fd2_node->node_type == NODE_TYPE_SOCKET) {
-			if (kev->filter == EVFILT_READ) {
-				/* do some special EPOLLRDHUP handling
-				 * for sockets */
+			epoll_event = 0;
 
-				/* if we are reading, we just know for
-				 * sure that we can't receive any more,
-				 * so use EPOLLIN/EPOLLRDHUP per
-				 * default */
-				epoll_event = EPOLLIN | EPOLLRDHUP;
-			} else if (kev->filter == EVFILT_WRITE) {
-				epoll_event = EPOLLOUT;
-			} else {
-				__builtin_unreachable();
+			if (fd2_node->eof_state & EOF_STATE_READ_EOF) {
+				epoll_event |= EPOLLIN | EPOLLRDHUP;
 			}
 
-			struct pollfd pfd = {
-			    .fd = fd2_node->fd,
-			    .events = POLLIN | POLLOUT | POLLHUP,
-			};
+			if (fd2_node->eof_state & EOF_STATE_WRITE_EOF) {
+				epoll_event |= EPOLLOUT;
+			}
 
-			if (poll(&pfd, 1, 0) == 1) {
-				if ((pfd.revents & POLLHUP) ||
-				    (fd2_node->eof_state ==
-					(EOF_STATE_READ_EOF |
-					    EOF_STATE_WRITE_EOF))) {
-					/*
-					 * We need to set these flags
-					 * so that readers still have a
-					 * chance to read the last data
-					 * from the socket. This is
-					 * very important to preserve
-					 * Linux poll/epoll semantics
-					 * when coming from an
-					 * EVFILT_WRITE event.
-					 */
-					epoll_event |= EPOLLIN;
-					epoll_event |= EPOLLRDHUP;
-					epoll_event |= EPOLLHUP;
-				}
-
-				/* might as well steal flags from the
-				 * poll call while we're here */
-				epoll_event |=
-				    (pfd.revents & (POLLIN | POLLOUT));
+			if (fd2_node->eof_state ==
+			    (EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF)) {
+				epoll_event |= EPOLLHUP;
 			}
 		} else {
 			epoll_event = EPOLLHUP;
@@ -323,10 +432,54 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 	}
 
 out:
-	fd2_node->revents = (uint32_t)revents;
+	fd2_node->revents |= (uint32_t)revents;
 	fd2_node->revents &= (fd2_node->events | EPOLLHUP | EPOLLERR);
 
+	if (fd2_node->revents) {
+		if (kev->filter == EVFILT_READ) {
+			fd2_node->got_evfilt_read = true;
+		} else if (kev->filter == EVFILT_WRITE) {
+			fd2_node->got_evfilt_write = true;
+		}
+	}
+
 	return true;
+}
+
+static void
+registered_fds_node_complete(RegisteredFDsNode *fd2_node)
+{
+	struct kevent kev[2];
+	int n = 0;
+
+	if (fd2_node->has_evfilt_read && !fd2_node->got_evfilt_read) {
+		EV_SET(&kev[n++], fd2_node->fd, EVFILT_READ,
+		    EV_ADD | EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
+	}
+	if (fd2_node->has_evfilt_write && !fd2_node->got_evfilt_write) {
+		EV_SET(&kev[n++], fd2_node->fd, EVFILT_WRITE,
+		    EV_ADD | EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
+	}
+
+	if (n == 0) {
+		return;
+	}
+
+	// printf("need to open kqueue\n");
+
+	int kq = kqueue();
+	if (kq >= 0) {
+		(void)kevent(kq, kev, n, kev, n, NULL);
+		n = kevent(kq, NULL, 0, kev, n, &(struct timespec){0, 0});
+		if (n > 0) {
+			for (int i = 0; i < n; ++i) {
+				registered_fds_node_feed_event(fd2_node, NULL,
+				    &kev[i]);
+			}
+		}
+
+		(void)close(kq);
+	}
 }
 
 static int
@@ -381,6 +534,29 @@ epollfd_ctx_terminate(EpollFDCtx *epollfd)
 	return ec;
 }
 
+static void
+epollfd_ctx__remove_normal_node_from_kq(EpollFDCtx *epollfd,
+    RegisteredFDsNode *fd2_node)
+{
+	assert(fd2_node->node_type != NODE_TYPE_POLL);
+
+	struct kevent kev[3];
+	int fd2 = fd2_node->fd;
+
+	EV_SET(&kev[0], fd2, EVFILT_READ, /**/
+	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
+	EV_SET(&kev[1], fd2, EVFILT_WRITE, /**/
+	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
+#ifdef SUPPORT_NYCSS
+	EV_SET(&kev[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
+	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
+#endif
+	(void)kevent(epollfd->kq, kev, 3, kev, 3, NULL);
+
+	fd2_node->has_evfilt_read = false;
+	fd2_node->has_evfilt_write = false;
+}
+
 static errno_t
 epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 {
@@ -412,32 +588,30 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 	if (fd2_node->node_type != NODE_TYPE_POLL) {
 		if (fd2_node->is_registered) {
-			EV_SET(&kev[0], fd2, EVFILT_READ, /**/
-			    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-			EV_SET(&kev[1], fd2, EVFILT_WRITE, /**/
-			    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-#ifdef SUPPORT_NYCSS
-			EV_SET(&kev[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
-			    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-#endif
-			(void)kevent(epollfd->kq, kev, 3, kev, 3, NULL);
-			kev[0].data = kev[1].data = kev[2].data = 0;
+			epollfd_ctx__remove_normal_node_from_kq(epollfd,
+			    fd2_node);
 		}
 
 		int n = 0;
-		bool clear;
 
-		if (needs_evfilt_read(fd2_node, &clear)) {
+		assert(!fd2_node->has_evfilt_read);
+		assert(!fd2_node->has_evfilt_write);
+
+		NeededFilters needed_filters = get_needed_filters(fd2_node);
+
+		if (needed_filters.evfilt_read) {
+			fd2_node->has_evfilt_read = true;
 			evfilt_read_index = n;
-			clear = clear || fd2_node->is_edge_triggered;
 			EV_SET(&kev[n++], fd2, EVFILT_READ,
-			    EV_ADD | (clear ? EV_CLEAR : 0), 0, 0, fd2_node);
+			    EV_ADD | (needed_filters.evfilt_read & EV_CLEAR),
+			    0, 0, fd2_node);
 		}
-		if (needs_evfilt_write(fd2_node, &clear)) {
+		if (needed_filters.evfilt_write) {
+			fd2_node->has_evfilt_write = true;
 			evfilt_write_index = n;
-			clear = clear || fd2_node->is_edge_triggered;
 			EV_SET(&kev[n++], fd2, EVFILT_WRITE,
-			    EV_ADD | (clear ? EV_CLEAR : 0), 0, 0, fd2_node);
+			    EV_ADD | (needed_filters.evfilt_write & EV_CLEAR),
+			    0, 0, fd2_node);
 		}
 #ifdef SUPPORT_NYCSS
 		if (fd2_node->node_type == NODE_TYPE_SOCKET &&
@@ -487,6 +661,9 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 		assert(fd2_node->is_registered ||
 		    fd2_node->node_type == NODE_TYPE_OTHER);
 
+		fd2_node->has_evfilt_read = false;
+		fd2_node->has_evfilt_write = false;
+
 		if (!fd2_node->is_registered) {
 			EV_SET(&kev[0], (uintptr_t)fd2_node, EVFILT_USER,
 			    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
@@ -516,6 +693,8 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 			if (kev[i].data == EPIPE && i == evfilt_write_index &&
 			    fd2_node->node_type == NODE_TYPE_FIFO) {
 				fd2_node->eof_state |= EOF_STATE_WRITE_EOF;
+				fd2_node->has_evfilt_write = false;
+
 				if (evfilt_read_index < 0) {
 					struct kevent nkev[2];
 					EV_SET(&nkev[0], (uintptr_t)fd2_node,
@@ -547,8 +726,6 @@ out:
 static void
 epollfd_ctx_remove_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 {
-	int const fd2 = fd2_node->fd;
-
 #ifdef SUPPORT_POLL_ONLY_FDS
 	if (fd2_node->node_type == NODE_TYPE_POLL) {
 		assert(epollfd->poll_node == fd2_node);
@@ -564,16 +741,7 @@ epollfd_ctx_remove_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 	} else
 #endif
 	{
-		struct kevent kev[3];
-		EV_SET(&kev[0], fd2, EVFILT_READ, /**/
-		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-		EV_SET(&kev[1], fd2, EVFILT_WRITE, /**/
-		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-#ifdef SUPPORT_NYCSS
-		EV_SET(&kev[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
-		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-#endif
-		(void)kevent(epollfd->kq, kev, 3, kev, 3, NULL);
+		epollfd_ctx__remove_normal_node_from_kq(epollfd, fd2_node);
 	}
 
 	RB_REMOVE(registered_fds_set_, &epollfd->registered_fds, fd2_node);
@@ -852,25 +1020,64 @@ again:;
 			}
 		}
 
+		uint32_t old_revents = fd2_node->revents;
+		NeededFilters old_needed_filters =
+		    get_needed_filters(fd2_node);
+
 		if (!registered_fds_node_feed_event(fd2_node, epollfd,
 			&kevs[i])) {
 			fd2_node->del_list = del_list;
 			del_list = fd2_node;
 		} else {
-			if (fd2_node->revents) {
-				ev[j].events = fd2_node->revents;
-				ev[j].data = fd2_node->data;
-				++j;
+			/* TODO(jan): re-register needed kevents here */
+			if (fd2_node->node_type != NODE_TYPE_POLL &&
+			    !(fd2_node->is_edge_triggered &&
+				fd2_node->eof_state ==
+				    (EOF_STATE_READ_EOF |
+					EOF_STATE_WRITE_EOF) &&
+				fd2_node->node_type != NODE_TYPE_FIFO)) {
 
-				fd2_node->revents = 0;
+				NeededFilters needed_filters =
+				    get_needed_filters(fd2_node);
+
+				if (old_needed_filters.evfilt_read !=
+					needed_filters.evfilt_read ||
+				    old_needed_filters.evfilt_write !=
+					needed_filters.evfilt_write) {
+
+					if (epollfd_ctx__register_events(
+						epollfd, fd2_node) != 0) {
+						epollfd_ctx__remove_normal_node_from_kq(
+						    epollfd, fd2_node);
+					}
+				}
+			}
+
+			if (fd2_node->revents && !old_revents) {
+				ev[j++].data.ptr = fd2_node;
 			}
 		}
 	}
 
+	/* This assumes that those nodes are never put into the 'ev' list. */
 	for (RegisteredFDsNode *it = del_list; it != NULL;) {
 		RegisteredFDsNode *next_it = it->del_list;
 		epollfd_ctx_remove_node(epollfd, it);
 		it = next_it;
+	}
+
+	for (int i = 0; i < j; ++i) {
+		RegisteredFDsNode *fd2_node =
+		    (RegisteredFDsNode *)ev[i].data.ptr;
+
+		registered_fds_node_complete(fd2_node);
+
+		ev[i].events = fd2_node->revents;
+		ev[i].data = fd2_node->data;
+
+		fd2_node->revents = 0;
+		fd2_node->got_evfilt_read = false;
+		fd2_node->got_evfilt_write = false;
 	}
 
 	if (n && j == 0) {
