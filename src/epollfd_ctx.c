@@ -867,7 +867,8 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 	if (op != EPOLL_CTL_DEL &&
 	    ((ev->events &
 		~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLRDHUP | /**/
-		    EPOLLHUP | EPOLLERR |		      /**/
+		    EPOLLPRI |		  /* unsupported by kqueue! */
+		    EPOLLHUP | EPOLLERR | /**/
 		    EPOLLET | EPOLLONESHOT)))) {
 		return EINVAL;
 	}
