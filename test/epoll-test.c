@@ -14,7 +14,9 @@
 #include <sys/signalfd.h>
 #include <sys/timerfd.h>
 
+#include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -162,6 +164,32 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__leakcheck, tc)
 	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
 
 	atf_tc_expect_fail("Test that the leak check works");
+}
+
+ATF_TC_WITHOUT_HEAD(epoll__fd_exhaustion);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__fd_exhaustion, tc)
+{
+	struct rlimit lim = {512, 512};
+	ATF_REQUIRE(setrlimit(RLIMIT_NOFILE, &lim) == 0);
+
+	size_t nr_fds = 1000;
+	int *fds = malloc(nr_fds * sizeof(int));
+	ATF_REQUIRE(fds != NULL);
+
+	size_t i = 0;
+	for (i = 0; i < nr_fds; ++i) {
+		if ((fds[i] = epoll_create1(EPOLL_CLOEXEC)) >= 0) {
+			continue;
+		}
+
+		ATF_REQUIRE(errno == EMFILE);
+		break;
+	}
+
+	while (i > 0) {
+		--i;
+		ATF_REQUIRE(close(fds[i]) == 0);
+	}
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__invalid_op);
@@ -1504,6 +1532,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__simple);
 	ATF_TP_ADD_TC(tp, epoll__poll_flags);
 	ATF_TP_ADD_TC(tp, epoll__leakcheck);
+	ATF_TP_ADD_TC(tp, epoll__fd_exhaustion);
 	ATF_TP_ADD_TC(tp, epoll__invalid_op);
 	ATF_TP_ADD_TC(tp, epoll__invalid_op2);
 	ATF_TP_ADD_TC(tp, epoll__simple_wait);
