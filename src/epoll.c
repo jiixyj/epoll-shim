@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 #include "epoll_shim_ctx.h"
@@ -173,13 +174,36 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 			}
 		}
 
-		struct pollfd pfds[2];
 		(void)pthread_mutex_lock(&epollfd->mutex);
+
+		nfds_t nfds = (nfds_t)(1 + epollfd->poll_fds_size);
+
+		size_t size;
+		if (__builtin_mul_overflow(nfds, sizeof(struct pollfd),
+			&size)) {
+			ec = ENOMEM;
+			(void)pthread_mutex_unlock(&epollfd->mutex);
+			return ec;
+		}
+
+		struct pollfd *pfds = malloc(size);
+		if (!pfds) {
+			ec = errno;
+			(void)pthread_mutex_unlock(&epollfd->mutex);
+			return ec;
+		}
+
 		epollfd_ctx_fill_pollfds(epollfd, pfds);
+
 		(void)pthread_mutex_unlock(&epollfd->mutex);
 
-		if (ppoll(pfds, 2, deadline ? &timeout : NULL, sigs) < 0) {
-			return errno;
+		int n = ppoll(pfds, nfds, deadline ? &timeout : NULL, sigs);
+		ec = errno;
+
+		free(pfds);
+
+		if (n < 0) {
+			return ec;
 		}
 	}
 }

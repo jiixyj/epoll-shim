@@ -4,6 +4,7 @@
 #define SHIM_SYS_SHIM_HELPERS
 #include <sys/epoll.h>
 
+#include <sys/queue.h>
 #include <sys/tree.h>
 
 #include <errno.h>
@@ -32,6 +33,7 @@ typedef enum {
 struct registered_fds_node_ {
 	RB_ENTRY(registered_fds_node_) entry;
 	RegisteredFDsNode *del_list;
+	TAILQ_ENTRY(registered_fds_node_) pollfd_list_entry;
 
 	int fd;
 	epoll_data_t data;
@@ -40,9 +42,11 @@ struct registered_fds_node_ {
 
 	bool has_evfilt_read;
 	bool has_evfilt_write;
+	bool has_epollpri;
 
 	bool got_evfilt_read;
 	bool got_evfilt_write;
+	bool got_epollpri;
 
 	NodeType node_type;
 	union {
@@ -58,27 +62,34 @@ struct registered_fds_node_ {
 
 	bool is_edge_triggered;
 	bool is_oneshot;
+
+	bool is_on_pollfd_list;
 };
 
+typedef TAILQ_HEAD(pollfds_list_, registered_fds_node_) PollFDList;
 typedef RB_HEAD(registered_fds_set_, registered_fds_node_) RegisteredFDsSet;
 
 typedef struct {
 	int kq; // non owning
 	pthread_mutex_t mutex;
 
-	RegisteredFDsNode *poll_node;
+	PollFDList poll_fds;
+	size_t poll_fds_size;
 
 	RegisteredFDsSet registered_fds;
 	size_t registered_fds_size;
 
 	struct kevent *kevs;
 	size_t kevs_length;
+
+	struct pollfd *pfds;
+	size_t pfds_length;
 } EpollFDCtx;
 
 errno_t epollfd_ctx_init(EpollFDCtx *epollfd, int kq);
 errno_t epollfd_ctx_terminate(EpollFDCtx *epollfd);
 
-void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, struct pollfd pfds[2]);
+void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, struct pollfd *pfds);
 
 errno_t epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2,
     struct epoll_event *ev);
