@@ -688,6 +688,8 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 			    0, 0, fd2_node);
 		}
 
+		assert(n != 0);
+
 #ifdef EVFILT_USER
 		if (fd2_node->events & EPOLLPRI) {
 			fd2_node->has_epollpri = true;
@@ -702,8 +704,6 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 			}
 		}
 #endif
-
-		assert(n != 0);
 
 		for (int i = 0; i < n; ++i) {
 			kev[i].flags |= EV_RECEIPT;
