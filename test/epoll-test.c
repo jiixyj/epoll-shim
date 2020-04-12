@@ -572,15 +572,15 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
-	int fd = open("/dev/random", O_RDONLY | O_CLOEXEC);
-	if (fd < 0) {
+	int fd1 = open("/dev/random", O_RDONLY | O_CLOEXEC);
+	int fd2 = open("/dev/random", O_RDONLY | O_CLOEXEC);
+	if (fd1 < 0 || fd2 < 0) {
 		atf_tc_skip("This test needs /dev/random");
 	}
 
-	struct epoll_event event;
-	event.events = 0;
-	event.data.fd = fd;
-	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) == 0);
+	struct epoll_event event = {.events = 0};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fd1, &event) == 0);
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fd2, &event) == 0);
 
 	pthread_t thread;
 	ATF_REQUIRE(
@@ -589,18 +589,19 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 	usleep(200000);
 
 	event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
-	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fd, &event) == 0);
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fd1, &event) == 0);
 
 	ATF_REQUIRE(pthread_join(thread, NULL) == 0);
 
-	ATF_REQUIRE(close(fd) == 0);
+	ATF_REQUIRE(close(fd1) == 0);
 
 	struct epoll_event event_result;
 	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, 0) == 0);
 
 	ATF_REQUIRE_ERRNO(EBADF, /**/
-	    epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL) < 0);
+	    epoll_ctl(ep, EPOLL_CTL_DEL, fd1, NULL) < 0);
 
+	ATF_REQUIRE(close(fd2) == 0);
 	ATF_REQUIRE(close(ep) == 0);
 }
 
