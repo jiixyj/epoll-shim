@@ -594,27 +594,46 @@ epollfd_ctx_terminate(EpollFDCtx *epollfd)
 }
 
 static void
-epollfd_ctx__remove_normal_node_from_kq(EpollFDCtx *epollfd,
+epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
     RegisteredFDsNode *fd2_node)
 {
-	assert(fd2_node->node_type != NODE_TYPE_POLL);
-
-	struct kevent kev[3];
-	int fd2 = fd2_node->fd;
-
-	EV_SET(&kev[0], fd2, EVFILT_READ, /**/
-	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-	EV_SET(&kev[1], fd2, EVFILT_WRITE, /**/
-	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
 #ifdef EVFILT_USER
-	EV_SET(&kev[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
-	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-#endif
-	(void)kevent(epollfd->kq, kev, 3, kev, 3, NULL);
+	if (fd2_node->is_on_pollfd_list) {
+		TAILQ_REMOVE(&epollfd->poll_fds, fd2_node, pollfd_list_entry);
+		fd2_node->is_on_pollfd_list = false;
+		assert(epollfd->poll_fds_size != 0);
+		--epollfd->poll_fds_size;
+	}
 
-	fd2_node->has_evfilt_read = false;
-	fd2_node->has_evfilt_write = false;
-	fd2_node->has_epollpri = false;
+	if (fd2_node->node_type == NODE_TYPE_POLL) {
+		struct kevent kev[1];
+
+		EV_SET(&kev[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
+		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
+		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
+
+		EV_SET(&kev[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
+		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
+	} else
+#endif
+	{
+		struct kevent kev[3];
+		int fd2 = fd2_node->fd;
+
+		EV_SET(&kev[0], fd2, EVFILT_READ, /**/
+		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
+		EV_SET(&kev[1], fd2, EVFILT_WRITE, /**/
+		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
+#ifdef EVFILT_USER
+		EV_SET(&kev[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
+		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
+#endif
+		(void)kevent(epollfd->kq, kev, 3, kev, 3, NULL);
+
+		fd2_node->has_evfilt_read = false;
+		fd2_node->has_evfilt_write = false;
+		fd2_node->has_epollpri = false;
+	}
 }
 
 static errno_t
@@ -643,8 +662,7 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 	if (fd2_node->node_type != NODE_TYPE_POLL) {
 		if (fd2_node->is_registered) {
-			epollfd_ctx__remove_normal_node_from_kq(epollfd,
-			    fd2_node);
+			epollfd_ctx__remove_node_from_kq(epollfd, fd2_node);
 		}
 
 		int n = 0;
@@ -787,39 +805,9 @@ out:
 }
 
 static void
-epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
-    RegisteredFDsNode *fd2_node)
-{
-#ifdef SUPPORT_POLL_ONLY_FDS
-	if (fd2_node->node_type == NODE_TYPE_POLL) {
-		struct kevent kev[1];
-
-		EV_SET(&kev[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
-		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
-
-		EV_SET(&kev[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
-		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
-	} else
-#endif
-	{
-		epollfd_ctx__remove_normal_node_from_kq(epollfd, fd2_node);
-	}
-}
-
-static void
 epollfd_ctx_remove_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 {
 	epollfd_ctx__remove_node_from_kq(epollfd, fd2_node);
-
-#ifdef SUPPORT_POLL_ONLY_FDS
-	if (fd2_node->is_on_pollfd_list) {
-		TAILQ_REMOVE(&epollfd->poll_fds, fd2_node, pollfd_list_entry);
-		fd2_node->is_on_pollfd_list = false;
-		assert(epollfd->poll_fds_size != 0);
-		--epollfd->poll_fds_size;
-	}
-#endif
 
 	RB_REMOVE(registered_fds_set_, &epollfd->registered_fds, fd2_node);
 	assert(epollfd->registered_fds_size > 0);
@@ -1164,7 +1152,7 @@ again:;
 
 					if (epollfd_ctx__register_events(
 						epollfd, fd2_node) != 0) {
-						epollfd_ctx__remove_normal_node_from_kq(
+						epollfd_ctx__remove_node_from_kq(
 						    epollfd, fd2_node);
 					}
 				}

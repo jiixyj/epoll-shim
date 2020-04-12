@@ -924,6 +924,87 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_connecting_socket, tcptr)
 	ATF_REQUIRE(close(sock) == 0);
 }
 
+static void *
+epollpri_thread_fun(void *arg)
+{
+	int ep = *(int *)arg;
+
+	struct epoll_event event_result;
+	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, -1) == 1);
+
+	return NULL;
+}
+
+ATF_TC_WITHOUT_HEAD(epoll__epollpri);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri, tcptr)
+{
+	int fds[3];
+	fd_tcp_socket(fds);
+
+	ATF_REQUIRE(fcntl(fds[0], F_SETFL, O_NONBLOCK) == 0);
+	ATF_REQUIRE(fcntl(fds[1], F_SETFL, O_NONBLOCK) == 0);
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event event = {
+	    .events = EPOLLIN | EPOLLRDHUP | EPOLLPRI | EPOLLET,
+	};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == 0);
+
+	char c = 'o';
+	ATF_REQUIRE(send(fds[1], &c, 1, MSG_OOB) == 1);
+	c = 'n';
+	ATF_REQUIRE(send(fds[1], &c, 1, 0) == 1);
+
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
+	if (event.events == EPOLLIN) {
+		atf_tc_skip("NetBSD does not support EVFILT_USER which is "
+			    "needed for EPOLLPRI emulation");
+	}
+	ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI));
+#ifdef __linux__
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+#else
+	/* kqueue based emulation uses poll under the hood, which is level
+	 * triggered. */
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 1);
+	ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI));
+#endif
+	ATF_REQUIRE(recv(fds[0], &c, 1, MSG_OOB) == 1);
+	ATF_REQUIRE(recv(fds[0], &c, 1, MSG_OOB) < 0);
+	ATF_REQUIRE(c == 'o');
+	ATF_REQUIRE(recv(fds[0], &c, 1, 0) == 1);
+	ATF_REQUIRE(recv(fds[0], &c, 1, 0) < 0);
+	ATF_REQUIRE(c == 'n');
+
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+
+	event.events = EPOLLIN | EPOLLRDHUP | EPOLLET;
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == 0);
+
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+
+	pthread_t thread;
+	ATF_REQUIRE(pthread_create(&thread, /**/
+			NULL, &epollpri_thread_fun, &ep) == 0);
+
+	usleep(200000);
+
+	event.events = EPOLLIN | EPOLLRDHUP | EPOLLPRI | EPOLLOUT;
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == 0);
+
+	c = 'o';
+	ATF_REQUIRE(send(fds[1], &c, 1, MSG_OOB) == 1);
+
+	ATF_REQUIRE(pthread_join(thread, NULL) == 0);
+
+	ATF_REQUIRE(close(ep) == 0);
+	ATF_REQUIRE(close(fds[0]) == 0);
+	ATF_REQUIRE(close(fds[1]) == 0);
+	ATF_REQUIRE(close(fds[2]) == 0);
+}
+
 ATF_TC_WITHOUT_HEAD(epoll__timeout_on_listening_socket);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__timeout_on_listening_socket, tcptr)
 {
@@ -1442,6 +1523,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__socket_shutdown);
 	ATF_TP_ADD_TC(tp, epoll__epollhup_on_fresh_socket);
 	ATF_TP_ADD_TC(tp, epoll__epollout_on_connecting_socket);
+	ATF_TP_ADD_TC(tp, epoll__epollpri);
 	ATF_TP_ADD_TC(tp, epoll__timeout_on_listening_socket);
 	ATF_TP_ADD_TC(tp, epoll__epollerr_on_closed_pipe);
 	ATF_TP_ADD_TC(tp, epoll__shutdown_behavior);
