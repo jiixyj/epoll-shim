@@ -20,7 +20,6 @@
 
 #ifdef EVFILT_USER
 #define SUPPORT_POLL_ONLY_FDS
-/* #define SUPPORT_NYCSS */
 #define SUPPORT_EPIPE_FIFOS
 #endif
 
@@ -44,40 +43,6 @@ registered_fds_node_destroy(RegisteredFDsNode *node)
 {
 	free(node);
 }
-
-#ifdef SUPPORT_NYCSS
-static int
-is_not_yet_connected_stream_socket(int s)
-{
-	{
-		int val;
-		socklen_t length = sizeof(int);
-
-		if (getsockopt(s, SOL_SOCKET, SO_ACCEPTCONN, /**/
-			&val, &length) == 0 &&
-		    val) {
-			return 0;
-		}
-	}
-
-	{
-		int type;
-		socklen_t length = sizeof(int);
-
-		if (getsockopt(s, SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
-		    (type == SOCK_STREAM || type == SOCK_SEQPACKET)) {
-			struct sockaddr name;
-			socklen_t namelen = 0;
-			if (getpeername(s, &name, &namelen) < 0 &&
-			    errno == ENOTCONN) {
-				return 1;
-			}
-		}
-	}
-
-	return 0;
-}
-#endif
 
 typedef struct {
 	int evfilt_read;
@@ -260,33 +225,6 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 	}
 #endif
 
-#ifdef SUPPORT_NYCSS
-	if (kev->filter == EVFILT_USER &&
-	    fd2_node->node_type == NODE_TYPE_SOCKET) {
-		if (!fd2_node->node_data.socket.is_nycss) {
-			return true;
-		}
-
-		// printf("fd2_node->revents : %x\n", fd2_node->revents);
-		// assert(fd2_node->revents == 0);
-
-		if (fd2_node->revents == 0 &&
-		    is_not_yet_connected_stream_socket(fd2_node->fd)) {
-			revents = EPOLLHUP | EPOLLOUT;
-
-			struct kevent nkev[1];
-			EV_SET(&nkev[0], (uintptr_t)fd2_node, EVFILT_USER, //
-			    0, NOTE_TRIGGER, 0, fd2_node);
-			(void)kevent(epollfd->kq, nkev, 1, NULL, 0, NULL);
-
-			goto out;
-		} else {
-			fd2_node->node_data.socket.is_nycss = false;
-			return true;
-		}
-	}
-#endif
-
 #ifdef SUPPORT_EPIPE_FIFOS
 	if (kev->filter == EVFILT_USER &&
 	    fd2_node->node_type == NODE_TYPE_FIFO) {
@@ -326,15 +264,6 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 
 	assert(kev->filter == EVFILT_READ || kev->filter == EVFILT_WRITE);
 	assert((int)kev->ident == fd2_node->fd);
-
-	/* As soon as any EVFILT_READ/EVFILT_WRITE event comes for a
-	 * stream socket, it must be connected. */
-	if (fd2_node->node_type == NODE_TYPE_SOCKET) {
-		if (fd2_node->node_data.socket.is_nycss) {
-			fd2_node->node_data.socket.is_nycss = false;
-			fd2_node->revents = 0;
-		}
-	}
 
 	if (kev->filter == EVFILT_READ) {
 		revents |= EPOLLIN;
@@ -615,7 +544,7 @@ epollfd_ctx__remove_normal_node_from_kq(EpollFDCtx *epollfd,
 	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
 	EV_SET(&kev[1], fd2, EVFILT_WRITE, /**/
 	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-#ifdef SUPPORT_NYCSS
+#ifdef EVFILT_USER
 	EV_SET(&kev[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
 	    EV_DELETE | EV_RECEIPT, 0, 0, 0);
 #endif
@@ -675,17 +604,6 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 			    EV_ADD | (needed_filters.evfilt_write & EV_CLEAR),
 			    0, 0, fd2_node);
 		}
-#ifdef SUPPORT_NYCSS
-		if (fd2_node->node_type == NODE_TYPE_SOCKET &&
-		    is_not_yet_connected_stream_socket(fd2)) {
-			EV_SET(&kev[n++], (uintptr_t)fd2_node, EVFILT_USER,
-			    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
-			EV_SET(&kev[n++], (uintptr_t)fd2_node, EVFILT_USER, //
-			    0, NOTE_TRIGGER, 0, fd2_node);
-
-			fd2_node->node_data.socket.is_nycss = true;
-		}
-#endif
 
 		assert(n != 0);
 

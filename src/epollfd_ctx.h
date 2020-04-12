@@ -47,9 +47,6 @@ struct registered_fds_node_ {
 	NodeType node_type;
 	union {
 		struct {
-			bool is_nycss;
-		} socket;
-		struct {
 			bool readable;
 			bool writable;
 		} fifo;
