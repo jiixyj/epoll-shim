@@ -20,7 +20,7 @@
 
 #ifdef EVFILT_USER
 #define SUPPORT_POLL_ONLY_FDS
-#define SUPPORT_NYCSS
+/* #define SUPPORT_NYCSS */
 #define SUPPORT_EPIPE_FIFOS
 #endif
 
@@ -45,6 +45,7 @@ registered_fds_node_destroy(RegisteredFDsNode *node)
 	free(node);
 }
 
+#ifdef SUPPORT_NYCSS
 static int
 is_not_yet_connected_stream_socket(int s)
 {
@@ -76,6 +77,7 @@ is_not_yet_connected_stream_socket(int s)
 
 	return 0;
 }
+#endif
 
 typedef struct {
 	int evfilt_read;
@@ -265,9 +267,11 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 			return true;
 		}
 
-		assert(fd2_node->revents == 0);
+		// printf("fd2_node->revents : %x\n", fd2_node->revents);
+		// assert(fd2_node->revents == 0);
 
-		if (is_not_yet_connected_stream_socket(fd2_node->fd)) {
+		if (fd2_node->revents == 0 &&
+		    is_not_yet_connected_stream_socket(fd2_node->fd)) {
 			revents = EPOLLHUP | EPOLLOUT;
 
 			struct kevent nkev[1];
@@ -326,7 +330,10 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 	/* As soon as any EVFILT_READ/EVFILT_WRITE event comes for a
 	 * stream socket, it must be connected. */
 	if (fd2_node->node_type == NODE_TYPE_SOCKET) {
-		fd2_node->node_data.socket.is_nycss = false;
+		if (fd2_node->node_data.socket.is_nycss) {
+			fd2_node->node_data.socket.is_nycss = false;
+			fd2_node->revents = 0;
+		}
 	}
 
 	if (kev->filter == EVFILT_READ) {

@@ -852,9 +852,6 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__socket_shutdown, tcptr)
 ATF_TC_WITHOUT_HEAD(epoll__epollhup_on_fresh_socket);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__epollhup_on_fresh_socket, tcptr)
 {
-#ifdef __NetBSD__
-	atf_tc_skip("NetBSD does not support EV_FORCEONESHOT");
-#endif
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	ATF_REQUIRE(sock >= 0);
 
@@ -867,13 +864,58 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollhup_on_fresh_socket, tcptr)
 
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == 0);
 
-	int ret;
-
 	for (int i = 0; i < 3; ++i) {
-		ret = epoll_wait(ep, &event, 1, 100);
+		int ret = epoll_wait(ep, &event, 1, 1000);
+		if (ret == 0) {
+			atf_tc_skip("BSD's don't return POLLHUP on "
+				    "not yet connected sockets");
+		}
 		ATF_REQUIRE(ret == 1);
 
 		ATF_REQUIRE(event.events == (EPOLLOUT | EPOLLHUP));
+
+		usleep(100000);
+	}
+
+	ATF_REQUIRE(close(ep) == 0);
+	ATF_REQUIRE(close(sock) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(epoll__epollout_on_connecting_socket);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_connecting_socket, tcptr)
+{
+	int sock = socket(PF_INET, /**/
+	    SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	ATF_REQUIRE(sock >= 0);
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event event;
+	event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
+	event.data.fd = sock;
+
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == 0);
+
+	{
+		struct sockaddr_in addr = {0};
+		addr.sin_family = AF_INET;
+		addr.sin_port = htons(1337);
+		ATF_REQUIRE(inet_pton(AF_INET, "0.0.0.0", /**/
+				&addr.sin_addr) == 1);
+
+		ATF_REQUIRE_ERRNO(EINPROGRESS,
+		    connect(sock, (struct sockaddr const *)&addr,
+			sizeof(addr)) < 0);
+	}
+
+	for (int i = 0; i < 3; ++i) {
+		ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
+
+		ATF_REQUIRE_MSG(event.events ==
+			(EPOLLIN | EPOLLRDHUP | EPOLLOUT | /**/
+			    EPOLLERR | EPOLLHUP),
+		    "%04x", event.events);
 
 		usleep(100000);
 	}
@@ -1399,6 +1441,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__simple_signalfd);
 	ATF_TP_ADD_TC(tp, epoll__socket_shutdown);
 	ATF_TP_ADD_TC(tp, epoll__epollhup_on_fresh_socket);
+	ATF_TP_ADD_TC(tp, epoll__epollout_on_connecting_socket);
 	ATF_TP_ADD_TC(tp, epoll__timeout_on_listening_socket);
 	ATF_TP_ADD_TC(tp, epoll__epollerr_on_closed_pipe);
 	ATF_TP_ADD_TC(tp, epoll__shutdown_behavior);
