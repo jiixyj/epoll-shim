@@ -760,7 +760,7 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 #ifdef SUPPORT_POLL_ONLY_FDS
 	/* Check for fds that only support poll. */
 	if (((fd2_node->node_type == NODE_TYPE_OTHER &&
-		 (kev[0].data == ENODEV || kev[1].data == ENODEV)) ||
+		 kev[0].data == ENODEV) ||
 		fd2_node->node_type == NODE_TYPE_POLL)) {
 
 		assert((fd2_node->events & /**/
