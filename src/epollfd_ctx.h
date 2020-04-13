@@ -84,6 +84,10 @@ typedef struct {
 
 	struct pollfd *pfds;
 	size_t pfds_length;
+
+	pthread_mutex_t nr_polling_threads_mutex;
+	pthread_cond_t nr_polling_threads_cond;
+	unsigned long nr_polling_threads;
 } EpollFDCtx;
 
 errno_t epollfd_ctx_init(EpollFDCtx *epollfd, int kq);

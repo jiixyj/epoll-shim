@@ -510,6 +510,19 @@ epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
 		return ec;
 	}
 
+	if ((ec = pthread_mutex_init(&epollfd->nr_polling_threads_mutex,
+		 NULL)) != 0) {
+		pthread_mutex_destroy(&epollfd->mutex);
+		return ec;
+	}
+
+	if ((ec = pthread_cond_init(&epollfd->nr_polling_threads_cond,
+		 NULL)) != 0) {
+		pthread_mutex_destroy(&epollfd->nr_polling_threads_mutex);
+		pthread_mutex_destroy(&epollfd->mutex);
+		return ec;
+	}
+
 #ifdef SUPPORT_POLL_ONLY_FDS
 	struct kevent kev[1];
 	EV_SET(&kev[0], 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
@@ -517,6 +530,34 @@ epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
 #endif
 
 	return 0;
+}
+
+errno_t
+epollfd_ctx_terminate(EpollFDCtx *epollfd)
+{
+	errno_t ec = 0;
+	errno_t ec_local;
+
+	ec_local = pthread_cond_destroy(&epollfd->nr_polling_threads_cond);
+	ec = ec ? ec : ec_local;
+	ec_local = pthread_mutex_destroy(&epollfd->nr_polling_threads_mutex);
+	ec = ec ? ec : ec_local;
+	ec_local = pthread_mutex_destroy(&epollfd->mutex);
+	ec = ec ? ec : ec_local;
+
+	RegisteredFDsNode *np;
+	RegisteredFDsNode *np_temp;
+	RB_FOREACH_SAFE(np, registered_fds_set_, &epollfd->registered_fds,
+	    np_temp)
+	{
+		RB_REMOVE(registered_fds_set_, &epollfd->registered_fds, np);
+		registered_fds_node_destroy(np);
+	}
+
+	free(epollfd->kevs);
+	free(epollfd->pfds);
+
+	return ec;
 }
 
 static errno_t
@@ -569,29 +610,30 @@ epollfd_ctx_make_pfds_space(EpollFDCtx *epollfd)
 	return 0;
 }
 
-errno_t
-epollfd_ctx_terminate(EpollFDCtx *epollfd)
+#ifdef EVFILT_USER
+static void
+epollfd_ctx__trigger_repoll(EpollFDCtx *epollfd)
 {
-	errno_t ec = 0;
-	errno_t ec_local = 0;
+	(void)pthread_mutex_lock(&epollfd->nr_polling_threads_mutex);
+	unsigned long nr_polling_threads = epollfd->nr_polling_threads;
+	(void)pthread_mutex_unlock(&epollfd->nr_polling_threads_mutex);
 
-	ec_local = pthread_mutex_destroy(&epollfd->mutex);
-	ec = ec ? ec : ec_local;
-
-	RegisteredFDsNode *np;
-	RegisteredFDsNode *np_temp;
-	RB_FOREACH_SAFE(np, registered_fds_set_, &epollfd->registered_fds,
-	    np_temp)
-	{
-		RB_REMOVE(registered_fds_set_, &epollfd->registered_fds, np);
-		registered_fds_node_destroy(np);
+	if (nr_polling_threads == 0) {
+		return;
 	}
 
-	free(epollfd->kevs);
-	free(epollfd->pfds);
+	struct kevent kev[1];
+	EV_SET(&kev[0], 0, EVFILT_USER, EV_ENABLE, NOTE_TRIGGER, 0, 0);
+	(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
 
-	return ec;
+	(void)pthread_mutex_lock(&epollfd->nr_polling_threads_mutex);
+	while (epollfd->nr_polling_threads != 0) {
+		pthread_cond_wait(&epollfd->nr_polling_threads_cond,
+		    &epollfd->nr_polling_threads_mutex);
+	}
+	(void)pthread_mutex_unlock(&epollfd->nr_polling_threads_mutex);
 }
+#endif
 
 static void
 epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
@@ -603,6 +645,8 @@ epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
 		fd2_node->is_on_pollfd_list = false;
 		assert(epollfd->poll_fds_size != 0);
 		--epollfd->poll_fds_size;
+
+		epollfd_ctx__trigger_repoll(epollfd);
 	}
 
 	if (fd2_node->node_type == NODE_TYPE_POLL) {
@@ -610,9 +654,6 @@ epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
 
 		EV_SET(&kev[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
 		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
-
-		EV_SET(&kev[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
 		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
 	} else
 #endif
@@ -701,6 +742,8 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 				    pollfd_list_entry);
 				fd2_node->is_on_pollfd_list = true;
 				++epollfd->poll_fds_size;
+
+				epollfd_ctx__trigger_repoll(epollfd);
 			}
 		}
 #endif
@@ -747,9 +790,6 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 		    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
 		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
 
-		EV_SET(&kev[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
-		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
-
 		fd2_node->node_type = NODE_TYPE_POLL;
 
 		if (!fd2_node->is_on_pollfd_list) {
@@ -758,6 +798,8 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 			fd2_node->is_on_pollfd_list = true;
 			++epollfd->poll_fds_size;
 		}
+
+		epollfd_ctx__trigger_repoll(epollfd);
 
 		goto out;
 	}

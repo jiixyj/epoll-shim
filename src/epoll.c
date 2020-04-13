@@ -195,12 +195,35 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 
 		epollfd_ctx_fill_pollfds(epollfd, pfds);
 
+		(void)pthread_mutex_lock(&epollfd->nr_polling_threads_mutex);
+		++epollfd->nr_polling_threads;
+		(void)pthread_mutex_unlock(&epollfd->nr_polling_threads_mutex);
+
 		(void)pthread_mutex_unlock(&epollfd->mutex);
 
+		/*
+		 * This surfaced a race condition when
+		 * registering/unregistering poll-only fds. The tests should
+		 * still succeed if this is enabled.
+		 */
+#if 0
+		usleep(500000);
+#endif
+
 		int n = ppoll(pfds, nfds, deadline ? &timeout : NULL, sigs);
-		ec = errno;
+		if (n < 0) {
+			ec = errno;
+		}
 
 		free(pfds);
+
+		(void)pthread_mutex_lock(&epollfd->nr_polling_threads_mutex);
+		--epollfd->nr_polling_threads;
+		if (epollfd->nr_polling_threads == 0) {
+			(void)pthread_cond_signal(
+			    &epollfd->nr_polling_threads_cond);
+		}
+		(void)pthread_mutex_unlock(&epollfd->nr_polling_threads_mutex);
 
 		if (n < 0) {
 			return ec;

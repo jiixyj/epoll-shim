@@ -610,16 +610,23 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fd1, &event) == 0);
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fd2, &event) == 0);
 
-	pthread_t thread;
-	ATF_REQUIRE(
-	    pthread_create(&thread, NULL, &poll_only_fd_thread_fun, &ep) == 0);
+	pthread_t threads[16];
+	for (int i = 0; i < 16; ++i) {
+		ATF_REQUIRE(pthread_create(&threads[i], NULL,
+				&poll_only_fd_thread_fun, &ep) == 0);
+	}
 
+	/*
+	 * Racy way of making sure that all threads are waiting in epoll_wait.
+	 */
 	usleep(200000);
 
 	event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fd1, &event) == 0);
 
-	ATF_REQUIRE(pthread_join(thread, NULL) == 0);
+	for (int i = 0; i < 16; ++i) {
+		ATF_REQUIRE(pthread_join(threads[i], NULL) == 0);
+	}
 
 	ATF_REQUIRE(close(fd1) == 0);
 
