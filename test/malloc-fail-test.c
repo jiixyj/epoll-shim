@@ -77,8 +77,7 @@ kqueue(void)
 
 int
 kevent(int kq, const struct kevent *changelist, int nchanges,
-    struct kevent *eventlist, int nevents,
-    const struct timespec *timeout)
+    struct kevent *eventlist, int nevents, const struct timespec *timeout)
 {
 	// write(2, "kevent\n", 7);
 
@@ -87,10 +86,9 @@ kevent(int kq, const struct kevent *changelist, int nchanges,
 		return -1;
 	}
 
-	int (*real_kevent)(int, const struct kevent *, int,
-	    struct kevent *, int, const struct timespec *) =
-	    (int (*)(int, const struct kevent *, int,
-		struct kevent *, int,
+	int (*real_kevent)(int, const struct kevent *, int, struct kevent *,
+	    int, const struct timespec *) =
+	    (int (*)(int, const struct kevent *, int, struct kevent *, int,
 		const struct timespec *))dlsym_wrapper(RTLD_NEXT, "kevent");
 
 	decrement_malloc_fail_cnt();
@@ -195,6 +193,19 @@ write_to_pipe_thread_fun(void *arg)
 	return NULL;
 }
 
+static int
+real_close(int fd)
+{
+#ifdef close
+#undef close
+#define NEEDS_EPOLL_SHIM_CLOSE
+#endif
+	return close(fd);
+#ifdef NEEDS_EPOLL_SHIM_CLOSE
+#define close epoll_shim_close
+#endif
+}
+
 ATF_TC_WITHOUT_HEAD(malloc_fail__epoll);
 ATF_TC_BODY_FD_LEAKCHECK(malloc_fail__epoll, tc)
 {
@@ -245,14 +256,7 @@ ATF_TC_BODY_FD_LEAKCHECK(malloc_fail__epoll, tc)
 		ATF_REQUIRE(r == 1);
 		ATF_REQUIRE(event.events == POLLIN);
 
-#ifdef close
-#undef close
-#define NEEDS_EPOLL_SHIM_CLOSE
-#endif
-		ATF_REQUIRE(close(ep) == 0);
-#ifdef NEEDS_EPOLL_SHIM_CLOSE
-#define close epoll_shim_close
-#endif
+		ATF_REQUIRE(real_close(ep) == 0);
 		ATF_REQUIRE_ERRNO(EBADF, close(ep) < 0);
 
 		break;
@@ -315,11 +319,18 @@ ATF_TC_BODY_FD_LEAKCHECK(malloc_fail__signalfd, tc)
 		sigemptyset(&mask);
 		sigaddset(&mask, SIGINT);
 
-		int sfd = signalfd(-1, &mask, 0);
+		int sfd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
 		if (sfd < 0) {
 			ATF_REQUIRE_ERRNO(ENOMEM, true);
 			continue;
 		}
+
+		struct signalfd_siginfo siginfo;
+		ssize_t s =
+		    read(sfd, &siginfo, sizeof(struct signalfd_siginfo));
+		ATF_REQUIRE(s < 0);
+		ATF_REQUIRE(errno == EAGAIN || errno == ENOMEM);
+
 		ATF_REQUIRE(close(sfd) == 0);
 
 		break;

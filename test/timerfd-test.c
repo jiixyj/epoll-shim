@@ -417,6 +417,12 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_checks, tc)
 	    timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | 42));
 
 	ATF_REQUIRE(close(timerfd) == 0);
+
+	struct itimerspec itimerspec;
+	ATF_REQUIRE_ERRNO(EBADF, timerfd_gettime(timerfd, &itimerspec) < 0);
+
+	ATF_REQUIRE_ERRNO(EBADF,
+	    timerfd_settime(timerfd, 0, &itimerspec, NULL) < 0);
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__upgrade_simple_to_complex);

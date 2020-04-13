@@ -758,16 +758,10 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 			goto out;
 		}
 
-		if (ret != n) {
-			ec = EINVAL;
-			goto out;
-		}
+		assert(ret == n);
 
 		for (int i = 0; i < n; ++i) {
-			if (!(kev[i].flags & EV_ERROR)) {
-				ec = EINVAL;
-				goto out;
-			}
+			assert((kev[i].flags & EV_ERROR) != 0);
 		}
 	}
 
@@ -803,11 +797,6 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 		goto out;
 	}
-
-	if (fd2_node->node_type == NODE_TYPE_POLL) {
-		ec = EINVAL;
-		goto out;
-	}
 #endif
 
 	for (int i = 0; i < 4; ++i) {
@@ -815,7 +804,8 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 #ifdef SUPPORT_EPIPE_FIFOS
 			if (kev[i].data == EPIPE && i == evfilt_write_index &&
 			    fd2_node->node_type == NODE_TYPE_FIFO) {
-				fd2_node->eof_state |= EOF_STATE_WRITE_EOF;
+				fd2_node->eof_state =
+				    EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF;
 				fd2_node->has_evfilt_write = false;
 
 				if (evfilt_read_index < 0) {
@@ -939,10 +929,10 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2, struct epoll_event *ev,
 
 	registered_fds_node_update_flags_from_epoll_event(fd2_node, ev);
 
-	if (RB_INSERT(registered_fds_set_, &epollfd->registered_fds,
-		fd2_node)) {
-		assert(0);
-	}
+	void *colliding_node =
+	    RB_INSERT(registered_fds_set_, &epollfd->registered_fds, fd2_node);
+	(void)colliding_node;
+	assert(colliding_node == NULL);
 	++epollfd->registered_fds_size;
 
 	errno_t ec = epollfd_ctx__register_events(epollfd, fd2_node);
@@ -1072,9 +1062,7 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 {
 	errno_t ec;
 
-	if (cnt < 1) {
-		return EINVAL;
-	}
+	assert(cnt >= 1);
 
 	ec = epollfd_ctx_make_pfds_space(epollfd);
 	if (ec != 0) {

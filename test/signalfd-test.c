@@ -225,6 +225,19 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__argument_checks, tcptr)
 
 	ATF_REQUIRE_ERRNO(EBADF, signalfd(-2, &mask, 0));
 
+	sfd = signalfd(-1, &mask, 0);
+	ATF_REQUIRE(sfd >= 0);
+
+	int dummy;
+	ssize_t s = read(sfd, &dummy, sizeof(int));
+	ATF_REQUIRE_ERRNO(EINVAL, s < 0);
+
+	ATF_REQUIRE(close(sfd) == 0);
+
+	struct signalfd_siginfo siginfo;
+	s = read(sfd, &siginfo, sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE_ERRNO(EBADF, s < 0);
+
 	ATF_REQUIRE(close(fds[0]) == 0);
 	ATF_REQUIRE(close(fds[1]) == 0);
 }
