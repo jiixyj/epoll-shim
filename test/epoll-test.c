@@ -1027,13 +1027,29 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri, tcptr)
 
 	usleep(200000);
 
-	event.events = EPOLLIN | EPOLLRDHUP | EPOLLPRI | EPOLLOUT;
+	event.events = EPOLLIN | EPOLLRDHUP | EPOLLPRI | EPOLLET;
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == 0);
 
 	c = 'o';
 	ATF_REQUIRE(send(fds[1], &c, 1, MSG_OOB) == 1);
 
 	ATF_REQUIRE(pthread_join(thread, NULL) == 0);
+
+	c = 'n';
+	ATF_REQUIRE(send(fds[1], &c, 1, 0) == 1);
+
+	ATF_REQUIRE(recv(fds[0], &c, 1, MSG_OOB) == 1);
+	ATF_REQUIRE(recv(fds[0], &c, 1, MSG_OOB) < 0);
+	while (recv(fds[0], &c, 1, 0) != 1) {
+	}
+	ATF_REQUIRE(recv(fds[0], &c, 1, 0) < 0);
+	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
+
+	c = 'n';
+	ATF_REQUIRE(send(fds[1], &c, 1, 0) == 1);
+
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
+	ATF_REQUIRE_MSG(event.events == EPOLLIN, "%04x", event.events);
 
 	ATF_REQUIRE(close(ep) == 0);
 	ATF_REQUIRE(close(fds[0]) == 0);
