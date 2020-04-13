@@ -32,7 +32,6 @@ typedef enum {
 
 struct registered_fds_node_ {
 	RB_ENTRY(registered_fds_node_) entry;
-	RegisteredFDsNode *del_list;
 	TAILQ_ENTRY(registered_fds_node_) pollfd_list_entry;
 
 	int fd;

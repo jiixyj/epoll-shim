@@ -198,7 +198,7 @@ registered_fds_node_update_flags_from_epoll_event(RegisteredFDsNode *fd2_node,
 	}
 }
 
-static bool
+static void
 registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
     EpollFDCtx *epollfd, struct kevent const *kev)
 {
@@ -216,14 +216,10 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 
 		revents = poll(&pfd, 1, 0) < 0 ? EPOLLERR : pfd.revents;
 
-		if (revents & POLLNVAL) {
-			return false;
-		}
-
-		fd2_node->revents = (uint32_t)revents;
+		fd2_node->revents = revents & POLLNVAL ? 0 : (uint32_t)revents;
 		assert(!(fd2_node->revents &
 		    ~(uint32_t)(POLLIN | POLLOUT | POLLERR | POLLHUP)));
-		return true;
+		return;
 	}
 #endif
 
@@ -260,7 +256,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 			goto out;
 		} else {
 			fd2_node->has_evfilt_write = true;
-			return true;
+			return;
 		}
 	}
 #endif
@@ -371,7 +367,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 					if (fd2_node->revents != 0) {
 						fd2_node->revents |= POLLHUP;
 					}
-					return true;
+					return;
 				}
 
 				epoll_event = EPOLLERR;
@@ -415,7 +411,7 @@ out:
 		}
 	}
 
-	return true;
+	return;
 }
 
 static void
@@ -440,10 +436,8 @@ registered_fds_node_register_for_completion(int *kq,
 		EV_SET(&epollpri_event, fd2_node->fd, EVFILT_USER, 0, 0, 0,
 		    fd2_node);
 
-		if (!registered_fds_node_feed_event(fd2_node, NULL,
-			&epollpri_event)) {
-			assert(0);
-		}
+		registered_fds_node_feed_event(fd2_node, NULL,
+		    &epollpri_event);
 	}
 #endif
 
@@ -476,10 +470,8 @@ registered_fds_node_complete(int kq)
 			RegisteredFDsNode *fd2_node =
 			    (RegisteredFDsNode *)kevs[i].udata;
 
-			if (!registered_fds_node_feed_event(fd2_node, NULL,
-				&kevs[i])) {
-				assert(0);
-			}
+			registered_fds_node_feed_event(fd2_node, NULL,
+			    &kevs[i]);
 		}
 	}
 
@@ -1135,8 +1127,6 @@ again:;
 
 	int j = 0;
 
-	RegisteredFDsNode *del_list = NULL;
-
 	for (int i = 0; i < n; ++i) {
 		RegisteredFDsNode *fd2_node =
 		    (RegisteredFDsNode *)kevs[i].udata;
@@ -1149,56 +1139,37 @@ again:;
 		}
 #endif
 
-		for (RegisteredFDsNode *it = del_list; it != NULL;
-		     it = it->del_list) {
-			if (it == fd2_node) {
-				continue;
-			}
-		}
-
 		uint32_t old_revents = fd2_node->revents;
 		NeededFilters old_needed_filters =
 		    get_needed_filters(fd2_node);
 
-		if (!registered_fds_node_feed_event(fd2_node, epollfd,
-			&kevs[i])) {
-			fd2_node->del_list = del_list;
-			del_list = fd2_node;
-		} else {
-			if (fd2_node->node_type != NODE_TYPE_POLL &&
-			    !(fd2_node->is_edge_triggered &&
-				fd2_node->eof_state ==
-				    (EOF_STATE_READ_EOF |
-					EOF_STATE_WRITE_EOF) &&
-				fd2_node->node_type != NODE_TYPE_FIFO)) {
+		registered_fds_node_feed_event(fd2_node, epollfd, &kevs[i]);
 
-				NeededFilters needed_filters =
-				    get_needed_filters(fd2_node);
+		if (fd2_node->node_type != NODE_TYPE_POLL &&
+		    !(fd2_node->is_edge_triggered &&
+			fd2_node->eof_state ==
+			    (EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF) &&
+			fd2_node->node_type != NODE_TYPE_FIFO)) {
 
-				if (old_needed_filters.evfilt_read !=
-					needed_filters.evfilt_read ||
-				    old_needed_filters.evfilt_write !=
-					needed_filters.evfilt_write) {
+			NeededFilters needed_filters =
+			    get_needed_filters(fd2_node);
 
-					if (epollfd_ctx__register_events(
-						epollfd, fd2_node) != 0) {
-						epollfd_ctx__remove_node_from_kq(
-						    epollfd, fd2_node);
-					}
+			if (old_needed_filters.evfilt_read !=
+				needed_filters.evfilt_read ||
+			    old_needed_filters.evfilt_write !=
+				needed_filters.evfilt_write) {
+
+				if (epollfd_ctx__register_events(epollfd,
+					fd2_node) != 0) {
+					epollfd_ctx__remove_node_from_kq(
+					    epollfd, fd2_node);
 				}
 			}
-
-			if (fd2_node->revents && !old_revents) {
-				ev[j++].data.ptr = fd2_node;
-			}
 		}
-	}
 
-	/* This assumes that those nodes are never put into the 'ev' list. */
-	for (RegisteredFDsNode *it = del_list; it != NULL;) {
-		RegisteredFDsNode *next_it = it->del_list;
-		epollfd_ctx_remove_node(epollfd, it);
-		it = next_it;
+		if (fd2_node->revents && !old_revents) {
+			ev[j++].data.ptr = fd2_node;
+		}
 	}
 
 	{
