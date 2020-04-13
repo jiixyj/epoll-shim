@@ -21,9 +21,7 @@ eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 {
 	errno_t ec;
 
-	if (flags & ~(EVENTFD_CTX_FLAG_SEMAPHORE)) {
-		return (EINVAL);
-	}
+	assert((flags & ~(EVENTFD_CTX_FLAG_SEMAPHORE)) == 0);
 
 	*eventfd = (EventFDCtx){
 	    .kq_ = kq,

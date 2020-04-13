@@ -57,6 +57,24 @@ dlsym_wrapper(void *restrict handle, const char *restrict symbol)
 }
 
 #ifdef __FreeBSD__
+
+int
+poll(struct pollfd fds[], nfds_t nfds, int timeout)
+{
+	if (malloc_fail_cnt <= 0) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	int (*real_poll)(struct pollfd[], nfds_t, int) =
+	    (int (*)(struct pollfd[], nfds_t, int))dlsym_wrapper(RTLD_NEXT,
+		"poll");
+
+	decrement_malloc_fail_cnt();
+
+	return real_poll(fds, nfds, timeout);
+}
+
 int
 kqueue(void)
 {
@@ -296,11 +314,33 @@ ATF_TC_BODY_FD_LEAKCHECK(malloc_fail__eventfd, tc)
 	for (int fail_cnt = 0;; ++fail_cnt) {
 		malloc_fail_cnt = fail_cnt;
 
-		int efd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+		int efd = eventfd(1, EFD_NONBLOCK | EFD_CLOEXEC);
 		if (efd < 0) {
 			ATF_REQUIRE_ERRNO(ENOMEM, true);
 			continue;
 		}
+
+		eventfd_t data;
+		if (eventfd_read(efd, &data) < 0) {
+			ATF_REQUIRE_ERRNO(ENOMEM, true);
+			ATF_REQUIRE(close(efd) == 0);
+			continue;
+		}
+		ATF_REQUIRE(data == 1);
+
+		if (eventfd_write(efd, 5) < 0) {
+			ATF_REQUIRE_ERRNO(ENOMEM, true);
+			ATF_REQUIRE(close(efd) == 0);
+			continue;
+		}
+
+		if (eventfd_read(efd, &data) < 0) {
+			ATF_REQUIRE_ERRNO(ENOMEM, true);
+			ATF_REQUIRE(close(efd) == 0);
+			continue;
+		}
+		ATF_REQUIRE(data == 5);
+
 		ATF_REQUIRE(close(efd) == 0);
 
 		break;
