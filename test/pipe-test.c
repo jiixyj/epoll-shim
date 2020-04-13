@@ -902,6 +902,23 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 
 		ATF_REQUIRE(close(ep) == 0);
 	}
+	{
+		int ep = epoll_create1(EPOLL_CLOEXEC);
+		ATF_REQUIRE(ep >= 0);
+
+		struct epoll_event eps[32];
+		eps[0] = (struct epoll_event){.events = 0};
+		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
+
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+		ATF_REQUIRE(eps[0].events == EPOLLERR);
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+		ATF_REQUIRE(eps[0].events == EPOLLERR);
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+		ATF_REQUIRE(eps[0].events == EPOLLERR);
+
+		ATF_REQUIRE(close(ep) == 0);
+	}
 
 	ATF_REQUIRE(close(p[1]) == 0);
 }
