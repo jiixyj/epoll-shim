@@ -41,6 +41,24 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__init_terminate, tc)
 	ATF_REQUIRE(close(efd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(eventfd__argument_checks);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__argument_checks, tc)
+{
+	int efd;
+
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE | 42) < 0);
+
+	ATF_REQUIRE((efd = eventfd(0,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
+
+	uint16_t dummy = 0;
+	ATF_REQUIRE_ERRNO(EINVAL, write(efd, &dummy, sizeof(dummy)) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL, read(efd, &dummy, sizeof(dummy)) < 0);
+
+	ATF_REQUIRE(close(efd) == 0);
+}
+
 ATF_TC_WITHOUT_HEAD(eventfd__simple_write);
 ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_write, tc)
 {
@@ -205,6 +223,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_read, tc)
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, eventfd__init_terminate);
+	ATF_TP_ADD_TC(tp, eventfd__argument_checks);
 	ATF_TP_ADD_TC(tp, eventfd__simple_write);
 	ATF_TP_ADD_TC(tp, eventfd__simple_read);
 	ATF_TP_ADD_TC(tp, eventfd__simple_write_read);
