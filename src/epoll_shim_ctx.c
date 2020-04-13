@@ -121,10 +121,10 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 			return NULL;
 		}
 
-		if (RB_INSERT(fd_context_map_, &epoll_shim_ctx->fd_context_map,
-			node)) {
-			assert(0);
-		}
+		void *colliding_node = RB_INSERT(fd_context_map_,
+		    &epoll_shim_ctx->fd_context_map, node);
+		(void)colliding_node;
+		assert(colliding_node == NULL);
 	}
 
 	return node;

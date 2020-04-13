@@ -87,6 +87,12 @@ target_link_libraries(socketpair-test PRIVATE epoll-shim::epoll-shim
 atf_discover_tests(socketpair-test)
 
 add_executable(tst-epoll tst-epoll.c)
-target_link_libraries(tst-epoll PRIVATE epoll-shim::epoll-shim
-                                              Threads::Threads atf::atf-c)
+target_link_libraries(tst-epoll PRIVATE epoll-shim::epoll-shim Threads::Threads
+                                        atf::atf-c)
 atf_discover_tests(tst-epoll)
+
+add_executable(malloc-fail-test malloc-fail-test.c)
+target_link_libraries(
+  malloc-fail-test PRIVATE epoll-shim::epoll-shim Threads::Threads atf::atf-c
+                           ${CMAKE_DL_LIBS})
+atf_discover_tests(malloc-fail-test)
