@@ -675,6 +675,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 
 	ATF_REQUIRE(close(p[0]) == 0);
 
+	bool data_empty = false;
+
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
@@ -682,26 +684,48 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | EV_EOF), "%04x",
 	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
+	if (kev[0].data == 0) {
+		/* This is the behavior on vanilla FreeBSD.
+		 * Setting EV_EOF will always set data to 0. */
+		data_empty = true;
+	} else {
+		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
+	}
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
-	ATF_REQUIRE(eps[0].events == (EPOLLOUT | EPOLLERR));
+	if (data_empty) {
+		ATF_REQUIRE(eps[0].events == EPOLLERR);
+	} else {
+		ATF_REQUIRE(eps[0].events == (EPOLLOUT | EPOLLERR));
+	}
 
 	ATF_REQUIRE(
 	    (p[0] = open("the_fifo", O_RDONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
 
+	bool will_notice_new_readers = true;
+
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 1);
-	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
-	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
-	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
-	ATF_REQUIRE(kev[0].udata == 0);
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){1, 0});
+	if (r == 0) {
+		will_notice_new_readers = false;
+		/* This is the behavior on vanilla FreeBSD. Opening the read
+		 * end of a FIFO will not send notifications to writers. */
+	} else {
+		ATF_REQUIRE(r == 1);
+		ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 1);
+		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
+		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
+		ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+		ATF_REQUIRE(kev[0].fflags == 0);
+		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
+		ATF_REQUIRE(kev[0].udata == 0);
+	}
 #endif
-	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
-	ATF_REQUIRE(eps[0].events == EPOLLOUT);
+	if (will_notice_new_readers) {
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+		ATF_REQUIRE(eps[0].events == EPOLLOUT);
+	}
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(close(kq) == 0);
@@ -761,11 +785,22 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 
 	ATF_REQUIRE(read(p[0], &c, 1) == 0);
 
+	/* Reading from a closed pipe should not trigger EVFILT_READ edges, but
+	 * on vanilla FreeBSD it happens */
+	bool has_spurious_pipe_eof_wakeups_on_read = false;
+
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+	r = kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0});
+	if (r == 1) {
+		has_spurious_pipe_eof_wakeups_on_read = true;
+	} else {
+		ATF_REQUIRE(r == 1);
+	}
 #endif
-	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	if (!has_spurious_pipe_eof_wakeups_on_read) {
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	}
 
 	ATF_REQUIRE(
 	    (p[1] = open("the_fifo", O_WRONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
@@ -778,19 +813,29 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 
 	ATF_REQUIRE(write(p[1], &c, 1) == 1);
 
+	bool eof_gets_cleared_on_new_writers = true;
+
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
-	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == 1, "%d", (int)kev[0].data);
-	ATF_REQUIRE(kev[0].udata == 0);
+	if (kev[0].flags == (EV_EOF | EV_CLEAR)) {
+		eof_gets_cleared_on_new_writers = false;
+	} else {
+		ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+		ATF_REQUIRE(kev[0].fflags == 0);
+		ATF_REQUIRE_MSG(kev[0].data == 1, "%d", (int)kev[0].data);
+		ATF_REQUIRE(kev[0].udata == 0);
+	}
 	ATF_REQUIRE(close(kq) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
-	ATF_REQUIRE(eps[0].events == EPOLLIN);
+	if (eof_gets_cleared_on_new_writers) {
+		ATF_REQUIRE(eps[0].events == EPOLLIN);
+	} else {
+		ATF_REQUIRE(eps[0].events == (EPOLLIN | EPOLLHUP));
+	}
 	ATF_REQUIRE(close(ep) == 0);
 
 	ATF_REQUIRE(close(p[0]) == 0);
@@ -1273,7 +1318,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 			(EV_EOF | EV_CLEAR | EV_ONESHOT | EV_RECEIPT),
 		    "%04x", kev[0].flags);
 		ATF_REQUIRE(kev[0].fflags == 0);
-		ATF_REQUIRE_MSG(kev[0].data == 4096, "%d", (int)kev[0].data);
+		ATF_REQUIRE_MSG(kev[0].data == 4096 || kev[0].data == 512 /* on FreeBSD 11.3 */, "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
 	}
 	{
