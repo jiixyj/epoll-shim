@@ -689,7 +689,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 		 * Setting EV_EOF will always set data to 0. */
 		data_empty = true;
 	} else {
-		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
+		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d",
+		    (int)kev[0].data);
 	}
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
@@ -717,7 +718,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 		ATF_REQUIRE(kev[0].flags == EV_CLEAR);
 		ATF_REQUIRE(kev[0].fflags == 0);
-		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
+		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d",
+		    (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
 	}
 #endif
@@ -789,8 +791,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 	bool has_spurious_pipe_eof_wakeups_on_read = false;
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	r = kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0});
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
 	if (r == 1) {
 		has_spurious_pipe_eof_wakeups_on_read = true;
 	} else {
@@ -1317,7 +1318,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 			(EV_EOF | EV_CLEAR | EV_ONESHOT | EV_RECEIPT),
 		    "%04x", kev[0].flags);
 		ATF_REQUIRE(kev[0].fflags == 0);
-		ATF_REQUIRE_MSG(kev[0].data == 4096 || kev[0].data == 512 /* on FreeBSD 11.3 */, "%d", (int)kev[0].data);
+		ATF_REQUIRE_MSG(kev[0].data == 4096 ||
+			kev[0].data == 512 /* on FreeBSD 11.3 */,
+		    "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
 	}
 	{
