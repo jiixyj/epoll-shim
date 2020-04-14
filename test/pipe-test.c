@@ -554,8 +554,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE(close(p[1]) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(pipe__fifo_event_poll);
-ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
+ATF_TC_WITHOUT_HEAD(pipe__fifo_writes);
+ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 {
 	int p[2] = {-1, -1};
 
@@ -597,7 +597,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 	 * https://github.com/freebsd/freebsd/commit/4681aa72a96557236594d33069de3b60506be886
 	 */
 	if (kev[0].flags & EV_EOF) {
-		atf_tc_skip("EVFILT_WRITE broken on FIFOs");
+		atf_tc_skip("NetBSD's EVFILT_WRITE broken on FIFOs");
 	}
 
 	ATF_REQUIRE_MSG(kev[0].flags == EV_CLEAR, "%x", kev[0].flags);
@@ -685,21 +685,115 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	if (kev[0].data == 0) {
-		/* This is the behavior on vanilla FreeBSD.
-		 * Setting EV_EOF will always set data to 0. */
+		/*
+		 * This is the behavior on vanilla FreeBSD.
+		 * Setting EV_EOF will always set data to 0.
+		 * In FreeBSD 4, FIFOs were implemented with sockets. There,
+		 * the EV_EOF flag and content of the data field were
+		 * independent.
+		 */
 		data_empty = true;
 	} else {
 		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d",
 		    (int)kev[0].data);
 	}
 	ATF_REQUIRE(kev[0].udata == 0);
+	ATF_REQUIRE(close(kq) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 	if (data_empty) {
 		ATF_REQUIRE(eps[0].events == EPOLLERR);
+		atf_tc_skip("FreeBSD sets data to 0 on EV_EOF");
 	} else {
 		ATF_REQUIRE(eps[0].events == (EPOLLOUT | EPOLLERR));
 	}
+
+	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(pipe__fifo_connecting_reader);
+ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
+{
+	int p[2] = {-1, -1};
+
+	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
+
+	ATF_REQUIRE(
+	    (p[0] = open("the_fifo", O_RDONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
+	ATF_REQUIRE(
+	    (p[1] = open("the_fifo", O_WRONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
+
+	{
+		int fl = fcntl(p[0], F_GETFL, 0);
+		int rq = O_RDONLY;
+		ATF_REQUIRE((fl & O_ACCMODE) == rq);
+	}
+	{
+		int fl = fcntl(p[1], F_GETFL, 0);
+		int rq = O_WRONLY;
+		ATF_REQUIRE((fl & O_ACCMODE) == rq);
+	}
+
+#if !defined(__linux__) && !defined(FORCE_EPOLL)
+	int kq = kqueue();
+	ATF_REQUIRE(kq >= 0);
+
+	struct kevent kev[32];
+	EV_SET(&kev[0], p[1], EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, 0);
+	EV_SET(&kev[1], p[1], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
+
+	ATF_REQUIRE(kevent(kq, kev, 2, NULL, 0, NULL) == 0);
+
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0}) == 1);
+	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
+	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0}) == 0);
+#endif
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+	eps[0] = (struct epoll_event){
+	    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+	};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
+
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+	/*
+	 * NetBSD still suffers from the bug fixed by
+	 * https://github.com/freebsd/freebsd/commit/4681aa72a96557236594d33069de3b60506be886
+	 */
+	if (eps[0].events & EPOLLERR) {
+		atf_tc_skip("NetBSD's EVFILT_WRITE broken on FIFOs");
+	}
+	ATF_REQUIRE(eps[0].events == EPOLLOUT);
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+
+	char c = 0;
+	ssize_t r;
+	while ((r = write(p[1], &c, 1)) == 1) {
+	}
+	ATF_REQUIRE(r < 0);
+	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
+
+	for (int i = 0; i < PIPE_BUF + 1; ++i) {
+		ATF_REQUIRE(read(p[0], &c, 1) == 1);
+	}
+
+	ATF_REQUIRE(close(p[0]) == 0);
+
+#if !defined(__linux__) && !defined(FORCE_EPOLL)
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0}) == 1);
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0}) == 0);
+#endif
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
 	ATF_REQUIRE(
 	    (p[0] = open("the_fifo", O_RDONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
@@ -721,17 +815,53 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d",
 		    (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
+		ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+				&(struct timespec){0, 0}) == 0);
 	}
+	ATF_REQUIRE(close(kq) == 0);
 #endif
-	if (will_notice_new_readers) {
+	if (!will_notice_new_readers) {
+		atf_tc_skip("FreeBSD FIFOs don't notify on new readers");
+	} else {
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 		ATF_REQUIRE(eps[0].events == EPOLLOUT);
+		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	}
+
+	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[0]) == 0);
+	ATF_REQUIRE(close(p[1]) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(pipe__fifo_reads);
+ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_reads, tc)
+{
+	int p[2] = {-1, -1};
+
+	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
+
+	ATF_REQUIRE(
+	    (p[0] = open("the_fifo", O_RDONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
+	ATF_REQUIRE(
+	    (p[1] = open("the_fifo", O_WRONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
+
+	char c = 0;
+	ssize_t r;
+	while ((r = write(p[1], &c, 1)) == 1) {
+	}
+	ATF_REQUIRE(r < 0);
+	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
+
+	for (int i = 0; i < PIPE_BUF + 1; ++i) {
+		ATF_REQUIRE(read(p[0], &c, 1) == 1);
 	}
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	ATF_REQUIRE(close(kq) == 0);
-	kq = kqueue();
+	int kq = kqueue();
 	ATF_REQUIRE(kq >= 0);
+
+	struct kevent kev[32];
 
 	EV_SET(&kev[0], p[0], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
 
@@ -741,17 +871,21 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
-	ATF_REQUIRE_MSG(kev[0].flags == EV_CLEAR, "%x", kev[0].flags);
+	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD), "%x",
+	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == 65023, "%d", (int)kev[0].data);
+	ATF_REQUIRE_MSG(kev[0].data == 65023 ||
+		kev[0].data == 7679 /* on NetBSD */,
+	    "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
-	ATF_REQUIRE(close(ep) == 0);
-	ep = epoll_create1(EPOLL_CLOEXEC);
+	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
+	struct epoll_event eps[32];
+
 	eps[0] = (struct epoll_event){
-	    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+	    .events = EPOLLIN | EPOLLRDHUP | EPOLLET,
 	};
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 
@@ -766,7 +900,51 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 0);
+	ATF_REQUIRE(close(kq) == 0);
 #endif
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[0]) == 0);
+	ATF_REQUIRE(close(p[1]) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(pipe__fifo_read_eof_wakeups);
+ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
+{
+	int p[2] = {-1, -1};
+
+	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
+
+	ATF_REQUIRE(
+	    (p[0] = open("the_fifo", O_RDONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
+	ATF_REQUIRE(
+	    (p[1] = open("the_fifo", O_WRONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
+
+	char c = 0;
+	ssize_t r;
+
+#if !defined(__linux__) && !defined(FORCE_EPOLL)
+	int kq = kqueue();
+	ATF_REQUIRE(kq >= 0);
+
+	struct kevent kev[32];
+
+	EV_SET(&kev[0], p[0], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
+	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
+
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0}) == 0);
+#endif
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+
+	eps[0] = (struct epoll_event){
+	    .events = EPOLLIN | EPOLLRDHUP | EPOLLET,
+	};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
 	ATF_REQUIRE(close(p[1]) == 0);
@@ -776,7 +954,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
-	ATF_REQUIRE(kev[0].flags == (EV_EOF | EV_CLEAR));
+	ATF_REQUIRE(kev[0].flags == (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD));
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -784,10 +962,10 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 	ATF_REQUIRE(eps[0].events == EPOLLHUP);
 
+	/* Reading from a closed pipe should not trigger EVFILT_READ edges, but
+	 * on vanilla FreeBSD it happens. */
 	ATF_REQUIRE(read(p[0], &c, 1) == 0);
 
-	/* Reading from a closed pipe should not trigger EVFILT_READ edges, but
-	 * on vanilla FreeBSD it happens */
 	bool has_spurious_pipe_eof_wakeups_on_read = false;
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
@@ -797,10 +975,71 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 	} else {
 		ATF_REQUIRE(r == 0);
 	}
+	ATF_REQUIRE(close(kq) == 0);
 #endif
-	if (!has_spurious_pipe_eof_wakeups_on_read) {
+	if (has_spurious_pipe_eof_wakeups_on_read) {
+		atf_tc_skip("FreeBSD generates spurious wakeups when reading "
+			    "from a closed pipe");
+	} else {
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 	}
+
+	ATF_REQUIRE(close(ep) == 0);
+
+	ATF_REQUIRE(close(p[0]) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(pipe__fifo_read_eof_state_when_reconnecting);
+ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
+{
+	int p[2] = {-1, -1};
+
+	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
+
+	ATF_REQUIRE(
+	    (p[0] = open("the_fifo", O_RDONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
+	ATF_REQUIRE(
+	    (p[1] = open("the_fifo", O_WRONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
+
+	char c = 0;
+
+#if !defined(__linux__) && !defined(FORCE_EPOLL)
+	int kq = kqueue();
+	ATF_REQUIRE(kq >= 0);
+
+	struct kevent kev[32];
+
+	EV_SET(&kev[0], p[0], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
+	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
+
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0}) == 0);
+#endif
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	struct epoll_event eps[32];
+
+	eps[0] = (struct epoll_event){
+	    .events = EPOLLIN | EPOLLRDHUP | EPOLLET,
+	};
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+
+	ATF_REQUIRE(close(p[1]) == 0);
+
+#if !defined(__linux__) && !defined(FORCE_EPOLL)
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec){0, 0}) == 1);
+	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
+	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
+	ATF_REQUIRE(kev[0].flags == (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD));
+	ATF_REQUIRE(kev[0].fflags == 0);
+	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
+	ATF_REQUIRE(kev[0].udata == 0);
+#endif
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+	ATF_REQUIRE(eps[0].events == EPOLLHUP);
 
 	ATF_REQUIRE(
 	    (p[1] = open("the_fifo", O_WRONLY | O_CLOEXEC | O_NONBLOCK)) >= 0);
@@ -823,7 +1062,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 	if (kev[0].flags == (EV_EOF | EV_CLEAR)) {
 		eof_gets_cleared_on_new_writers = false;
 	} else {
-		ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+		ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
 		ATF_REQUIRE(kev[0].fflags == 0);
 		ATF_REQUIRE_MSG(kev[0].data == 1, "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
@@ -835,6 +1074,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 		ATF_REQUIRE(eps[0].events == EPOLLIN);
 	} else {
 		ATF_REQUIRE(eps[0].events == (EPOLLIN | EPOLLHUP));
+		atf_tc_skip("FreeBSD's kevent does not clear EV_EOF when a "
+			    "new writer connects to a FIFO");
 	}
 	ATF_REQUIRE(close(ep) == 0);
 
@@ -1369,7 +1610,11 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp,
 	    pipe__poll_full_minus_512b_write_end_after_read_end_close);
 	ATF_TP_ADD_TC(tp, pipe__pipe_event_poll);
-	ATF_TP_ADD_TC(tp, pipe__fifo_event_poll);
+	ATF_TP_ADD_TC(tp, pipe__fifo_writes);
+	ATF_TP_ADD_TC(tp, pipe__fifo_connecting_reader);
+	ATF_TP_ADD_TC(tp, pipe__fifo_reads);
+	ATF_TP_ADD_TC(tp, pipe__fifo_read_eof_wakeups);
+	ATF_TP_ADD_TC(tp, pipe__fifo_read_eof_state_when_reconnecting);
 	ATF_TP_ADD_TC(tp, pipe__closed_read_end);
 	ATF_TP_ADD_TC(tp, pipe__closed_read_end_of_duplex);
 	ATF_TP_ADD_TC(tp, pipe__closed_read_end_register_before_close);
