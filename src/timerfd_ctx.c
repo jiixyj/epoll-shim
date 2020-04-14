@@ -226,6 +226,10 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 		return 0;
 	}
 
+	/* There are EVFILT_TIMER implementations that return EINVAL on a
+	 * timeout value of 0, for example NetBSD. */
+	bool handle_einval_on_zero_value = false;
+
 #ifdef NOTE_USECONDS
 	int64_t micros =
 	    (int64_t)diff_time.tv_sec * 1000000 + diff_time.tv_nsec / 1000;
@@ -233,6 +237,9 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 	if ((diff_time.tv_nsec % 1000) != 0) {
 		++micros;
 	}
+
+	/* If there is NOTE_USECONDS support we assume timeout values of 0 are
+	 * valid. For FreeBSD this is the case. */
 
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
 	    NOTE_USECONDS, micros, 0);
@@ -244,12 +251,23 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 		++millis;
 	}
 
+	if (millis == 0) {
+		handle_einval_on_zero_value = true;
+	}
+
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
 	    0, millis, 0);
 #endif
 
+retry:
 	if (kevent(timerfd->kq, kev, nitems(kev), /**/
 		NULL, 0, NULL) < 0) {
+		if (handle_einval_on_zero_value && errno == EINVAL) {
+			kev[0].data = 1;
+			handle_einval_on_zero_value = false;
+			goto retry;
+		}
+
 		return errno;
 	}
 
