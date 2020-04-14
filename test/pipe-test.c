@@ -713,7 +713,6 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 		 * end of a FIFO will not send notifications to writers. */
 	} else {
 		ATF_REQUIRE(r == 1);
-		ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 1);
 		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 		ATF_REQUIRE(kev[0].flags == EV_CLEAR);
@@ -795,7 +794,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_event_poll, tc)
 	if (r == 1) {
 		has_spurious_pipe_eof_wakeups_on_read = true;
 	} else {
-		ATF_REQUIRE(r == 1);
+		ATF_REQUIRE(r == 0);
 	}
 #endif
 	if (!has_spurious_pipe_eof_wakeups_on_read) {
