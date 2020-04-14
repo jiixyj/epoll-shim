@@ -343,6 +343,20 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_gettime, tc)
 	ATF_REQUIRE(curr_value.it_interval.tv_sec == 0);
 	ATF_REQUIRE(curr_value.it_interval.tv_nsec == 0);
 
+	struct itimerspec time = {
+	    .it_value.tv_sec = 0,
+	    .it_value.tv_nsec = 100000000,
+	    .it_interval.tv_sec = 0,
+	    .it_interval.tv_nsec = 100000000,
+	};
+
+	curr_value = time;
+	ATF_REQUIRE(timerfd_settime(fd, 0, &time, &curr_value) == 0);
+	ATF_REQUIRE(curr_value.it_value.tv_sec == 0);
+	ATF_REQUIRE(curr_value.it_value.tv_nsec == 0);
+	ATF_REQUIRE(curr_value.it_interval.tv_sec == 0);
+	ATF_REQUIRE(curr_value.it_interval.tv_nsec == 0);
+
 	ATF_REQUIRE(close(fd) == 0);
 }
 
@@ -410,6 +424,67 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_checks, tc)
 	ATF_REQUIRE_ERRNO(EINVAL, timerfd_settime(-2, 42, &time, NULL) < 0);
 	ATF_REQUIRE_ERRNO(EINVAL,
 	    timerfd_settime(timerfd, 42, &time, NULL) < 0);
+
+	{
+		time = (struct itimerspec){
+		    .it_value.tv_sec = -1,
+		    .it_value.tv_nsec = 100000000,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 100000000,
+		};
+		ATF_REQUIRE_ERRNO(EINVAL,
+		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
+	}
+	{
+		time = (struct itimerspec){
+		    .it_value.tv_sec = 0,
+		    .it_value.tv_nsec = -1,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 100000000,
+		};
+		ATF_REQUIRE_ERRNO(EINVAL,
+		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
+	}
+	{
+		time = (struct itimerspec){
+		    .it_value.tv_sec = 0,
+		    .it_value.tv_nsec = 100000000,
+		    .it_interval.tv_sec = -1,
+		    .it_interval.tv_nsec = 100000000,
+		};
+		ATF_REQUIRE_ERRNO(EINVAL,
+		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
+	}
+	{
+		time = (struct itimerspec){
+		    .it_value.tv_sec = 0,
+		    .it_value.tv_nsec = 100000000,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = -1,
+		};
+		ATF_REQUIRE_ERRNO(EINVAL,
+		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
+	}
+	{
+		time = (struct itimerspec){
+		    .it_value.tv_sec = 0,
+		    .it_value.tv_nsec = 1000000000,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 100000000,
+		};
+		ATF_REQUIRE_ERRNO(EINVAL,
+		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
+	}
+	{
+		time = (struct itimerspec){
+		    .it_value.tv_sec = 0,
+		    .it_value.tv_nsec = 100000000,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 1000000000,
+		};
+		ATF_REQUIRE_ERRNO(EINVAL,
+		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
+	}
 
 	ATF_REQUIRE_ERRNO(EINVAL,
 	    timerfd_create(CLOCK_MONOTONIC | 42, TFD_CLOEXEC));
