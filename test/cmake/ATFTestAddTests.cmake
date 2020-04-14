@@ -4,7 +4,7 @@
 
 set(script "")
 
-function(add_test_to_script _name _executable _test _vars)
+function(add_test_to_script _name _executable _test _vars _properties)
 
   # default timeout
   set(_timeout 300)
@@ -17,17 +17,24 @@ function(add_test_to_script _name _executable _test _vars)
     endif()
   endforeach()
 
+  string(REPLACE ";" " " _properties "${_properties}")
+
   set(_testscript
       "
-add_test(\"${_name}\" \"${CMAKE_COMMAND}\"
-          -D \"TEST_FOLDER_NAME=${_name}\"
-          -D \"TEST_EXECUTABLE=${_executable}\"
-          -D \"TEST_NAME=${_test}\"
-          -D \"BINARY_DIR=${BINARY_DIR}\"
-          -D \"TIMEOUT=${_timeout}\"
-          -P \"${TEST_RUN_SCRIPT}\")
-set_tests_properties(${_name} PROPERTIES TIMEOUT 0)
-set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION \"-- result: 0, skipped.*$\")
+add_test(
+  \"${_name}\"
+  \"${CMAKE_COMMAND}\"
+  -D \"TEST_FOLDER_NAME=${_name}\"
+  -D \"TEST_EXECUTABLE=${_executable}\"
+  -D \"TEST_NAME=${_test}\"
+  -D \"BINARY_DIR=${BINARY_DIR}\"
+  -D \"TIMEOUT=${_timeout}\"
+  -P \"${TEST_RUN_SCRIPT}\")
+set_tests_properties(
+  \"${_name}\"
+  PROPERTIES TIMEOUT 0
+             SKIP_REGULAR_EXPRESSION \"-- result: 0, skipped.*$\"
+             ${_properties})
 ")
 
   set(script
@@ -61,8 +68,9 @@ string(REPLACE "\n" ";" output "${output}")
 
 macro(handle_current_tc)
   if(NOT _current_tc STREQUAL "")
-    add_test_to_script("${TEST_TARGET}.${_current_tc}" "${TEST_EXECUTABLE}"
-                       "${_current_tc}" "${_current_tc_vars}")
+    add_test_to_script(
+      "${TEST_TARGET}.${_current_tc}" "${TEST_EXECUTABLE}" "${_current_tc}"
+      "${_current_tc_vars}" "${TEST_PROPERTIES}")
     set(_current_tc_vars "")
   endif()
 endmacro()

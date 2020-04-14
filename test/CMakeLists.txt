@@ -39,12 +39,12 @@ macro(atf_test _testname)
   add_executable("${_testname}" "${_testname}.c")
   target_link_libraries("${_testname}" PRIVATE epoll-shim::epoll-shim
                                                Threads::Threads atf::atf-c)
-  atf_discover_tests("${_testname}")
+  atf_discover_tests("${_testname}" ${ARGN})
 endmacro()
 
 #
 
-atf_test(epoll-test)
+atf_test(epoll-test PROPERTIES RUN_SERIAL TRUE)
 target_sources(epoll-test PRIVATE real_close.c)
 atf_test(timerfd-test)
 atf_test(signalfd-test)

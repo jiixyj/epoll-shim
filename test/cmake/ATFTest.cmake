@@ -5,17 +5,21 @@
 set(_ATF_SCRIPT_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
 function(atf_discover_tests _target)
+  cmake_parse_arguments("" "" "" "PROPERTIES" ${ARGN})
+
   set(ctest_file_base "${CMAKE_CURRENT_BINARY_DIR}/${_target}")
   set(ctest_include_file "${ctest_file_base}_include.cmake")
   set(ctest_tests_file "${ctest_file_base}_tests.cmake")
 
   add_custom_command(
-    TARGET ${_target} POST_BUILD
+    TARGET ${_target}
+    POST_BUILD
     BYPRODUCTS "${ctest_tests_file}"
     COMMAND
       "${CMAKE_COMMAND}" #
       -D "TEST_TARGET=${_target}" #
       -D "TEST_EXECUTABLE=$<TARGET_FILE:${_target}>" #
+      -D "TEST_PROPERTIES=${_PROPERTIES}" #
       -D "CTEST_FILE=${ctest_tests_file}" #
       -D "BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}" #
       -D "TEST_RUN_SCRIPT=${_ATF_SCRIPT_DIR}/ATFRunTest.cmake" #
