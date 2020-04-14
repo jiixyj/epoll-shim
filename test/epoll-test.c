@@ -962,6 +962,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_connecting_socket, tcptr)
 		}
 
 		usleep(100000);
+		ATF_REQUIRE(close(server_sock) == 0);
 
 		for (int i = 0; i < 3; ++i) {
 			ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
@@ -977,7 +978,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_connecting_socket, tcptr)
 		success = true;
 
 	next:
-		ATF_REQUIRE(close(server_sock) == 0);
+		if (!success) {
+			ATF_REQUIRE(close(server_sock) == 0);
+		}
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_DEL, sock, NULL) == 0);
 		ATF_REQUIRE(close(sock) == 0);
 
