@@ -221,34 +221,27 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 		diff_time.tv_nsec = 0;
 	}
 
-#ifdef NOTE_USECONDS
-	int64_t micros;
-
-	if (__builtin_mul_overflow(diff_time.tv_sec, 1000000, &micros) ||
-	    __builtin_add_overflow(micros, diff_time.tv_nsec / 1000,
-		&micros)) {
-		return EINVAL;
+	/* Let's hope nobody needs timeouts larger than 10 years. */
+	if (diff_time.tv_sec >= 315360000) {
+		return 0;
 	}
 
-	if ((diff_time.tv_nsec % 1000) != 0 &&
-	    __builtin_add_overflow(micros, 1, &micros)) {
-		return EINVAL;
+#ifdef NOTE_USECONDS
+	int64_t micros =
+	    (int64_t)diff_time.tv_sec * 1000000 + diff_time.tv_nsec / 1000;
+
+	if ((diff_time.tv_nsec % 1000) != 0) {
+		++micros;
 	}
 
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
 	    NOTE_USECONDS, micros, 0);
 #else
-	int64_t millis;
+	int64_t millis =
+	    (int64_t)diff_time.tv_sec * 1000 + diff_time.tv_nsec / 1000000;
 
-	if (__builtin_mul_overflow(diff_time.tv_sec, 1000, &millis) ||
-	    __builtin_add_overflow(millis, diff_time.tv_nsec / 1000000,
-		&millis)) {
-		return EINVAL;
-	}
-
-	if ((diff_time.tv_nsec % 1000000) != 0 &&
-	    __builtin_add_overflow(millis, 1, &millis)) {
-		return EINVAL;
+	if ((diff_time.tv_nsec % 1000000) != 0) {
+		++millis;
 	}
 
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
