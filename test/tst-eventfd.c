@@ -48,6 +48,7 @@ their own licenses. Please refer to the files documentation/LICENSE-*
 for the licenses and copyright statements of these projects.
 #endif
 
+#include <atf-c.h>
 
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -65,7 +66,7 @@ for the licenses and copyright statements of these projects.
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define TMP_FILE    "/tmp/f1"
+#define TMP_FILE    "f1"
 
 #define handle_perror(msg) \
    do { perror(msg); printf("\n"); exit(EXIT_FAILURE); } while (0)
@@ -562,12 +563,45 @@ int api_test(void)
     return (0);
 }
 
-int main(void)
+/* clang-format on */
+
+ATF_TC_WITHOUT_HEAD(eventfd_osv__simple_test);
+ATF_TC_BODY(eventfd_osv__simple_test, tc)
 {
-    simple_test();
-    semaphore_test();
-    threaded_test();
-    poll_test();
-    api_test();
-    return (0);
+	ATF_REQUIRE(simple_test() == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(eventfd_osv__semaphore_test);
+ATF_TC_BODY(eventfd_osv__semaphore_test, tc)
+{
+	ATF_REQUIRE(semaphore_test() == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(eventfd_osv__threaded_test);
+ATF_TC_BODY(eventfd_osv__threaded_test, tc)
+{
+	ATF_REQUIRE(threaded_test() == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(eventfd_osv__poll_test);
+ATF_TC_BODY(eventfd_osv__poll_test, tc)
+{
+	ATF_REQUIRE(poll_test() == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(eventfd_osv__api_test);
+ATF_TC_BODY(eventfd_osv__api_test, tc)
+{
+	ATF_REQUIRE(api_test() == 0);
+}
+
+ATF_TP_ADD_TCS(tp)
+{
+	ATF_TP_ADD_TC(tp, eventfd_osv__simple_test);
+	ATF_TP_ADD_TC(tp, eventfd_osv__semaphore_test);
+	ATF_TP_ADD_TC(tp, eventfd_osv__threaded_test);
+	ATF_TP_ADD_TC(tp, eventfd_osv__poll_test);
+	ATF_TP_ADD_TC(tp, eventfd_osv__api_test);
+
+	return atf_no_error();
 }

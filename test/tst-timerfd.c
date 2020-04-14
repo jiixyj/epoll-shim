@@ -55,9 +55,11 @@ for the licenses and copyright statements of these projects.
  */
 // To compile on Linux, use: g++ -g -pthread -std=c++11 tests/tst-timerfd.cc
 
+#include <atf-c.h>
+
 #include <errno.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <poll.h>
@@ -319,11 +321,22 @@ dotest(int clockid)
 	expect(tout.it_value.tv_nsec, (long)0);
 }
 
-int
-main(int argc, char **argv)
+ATF_TC_WITHOUT_HEAD(timerfd_osv__clock_realtime);
+ATF_TC_BODY(timerfd_osv__clock_realtime, tc)
 {
 	dotest(CLOCK_REALTIME);
-	dotest(CLOCK_MONOTONIC);
+}
 
-	return 0;
+ATF_TC_WITHOUT_HEAD(timerfd_osv__clock_monotonic);
+ATF_TC_BODY(timerfd_osv__clock_monotonic, tc)
+{
+	dotest(CLOCK_MONOTONIC);
+}
+
+ATF_TP_ADD_TCS(tp)
+{
+	ATF_TP_ADD_TC(tp, timerfd_osv__clock_realtime);
+	ATF_TP_ADD_TC(tp, timerfd_osv__clock_monotonic);
+
+	return atf_no_error();
 }
