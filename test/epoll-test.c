@@ -395,7 +395,11 @@ simple_epollin_impl(void (*fd_fun)(int fds[3]))
 	ATF_REQUIRE(close(ep) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__simple_epollin);
+ATF_TC(epoll__simple_epollin);
+ATF_TC_HEAD(epoll__simple_epollin, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(epoll__simple_epollin, tc)
 {
 	simple_epollin_impl(fd_pipe);
@@ -886,7 +890,11 @@ socket_shutdown_impl(bool specify_rdhup)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__socket_shutdown);
+ATF_TC(epoll__socket_shutdown);
+ATF_TC_HEAD(epoll__socket_shutdown, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(epoll__socket_shutdown, tcptr)
 {
 	socket_shutdown_impl(true);
@@ -925,7 +933,11 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollhup_on_fresh_socket, tcptr)
 	ATF_REQUIRE(close(sock) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__epollout_on_connecting_socket);
+ATF_TC(epoll__epollout_on_connecting_socket);
+ATF_TC_HEAD(epoll__epollout_on_connecting_socket, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_connecting_socket, tcptr)
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -1003,7 +1015,11 @@ epollpri_thread_fun(void *arg)
 	return NULL;
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__epollpri);
+ATF_TC(epoll__epollpri);
+ATF_TC_HEAD(epoll__epollpri, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri, tcptr)
 {
 	int fds[3];
@@ -1089,7 +1105,11 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri, tcptr)
 	ATF_REQUIRE(close(fds[2]) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__timeout_on_listening_socket);
+ATF_TC(epoll__timeout_on_listening_socket);
+ATF_TC_HEAD(epoll__timeout_on_listening_socket, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(epoll__timeout_on_listening_socket, tcptr)
 {
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -1286,7 +1306,11 @@ shutdown_behavior_impl(void (*fd_fun)(int fds[3]))
 	ATF_REQUIRE(close(ep) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__shutdown_behavior);
+ATF_TC(epoll__shutdown_behavior);
+ATF_TC_HEAD(epoll__shutdown_behavior, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(epoll__shutdown_behavior, tcptr)
 {
 	shutdown_behavior_impl(fd_tcp_socket);
@@ -1319,7 +1343,11 @@ datagram_connector(void *arg)
 	return NULL;
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__datagram_connection);
+ATF_TC(epoll__datagram_connection);
+ATF_TC_HEAD(epoll__datagram_connection, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(epoll__datagram_connection, tcptr)
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -1371,7 +1399,11 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__datagram_connection, tcptr)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__epollout_on_own_shutdown);
+ATF_TC(epoll__epollout_on_own_shutdown);
+ATF_TC_HEAD(epoll__epollout_on_own_shutdown, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_own_shutdown, tcptr)
 {
 	int ep = epoll_create1(EPOLL_CLOEXEC);

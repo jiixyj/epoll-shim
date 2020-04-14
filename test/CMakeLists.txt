@@ -44,7 +44,7 @@ endmacro()
 
 #
 
-atf_test(epoll-test PROPERTIES RUN_SERIAL TRUE)
+atf_test(epoll-test)
 target_sources(epoll-test PRIVATE real_close.c)
 atf_test(timerfd-test)
 atf_test(signalfd-test)

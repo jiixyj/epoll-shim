@@ -8,11 +8,15 @@ function(add_test_to_script _name _executable _test _vars _properties)
 
   # default timeout
   set(_timeout 300)
+  set(_atf_properties "")
 
   foreach(line IN LISTS _vars)
     if(line MATCHES "^(.*): (.*)$")
       if(CMAKE_MATCH_1 STREQUAL "timeout")
         set(_timeout "${CMAKE_MATCH_2}")
+      endif()
+      if(CMAKE_MATCH_1 STREQUAL "X-ctest.properties")
+        set(_atf_properties "${CMAKE_MATCH_2}")
       endif()
     endif()
   endforeach()
@@ -34,7 +38,9 @@ set_tests_properties(
   \"${_name}\"
   PROPERTIES TIMEOUT 0
              SKIP_REGULAR_EXPRESSION \"-- result: 0, skipped.*$\"
-             ${_properties})
+             ${_properties}
+             ${_atf_properties}
+)
 ")
 
   set(script
