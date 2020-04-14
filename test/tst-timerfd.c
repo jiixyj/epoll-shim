@@ -151,7 +151,7 @@ th2_func(void *arg)
 	return NULL;
 }
 
-void
+static void
 dotest(int clockid)
 {
 	int fd;
@@ -159,7 +159,7 @@ dotest(int clockid)
 	int junk;
 
 	// Before we set a timer, timerfd has no events for polling or reading
-	struct pollfd pfd = {fd, POLLIN};
+	struct pollfd pfd = {.fd = fd, .events = POLLIN};
 	expect(poll(&pfd, 1, 0), 0);
 	char buf[1024];
 	expect_errno(read(fd, buf, sizeof(buf)), EAGAIN);
@@ -208,7 +208,7 @@ dotest(int clockid)
 
 	// Check absolute time setting
 	// Set a timer to expire in 300ms from now (using absolute time)
-	struct itimerspec t4 = {};
+	struct itimerspec t4 = {{0, 0}, {0, 0}};
 	clock_gettime(clockid, &(t4.it_value));
 	t4.it_value.tv_nsec += MS_TO_NSEC(300);
 	if (t4.it_value.tv_nsec >= MS_TO_NSEC(1000)) {

@@ -58,8 +58,3 @@ target_link_libraries(malloc-fail-test PRIVATE ${CMAKE_DL_LIBS})
 atf_test(tst-epoll)
 atf_test(tst-eventfd)
 atf_test(tst-timerfd)
-
-if(ENABLE_COMPILER_WARNINGS)
-  target_compile_options(tst-eventfd PRIVATE "-w")
-  target_compile_options(tst-timerfd PRIVATE "-w")
-endif()

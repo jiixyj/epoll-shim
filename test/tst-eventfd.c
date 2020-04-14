@@ -74,7 +74,7 @@ for the licenses and copyright statements of these projects.
 #define handle_error(msg) \
    do { fprintf(stderr, "%s\n", msg); exit(EXIT_FAILURE); } while (0)
 
-int simple_test(void)
+static int simple_test(void)
 {
     int      efd;
     uint64_t c;
@@ -84,7 +84,7 @@ int simple_test(void)
     printf("eventfd: running basic test: ");
     fflush(stdout);
     c   = 5;
-    efd = eventfd(c, EFD_CLOEXEC | EFD_NONBLOCK);
+    efd = eventfd((unsigned int)c, EFD_CLOEXEC | EFD_NONBLOCK);
     if (efd == -1) {
         handle_perror("eventfd");
     }
@@ -129,7 +129,7 @@ int simple_test(void)
     return (0);
 }
 
-int semaphore_test(void)
+static int semaphore_test(void)
 {
     int      efd;
     uint64_t c;
@@ -140,7 +140,7 @@ int semaphore_test(void)
     printf("eventfd: Running semaphore_test: ");
     fflush(stdout);
     c   = 5;
-    efd = eventfd(c, EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE);
+    efd = eventfd((unsigned int)c, EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE);
     if (efd == -1) {
         handle_perror("eventfd");
     }
@@ -177,7 +177,7 @@ struct thread_data {
     int      efd;
 };
 
-void *thread_write(void *arg)
+static void *thread_write(void *arg)
 {
     struct thread_data *td = (struct thread_data *) arg;
     ssize_t s;
@@ -193,7 +193,7 @@ void *thread_write(void *arg)
     return (NULL);
 }
 
-int threaded_test(void)
+static int threaded_test(void)
 {
     uint64_t  count[] = {
         2,   3,   5,   7,  11,  13,  17,  19,  23,  29,
@@ -215,7 +215,7 @@ int threaded_test(void)
         947, 953, 967, 971, 977, 983, 991, 997, 1009,
     };
     const int LOOP = 1000;
-    const int THREADS = sizeof(count) / sizeof(count[0]);
+#define THREADS ((int)(sizeof(count) / sizeof(count[0])))
     int efd;
     pthread_t thread[THREADS];
     struct thread_data td[THREADS];
@@ -275,7 +275,7 @@ int threaded_test(void)
     return (0);
 }
 
-int poll_test(void)
+static int poll_test(void)
 {
     int efd;
     ssize_t s;
@@ -488,7 +488,7 @@ int poll_test(void)
     return (0);
 }
 
-int api_test(void)
+static int api_test(void)
 {
     int       efd;
     int       rc;
