@@ -88,8 +88,8 @@ connector_client(void *arg)
 	return (void *)(intptr_t)sock;
 }
 
-static void
-fd_tcp_socket(int fds[3])
+static int
+create_bound_socket()
 {
 	int sock = socket(PF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	ATF_REQUIRE(sock >= 0);
@@ -105,6 +105,14 @@ fd_tcp_socket(int fds[3])
 
 	ATF_REQUIRE(bind(sock, /**/
 			(struct sockaddr const *)&addr, sizeof(addr)) == 0);
+
+	return sock;
+}
+
+static void
+fd_tcp_socket(int fds[3])
+{
+	int sock = create_bound_socket();
 
 	ATF_REQUIRE(listen(sock, 5) == 0);
 
@@ -920,44 +928,65 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollhup_on_fresh_socket, tcptr)
 ATF_TC_WITHOUT_HEAD(epoll__epollout_on_connecting_socket);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_connecting_socket, tcptr)
 {
-	int sock = socket(PF_INET, /**/
-	    SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
-	ATF_REQUIRE(sock >= 0);
-
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
-	struct epoll_event event;
-	event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
-	event.data.fd = sock;
+	for (;;) {
+		bool success = false;
 
-	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == 0);
+		int sock = socket(PF_INET, /**/
+		    SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+		ATF_REQUIRE(sock >= 0);
 
-	{
-		struct sockaddr_in addr = {0};
-		addr.sin_family = AF_INET;
-		addr.sin_port = htons(1337);
-		ATF_REQUIRE(inet_pton(AF_INET, "0.0.0.0", /**/
-				&addr.sin_addr) == 1);
+		struct epoll_event event = {.events = EPOLLIN | EPOLLRDHUP |
+			EPOLLOUT};
+		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == 0);
 
-		ATF_REQUIRE_ERRNO(EINPROGRESS,
-		    connect(sock, (struct sockaddr const *)&addr,
-			sizeof(addr)) < 0);
-	}
+		int server_sock = create_bound_socket();
+		ATF_REQUIRE(server_sock >= 0);
 
-	for (int i = 0; i < 3; ++i) {
-		ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
+		{
+			struct sockaddr_in addr = {0};
+			addr.sin_family = AF_INET;
+			addr.sin_port = htons(1337);
+			ATF_REQUIRE(inet_pton(AF_INET, "127.0.0.1", /**/
+					&addr.sin_addr) == 1);
 
-		ATF_REQUIRE_MSG(event.events ==
-			(EPOLLIN | EPOLLRDHUP | EPOLLOUT | /**/
-			    EPOLLERR | EPOLLHUP),
-		    "%04x", event.events);
+			ATF_REQUIRE(connect(sock,
+					(struct sockaddr const *)&addr,
+					sizeof(addr)) < 0);
+			if (errno == ECONNREFUSED) {
+				goto next;
+			}
+			ATF_REQUIRE(errno == EINPROGRESS);
+		}
 
 		usleep(100000);
+
+		for (int i = 0; i < 3; ++i) {
+			ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
+
+			ATF_REQUIRE_MSG(event.events ==
+				(EPOLLIN | EPOLLRDHUP | EPOLLOUT | /**/
+				    EPOLLERR | EPOLLHUP),
+			    "%04x", event.events);
+
+			usleep(100000);
+		}
+
+		success = true;
+
+	next:
+		ATF_REQUIRE(close(server_sock) == 0);
+		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_DEL, sock, NULL) == 0);
+		ATF_REQUIRE(close(sock) == 0);
+
+		if (success) {
+			break;
+		}
 	}
 
 	ATF_REQUIRE(close(ep) == 0);
-	ATF_REQUIRE(close(sock) == 0);
 }
 
 static void *
