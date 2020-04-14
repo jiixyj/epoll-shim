@@ -33,19 +33,29 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-add_executable(epoll-test epoll-test.c real_close.c)
-target_link_libraries(epoll-test PRIVATE epoll-shim::epoll-shim
-                                         Threads::Threads atf::atf-c)
-atf_discover_tests(epoll-test)
+#
 
-add_executable(timerfd-test timerfd-test.c)
-target_link_libraries(timerfd-test PRIVATE epoll-shim::epoll-shim atf::atf-c)
-atf_discover_tests(timerfd-test)
+macro(atf_test _testname)
+  add_executable("${_testname}" "${_testname}.c")
+  target_link_libraries("${_testname}" PRIVATE epoll-shim::epoll-shim
+                                               Threads::Threads atf::atf-c)
+  atf_discover_tests("${_testname}")
+endmacro()
 
-add_executable(signalfd-test signalfd-test.c)
-target_link_libraries(signalfd-test PRIVATE epoll-shim::epoll-shim
-                                            Threads::Threads atf::atf-c)
-atf_discover_tests(signalfd-test)
+#
+
+atf_test(epoll-test)
+target_sources(epoll-test PRIVATE real_close.c)
+atf_test(timerfd-test)
+atf_test(signalfd-test)
+atf_test(perf-many-fds)
+atf_test(atf-test)
+atf_test(eventfd-ctx-test)
+atf_test(pipe-test)
+atf_test(socketpair-test)
+atf_test(tst-epoll)
+atf_test(malloc-fail-test)
+target_link_libraries(malloc-fail-test PRIVATE ${CMAKE_DL_LIBS})
 
 add_executable(tst-eventfd tst-eventfd.c)
 target_link_libraries(tst-eventfd PRIVATE epoll-shim::epoll-shim
@@ -62,37 +72,3 @@ add_test(NAME tst-timerfd COMMAND tst-timerfd)
 if(ENABLE_COMPILER_WARNINGS)
   target_compile_options(tst-timerfd PRIVATE "-w")
 endif()
-
-add_executable(perf-many-fds perf-many-fds.c)
-target_link_libraries(perf-many-fds PRIVATE epoll-shim::epoll-shim atf::atf-c)
-atf_discover_tests(perf-many-fds)
-
-add_executable(atf-test atf-test.c)
-target_link_libraries(atf-test PRIVATE epoll-shim::epoll-shim atf::atf-c)
-atf_discover_tests(atf-test)
-
-add_executable(eventfd-ctx-test eventfd-ctx-test.c)
-target_link_libraries(eventfd-ctx-test PRIVATE epoll-shim::epoll-shim
-                                               Threads::Threads atf::atf-c)
-atf_discover_tests(eventfd-ctx-test)
-
-add_executable(pipe-test pipe-test.c)
-target_link_libraries(pipe-test PRIVATE epoll-shim::epoll-shim Threads::Threads
-                                        atf::atf-c)
-atf_discover_tests(pipe-test)
-
-add_executable(socketpair-test socketpair-test.c)
-target_link_libraries(socketpair-test PRIVATE epoll-shim::epoll-shim
-                                              Threads::Threads atf::atf-c)
-atf_discover_tests(socketpair-test)
-
-add_executable(tst-epoll tst-epoll.c)
-target_link_libraries(tst-epoll PRIVATE epoll-shim::epoll-shim Threads::Threads
-                                        atf::atf-c)
-atf_discover_tests(tst-epoll)
-
-add_executable(malloc-fail-test malloc-fail-test.c)
-target_link_libraries(
-  malloc-fail-test PRIVATE epoll-shim::epoll-shim Threads::Threads atf::atf-c
-                           ${CMAKE_DL_LIBS})
-atf_discover_tests(malloc-fail-test)
