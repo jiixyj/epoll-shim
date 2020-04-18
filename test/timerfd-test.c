@@ -84,9 +84,6 @@ wait_for_timerfd(int timerfd)
 
 		uint64_t timeouts;
 		ssize_t r = read(timerfd, &timeouts, sizeof(timeouts));
-		if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-			continue;
-		}
 
 		ATF_REQUIRE(r == (ssize_t)sizeof(timeouts));
 		ATF_REQUIRE(timeouts > 0);

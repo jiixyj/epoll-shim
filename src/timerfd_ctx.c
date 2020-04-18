@@ -206,6 +206,44 @@ disarm:
 	timerfd_ctx_disarm(timerfd);
 }
 
+#if defined(__NetBSD__) &&                                                    \
+    (!defined(__NetBSD_Version__) || __NetBSD_Version__ <= 900000000)
+
+/* On NetBSD, EVFILT_TIMER sometimes returns early. */
+#define QUIRKY_EVFILT_TIMER
+
+static bool
+round_up_millis(int64_t millis, int64_t *result)
+{
+
+	long ticks = CLK_TCK;
+	if (ticks <= 0) {
+		return false;
+	}
+	uint32_t ms_per_tick = (uint32_t)(1000 / ticks + !!(1000 % ticks));
+
+	uint32_t ms = (uint32_t)millis;
+
+	/* We need to round up ms to a multiple of the ms per tick. */
+	uint32_t fixed_ms = ms / ms_per_tick * ms_per_tick;
+	if (fixed_ms < ms) {
+		fixed_ms += ms_per_tick;
+	}
+
+	/* Then add one tick so that we never sleep shorter than requested. */
+	fixed_ms += ms_per_tick;
+
+	/* Add one second for large timeout values (see mstohz in NetBSD for
+	 * the reason). */
+	if (fixed_ms >= 0x20000 && (fixed_ms % 1000) != 0) {
+		fixed_ms += 1000;
+	}
+
+	*result = fixed_ms;
+	return true;
+}
+#endif
+
 static errno_t
 timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
     struct timespec const *current_time)
@@ -244,12 +282,26 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
 	    NOTE_USECONDS, micros, 0);
 #else
+
+#ifdef QUIRKY_EVFILT_TIMER
+	/* Let's hope 49 days are enough. */
+	if (diff_time.tv_sec >= 4233600) {
+		return 0;
+	}
+#endif
+
 	int64_t millis =
 	    (int64_t)diff_time.tv_sec * 1000 + diff_time.tv_nsec / 1000000;
 
 	if ((diff_time.tv_nsec % 1000000) != 0) {
 		++millis;
 	}
+
+#ifdef QUIRKY_EVFILT_TIMER
+	if (!round_up_millis(millis, &millis)) {
+		return 0;
+	}
+#endif
 
 	if (millis == 0) {
 		handle_einval_on_zero_value = true;
