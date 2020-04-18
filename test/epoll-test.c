@@ -1040,18 +1040,15 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri, tcptr)
 	ATF_REQUIRE(send(fds[1], &c, 1, 0) == 1);
 
 	ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
-	if (event.events == EPOLLIN) {
-		atf_tc_skip("NetBSD does not support EVFILT_USER which is "
-			    "needed for EPOLLPRI emulation");
-	}
 	ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI));
 #ifdef __linux__
 	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
 #else
 	/* kqueue based emulation uses poll under the hood, which is level
 	 * triggered. */
-	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 1);
-	ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI));
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
+	ATF_REQUIRE_MSG(event.events == (EPOLLIN | EPOLLPRI), "%04x",
+	    event.events);
 #endif
 	ATF_REQUIRE(recv(fds[0], &c, 1, MSG_OOB) == 1);
 	ATF_REQUIRE(recv(fds[0], &c, 1, MSG_OOB) < 0);

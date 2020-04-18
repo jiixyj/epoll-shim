@@ -63,6 +63,7 @@ struct registered_fds_node_ {
 	bool is_oneshot;
 
 	bool is_on_pollfd_list;
+	int self_pipe[2];
 };
 
 typedef TAILQ_HEAD(pollfds_list_, registered_fds_node_) PollFDList;
@@ -87,6 +88,8 @@ typedef struct {
 	pthread_mutex_t nr_polling_threads_mutex;
 	pthread_cond_t nr_polling_threads_cond;
 	unsigned long nr_polling_threads;
+
+	int self_pipe[2];
 } EpollFDCtx;
 
 errno_t epollfd_ctx_init(EpollFDCtx *epollfd, int kq);

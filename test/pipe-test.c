@@ -1175,18 +1175,17 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
 		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]);
-#if defined(__NetBSD__) || defined(__OpenBSD__)
-		if (ret < 0 &&
-		    (errno == EBADF /* NetBSD */ ||
-			errno == EPIPE /* OpenBSD */)) {
-			atf_tc_skip(
-			    "NetBSD/OpenBSD do not support EVFILT_USER");
-		}
-#endif
 		ATF_REQUIRE(ret == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
-		ATF_REQUIRE(eps[0].events == (EPOLLOUT | EPOLLERR));
+#if defined(__OpenBSD__)
+		if (eps[0].events == EPOLLHUP) {
+			atf_tc_skip("OpenBSD has duplex pipes but no way to "
+				    "tell p[0] and p[1] apart");
+		}
+#endif
+		ATF_REQUIRE_MSG(eps[0].events == (EPOLLOUT | EPOLLERR), "%04x",
+		    eps[0].events);
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
 		ATF_REQUIRE(close(ep) == 0);
@@ -1275,11 +1274,6 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_of_duplex, tc)
 		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
 		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]);
-#ifdef __OpenBSD__
-		if (ret < 0 && errno == EPIPE) {
-			atf_tc_skip("OpenBSD does not support EVFILT_USER");
-		}
-#endif
 		ATF_REQUIRE(ret == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1507,11 +1501,6 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
 		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]);
-#ifdef __OpenBSD__
-		if (ret < 0 && errno == EPIPE) {
-			atf_tc_skip("OpenBSD does not support EVFILT_USER");
-		}
-#endif
 		ATF_REQUIRE(ret == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1529,7 +1518,15 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
-		ATF_REQUIRE(eps[0].events == EPOLLHUP);
+#if defined(__OpenBSD__)
+		if (eps[0].events == (EPOLLOUT | EPOLLERR)) {
+			atf_tc_skip(
+			    "OpenBSD has duplex pipes but no way to tell p[0] "
+			    "and p[1] apart");
+		}
+#endif
+		ATF_REQUIRE_MSG(eps[0].events == EPOLLHUP, "%04x",
+		    eps[0].events);
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
 		ATF_REQUIRE(close(ep) == 0);

@@ -18,11 +18,6 @@
 #include <poll.h>
 #include <unistd.h>
 
-#ifdef EVFILT_USER
-#define SUPPORT_POLL_ONLY_FDS
-#define SUPPORT_EPIPE_FIFOS
-#endif
-
 static RegisteredFDsNode *
 registered_fds_node_create(int fd)
 {
@@ -33,7 +28,7 @@ registered_fds_node_create(int fd)
 		return NULL;
 	}
 
-	*node = (RegisteredFDsNode){.fd = fd};
+	*node = (RegisteredFDsNode){.fd = fd, .self_pipe = {-1, -1}};
 
 	return node;
 }
@@ -41,6 +36,11 @@ registered_fds_node_create(int fd)
 static void
 registered_fds_node_destroy(RegisteredFDsNode *node)
 {
+	if (node->self_pipe[0] >= 0 && node->self_pipe[1] >= 0) {
+		(void)close(node->self_pipe[0]);
+		(void)close(node->self_pipe[1]);
+	}
+
 	free(node);
 }
 
@@ -198,16 +198,72 @@ registered_fds_node_update_flags_from_epoll_event(RegisteredFDsNode *fd2_node,
 	}
 }
 
+static errno_t
+registered_fds_node_add_self_trigger(RegisteredFDsNode *fd2_node,
+    EpollFDCtx *epollfd)
+{
+	struct kevent kevs[1];
+
+#ifdef EVFILT_USER
+	EV_SET(&kevs[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
+	    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
+#else
+	if (fd2_node->self_pipe[0] < 0 && fd2_node->self_pipe[1] < 0) {
+		if (pipe2(fd2_node->self_pipe, O_NONBLOCK | O_CLOEXEC) < 0) {
+			errno_t ec = errno;
+			fd2_node->self_pipe[0] = fd2_node->self_pipe[1] = -1;
+			return ec;
+		}
+
+		assert(fd2_node->self_pipe[0] >= 0);
+		assert(fd2_node->self_pipe[1] >= 0);
+	}
+
+	EV_SET(&kevs[0], fd2_node->self_pipe[0], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
+#endif
+
+	if (kevent(epollfd->kq, kevs, 1, NULL, 0, NULL) < 0) {
+		return errno;
+	}
+
+	return 0;
+}
+
+static void
+registered_fds_node_trigger_self(RegisteredFDsNode *fd2_node,
+    EpollFDCtx *epollfd)
+{
+#ifdef EVFILT_USER
+	struct kevent kevs[1];
+	EV_SET(&kevs[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
+	    0, NOTE_TRIGGER, 0, fd2_node);
+	(void)kevent(epollfd->kq, kevs, 1, NULL, 0, NULL);
+#else
+	(void)epollfd;
+	assert(fd2_node->self_pipe[1] >= 0);
+
+	char c = 0;
+	(void)write(fd2_node->self_pipe[1], &c, 1);
+#endif
+}
+
 static void
 registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
     EpollFDCtx *epollfd, struct kevent const *kev)
 {
 	int revents = 0;
 
-#ifdef SUPPORT_POLL_ONLY_FDS
-	if (kev->filter == EVFILT_USER &&
-	    fd2_node->node_type == NODE_TYPE_POLL) {
+	if (fd2_node->node_type == NODE_TYPE_POLL) {
 		assert(fd2_node->revents == 0);
+
+#ifdef EVFILT_USER
+		assert(kev->filter == EVFILT_USER);
+#else
+		char c[32];
+		while (read(fd2_node->self_pipe[0], c, sizeof(c)) >= 0) {
+		}
+#endif
 
 		struct pollfd pfd = {
 		    .fd = fd2_node->fd,
@@ -221,11 +277,15 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 		    ~(uint32_t)(POLLIN | POLLOUT | POLLERR | POLLHUP)));
 		return;
 	}
-#endif
 
-#ifdef SUPPORT_EPIPE_FIFOS
-	if (kev->filter == EVFILT_USER &&
-	    fd2_node->node_type == NODE_TYPE_FIFO) {
+	if (fd2_node->node_type == NODE_TYPE_FIFO &&
+#ifdef EVFILT_USER
+	    kev->filter == EVFILT_USER
+#else
+	    (fd2_node->self_pipe[0] >= 0 &&
+		kev->ident == (uintptr_t)fd2_node->self_pipe[0])
+#endif
+	) {
 		assert(fd2_node->revents == 0);
 
 		assert(!fd2_node->has_evfilt_read);
@@ -246,11 +306,8 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 			revents = EPOLLERR | EPOLLOUT;
 
 			if (!fd2_node->is_edge_triggered) {
-				EV_SET(&nkev[0], (uintptr_t)fd2_node,
-				    EVFILT_USER, //
-				    0, NOTE_TRIGGER, 0, fd2_node);
-				(void)kevent(epollfd->kq, nkev, 1, NULL, 0,
-				    NULL);
+				registered_fds_node_trigger_self(fd2_node,
+				    epollfd);
 			}
 
 			goto out;
@@ -259,12 +316,22 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 			return;
 		}
 	}
-#endif
 
+	if (fd2_node->node_type == NODE_TYPE_SOCKET &&
 #ifdef EVFILT_USER
-	if (kev->filter == EVFILT_USER &&
-	    fd2_node->node_type == NODE_TYPE_SOCKET) {
+	    kev->filter == EVFILT_USER
+#else
+	    (fd2_node->self_pipe[0] >= 0 &&
+		kev->ident == (uintptr_t)fd2_node->self_pipe[0])
+#endif
+	) {
 		assert(fd2_node->events & EPOLLPRI);
+
+#ifndef EVFILT_USER
+		char c[32];
+		while (read(fd2_node->self_pipe[0], c, sizeof(c)) >= 0) {
+		}
+#endif
 
 		struct pollfd pfd = {
 		    .fd = fd2_node->fd,
@@ -279,7 +346,6 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 
 		goto out;
 	}
-#endif
 
 	assert(kev->filter == EVFILT_READ || kev->filter == EVFILT_WRITE);
 	assert((int)kev->ident == fd2_node->fd);
@@ -403,7 +469,7 @@ out:
 	fd2_node->revents |= (uint32_t)revents;
 	fd2_node->revents &= (fd2_node->events | EPOLLHUP | EPOLLERR);
 
-	if (fd2_node->revents) {
+	if (fd2_node->revents && (uintptr_t)fd2_node->fd == kev->ident) {
 		if (kev->filter == EVFILT_READ) {
 			fd2_node->got_evfilt_read = true;
 		} else if (kev->filter == EVFILT_WRITE) {
@@ -429,17 +495,20 @@ registered_fds_node_register_for_completion(int *kq,
 		EV_SET(&kev[n++], fd2_node->fd, EVFILT_WRITE,
 		    EV_ADD | EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
 	}
-#ifdef EVFILT_USER
 	if (fd2_node->has_epollpri && !fd2_node->got_epollpri) {
 		struct kevent epollpri_event;
 
-		EV_SET(&epollpri_event, fd2_node->fd, EVFILT_USER, 0, 0, 0,
-		    fd2_node);
+#ifdef EVFILT_USER
+		EV_SET(&epollpri_event, fd2_node->fd, /**/
+		    EVFILT_USER, 0, 0, 0, fd2_node);
+#else
+		EV_SET(&epollpri_event, fd2_node->self_pipe[0], /**/
+		    EVFILT_READ, 0, 0, 0, fd2_node);
+#endif
 
 		registered_fds_node_feed_event(fd2_node, NULL,
 		    &epollpri_event);
 	}
-#endif
 
 	if (n == 0) {
 		return;
@@ -494,6 +563,7 @@ epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
 	*epollfd = (EpollFDCtx){
 	    .kq = kq,
 	    .registered_fds = RB_INITIALIZER(&registered_fds),
+	    .self_pipe = {-1, -1},
 	};
 
 	TAILQ_INIT(&epollfd->poll_fds);
@@ -514,12 +584,6 @@ epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
 		pthread_mutex_destroy(&epollfd->mutex);
 		return ec;
 	}
-
-#ifdef SUPPORT_POLL_ONLY_FDS
-	struct kevent kev[1];
-	EV_SET(&kev[0], 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
-	(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
-#endif
 
 	return 0;
 }
@@ -548,6 +612,10 @@ epollfd_ctx_terminate(EpollFDCtx *epollfd)
 
 	free(epollfd->kevs);
 	free(epollfd->pfds);
+	if (epollfd->self_pipe[0] >= 0 && epollfd->self_pipe[1] >= 0) {
+		(void)close(epollfd->self_pipe[0]);
+		(void)close(epollfd->self_pipe[1]);
+	}
 
 	return ec;
 }
@@ -602,7 +670,52 @@ epollfd_ctx_make_pfds_space(EpollFDCtx *epollfd)
 	return 0;
 }
 
+static errno_t
+epollfd_ctx__add_self_trigger(EpollFDCtx *epollfd)
+{
+	struct kevent kevs[1];
+
 #ifdef EVFILT_USER
+	EV_SET(&kevs[0], 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
+#else
+	if (epollfd->self_pipe[0] < 0 && epollfd->self_pipe[1] < 0) {
+		if (pipe2(epollfd->self_pipe, O_NONBLOCK | O_CLOEXEC) < 0) {
+			errno_t ec = errno;
+			epollfd->self_pipe[0] = epollfd->self_pipe[1] = -1;
+			return ec;
+		}
+
+		assert(epollfd->self_pipe[0] >= 0);
+		assert(epollfd->self_pipe[1] >= 0);
+	}
+
+	EV_SET(&kevs[0], epollfd->self_pipe[0], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR, 0, 0, 0);
+#endif
+
+	if (kevent(epollfd->kq, kevs, 1, NULL, 0, NULL) < 0) {
+		return errno;
+	}
+
+	return 0;
+}
+
+static void
+epollfd_ctx__trigger_self(EpollFDCtx *epollfd)
+{
+#ifdef EVFILT_USER
+	struct kevent kevs[1];
+	EV_SET(&kevs[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
+	(void)kevent(epollfd->kq, kevs, 1, NULL, 0, NULL);
+#else
+	assert(epollfd->self_pipe[0] >= 0);
+	assert(epollfd->self_pipe[1] >= 0);
+
+	char c = 0;
+	(void)write(epollfd->self_pipe[1], &c, 1);
+#endif
+}
+
 static void
 epollfd_ctx__trigger_repoll(EpollFDCtx *epollfd)
 {
@@ -614,9 +727,7 @@ epollfd_ctx__trigger_repoll(EpollFDCtx *epollfd)
 		return;
 	}
 
-	struct kevent kev[1];
-	EV_SET(&kev[0], 0, EVFILT_USER, EV_ENABLE, NOTE_TRIGGER, 0, 0);
-	(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
+	epollfd_ctx__trigger_self(epollfd);
 
 	(void)pthread_mutex_lock(&epollfd->nr_polling_threads_mutex);
 	while (epollfd->nr_polling_threads != 0) {
@@ -624,14 +735,18 @@ epollfd_ctx__trigger_repoll(EpollFDCtx *epollfd)
 		    &epollfd->nr_polling_threads_mutex);
 	}
 	(void)pthread_mutex_unlock(&epollfd->nr_polling_threads_mutex);
-}
+
+#ifndef EVFILT_USER
+	char c[32];
+	while (read(epollfd->self_pipe[0], c, sizeof(c)) >= 0) {
+	}
 #endif
+}
 
 static void
 epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
     RegisteredFDsNode *fd2_node)
 {
-#ifdef EVFILT_USER
 	if (fd2_node->is_on_pollfd_list) {
 		TAILQ_REMOVE(&epollfd->poll_fds, fd2_node, pollfd_list_entry);
 		fd2_node->is_on_pollfd_list = false;
@@ -641,27 +756,37 @@ epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
 		epollfd_ctx__trigger_repoll(epollfd);
 	}
 
-	if (fd2_node->node_type == NODE_TYPE_POLL) {
-		struct kevent kev[1];
+	if (fd2_node->self_pipe[0] >= 0) {
+		struct kevent kevs[1];
+		EV_SET(&kevs[0], fd2_node->self_pipe[0], EVFILT_READ, /**/
+		    EV_DELETE, 0, 0, 0);
+		(void)kevent(epollfd->kq, kevs, 1, NULL, 0, NULL);
 
-		EV_SET(&kev[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
-		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
-	} else
+		char c[32];
+		while (read(fd2_node->self_pipe[0], c, sizeof(c)) >= 0) {
+		}
+	}
+
+	if (fd2_node->node_type == NODE_TYPE_POLL) {
+#ifdef EVFILT_USER
+		struct kevent kevs[1];
+		EV_SET(&kevs[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
+		    EV_DELETE, 0, 0, 0);
+		(void)kevent(epollfd->kq, kevs, 1, NULL, 0, NULL);
 #endif
-	{
-		struct kevent kev[3];
+	} else {
+		struct kevent kevs[3];
 		int fd2 = fd2_node->fd;
 
-		EV_SET(&kev[0], fd2, EVFILT_READ, /**/
+		EV_SET(&kevs[0], fd2, EVFILT_READ, /**/
 		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-		EV_SET(&kev[1], fd2, EVFILT_WRITE, /**/
+		EV_SET(&kevs[1], fd2, EVFILT_WRITE, /**/
 		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
 #ifdef EVFILT_USER
-		EV_SET(&kev[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
+		EV_SET(&kevs[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
 		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
 #endif
-		(void)kevent(epollfd->kq, kev, 3, kev, 3, NULL);
+		(void)kevent(epollfd->kq, kevs, 3, kevs, 3, NULL);
 
 		fd2_node->has_evfilt_read = false;
 		fd2_node->has_evfilt_write = false;
@@ -723,13 +848,20 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 		assert(n != 0);
 
-#ifdef EVFILT_USER
 		if (fd2_node->events & EPOLLPRI) {
 			fd2_node->has_epollpri = true;
-			EV_SET(&kev[n++], (uintptr_t)fd2_node, EVFILT_USER,
-			    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
+
+			if ((ec = registered_fds_node_add_self_trigger(
+				 fd2_node, epollfd)) != 0) {
+				goto out;
+			}
 
 			if (!fd2_node->is_on_pollfd_list) {
+				if ((ec = epollfd_ctx__add_self_trigger(
+					 epollfd)) != 0) {
+					goto out;
+				}
+
 				TAILQ_INSERT_TAIL(&epollfd->poll_fds, fd2_node,
 				    pollfd_list_entry);
 				fd2_node->is_on_pollfd_list = true;
@@ -738,7 +870,6 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 				epollfd_ctx__trigger_repoll(epollfd);
 			}
 		}
-#endif
 
 		for (int i = 0; i < n; ++i) {
 			kev[i].flags |= EV_RECEIPT;
@@ -757,7 +888,6 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 		}
 	}
 
-#ifdef SUPPORT_POLL_ONLY_FDS
 	/* Check for fds that only support poll. */
 	if (((fd2_node->node_type == NODE_TYPE_OTHER &&
 		 kev[0].data == ENODEV) ||
@@ -772,53 +902,59 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 		fd2_node->has_evfilt_write = false;
 		fd2_node->has_epollpri = false;
 
-		EV_SET(&kev[0], (uintptr_t)fd2_node, EVFILT_USER,
-		    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
-		(void)kevent(epollfd->kq, kev, 1, NULL, 0, NULL);
-
 		fd2_node->node_type = NODE_TYPE_POLL;
 
+		if ((ec = registered_fds_node_add_self_trigger(fd2_node,
+			 epollfd)) != 0) {
+			goto out;
+		}
+
 		if (!fd2_node->is_on_pollfd_list) {
+			if ((ec = /**/
+				epollfd_ctx__add_self_trigger(epollfd)) != 0) {
+				goto out;
+			}
+
 			TAILQ_INSERT_TAIL(&epollfd->poll_fds, fd2_node,
 			    pollfd_list_entry);
 			fd2_node->is_on_pollfd_list = true;
 			++epollfd->poll_fds_size;
 		}
 
+		/* This is outside the above if because poll ".events" might
+		 * have changed which needs a retriggering. */
 		epollfd_ctx__trigger_repoll(epollfd);
 
 		goto out;
 	}
-#endif
 
 	for (int i = 0; i < 4; ++i) {
 		if (kev[i].data != 0) {
-#ifdef SUPPORT_EPIPE_FIFOS
-			if (kev[i].data == EPIPE && i == evfilt_write_index &&
+			if ((kev[i].data == EPIPE
+#ifdef __NetBSD__
+				|| kev[i].data == EBADF
+#endif
+				) &&
+			    i == evfilt_write_index &&
 			    fd2_node->node_type == NODE_TYPE_FIFO) {
+
 				fd2_node->eof_state =
 				    EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF;
 				fd2_node->has_evfilt_write = false;
 
 				if (evfilt_read_index < 0) {
-					struct kevent nkev[2];
-					EV_SET(&nkev[0], (uintptr_t)fd2_node,
-					    EVFILT_USER, EV_ADD | EV_CLEAR, 0,
-					    0, fd2_node);
-					EV_SET(&nkev[1], (uintptr_t)fd2_node,
-					    EVFILT_USER, 0, NOTE_TRIGGER, 0,
-					    fd2_node);
-					(void)kevent(epollfd->kq, nkev, 2,
-					    NULL, 0, NULL);
+					if ((ec = registered_fds_node_add_self_trigger(
+						 fd2_node, epollfd)) != 0) {
+						goto out;
+					}
+
+					registered_fds_node_trigger_self(
+					    fd2_node, epollfd);
 				}
 			} else {
 				ec = (int)kev[i].data;
 				goto out;
 			}
-#else
-			ec = (int)kev[i].data;
-			goto out;
-#endif
 		}
 	}
 
@@ -1072,7 +1208,6 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		return 0;
 	}
 
-#ifdef SUPPORT_POLL_ONLY_FDS
 	{
 		RegisteredFDsNode *poll_node, *tmp_poll_node;
 		size_t i = 1;
@@ -1084,24 +1219,20 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 			if (pfd->revents & POLLNVAL) {
 				epollfd_ctx_remove_node(epollfd, poll_node);
 			} else if (pfd->revents) {
-				struct kevent kevs[1];
-				EV_SET(&kevs[0], (uintptr_t)poll_node,
-				    EVFILT_USER, 0, NOTE_TRIGGER, 0,
-				    poll_node);
-				(void)kevent(epollfd->kq, kevs, 1, NULL, 0,
-				    NULL);
+				registered_fds_node_trigger_self(poll_node,
+				    epollfd);
 			}
 		}
 	}
-#endif
 
 again:;
 
 	/*
-	 * Each registered fd can produce a maximum of 3 kevents. If the
-	 * provided space in 'ev' is large enough to hold results for all
-	 * registered fds, provide enough space for the kevent call as well.
-	 * Add some wiggle room for the 'poll only fd' notification mechanism.
+	 * Each registered fd can produce a maximum of 3 kevents. If
+	 * the provided space in 'ev' is large enough to hold results
+	 * for all registered fds, provide enough space for the kevent
+	 * call as well. Add some wiggle room for the 'poll only fd'
+	 * notification mechanism.
 	 */
 	if ((size_t)cnt >= epollfd->registered_fds_size) {
 		if (__builtin_add_overflow(cnt, 1, &cnt)) {
@@ -1131,13 +1262,15 @@ again:;
 		RegisteredFDsNode *fd2_node =
 		    (RegisteredFDsNode *)kevs[i].udata;
 
-#ifdef SUPPORT_POLL_ONLY_FDS
 		if (!fd2_node) {
+#ifdef EVFILT_USER
 			assert(kevs[i].filter == EVFILT_USER);
-			assert(kevs[i].udata == NULL);
+#else
+			assert(kevs[i].filter == EVFILT_READ);
+#endif
+			assert(kevs[i].udata == 0);
 			continue;
 		}
-#endif
 
 		uint32_t old_revents = fd2_node->revents;
 		NeededFilters old_needed_filters =
