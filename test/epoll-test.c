@@ -698,14 +698,13 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__no_epollin_on_closed_empty_pipe, tcptr)
 ATF_TC_WITHOUT_HEAD(epoll__write_to_pipe_until_full);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__write_to_pipe_until_full, tcptr)
 {
-#ifdef __NetBSD__
-	atf_tc_skip("test assumes a pipe buffer size of 65536");
-#endif
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
 	int fds[3];
 	fd_pipe(fds);
+
+	ATF_REQUIRE(fcntl(fds[1], F_SETFL, O_NONBLOCK) == 0);
 
 	struct epoll_event event;
 	event.events = EPOLLOUT;
@@ -720,10 +719,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__write_to_pipe_until_full, tcptr)
 	ATF_REQUIRE(event_result.events == EPOLLOUT);
 
 	uint8_t data[512] = {0};
-
-	for (int i = 0; i < 128; ++i) {
-		write(fds[1], &data, sizeof(data));
+	while (write(fds[1], &data, sizeof(data)) >= 0) {
 	}
+	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
 
 	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, 300) == 0);
 

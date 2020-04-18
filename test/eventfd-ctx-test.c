@@ -16,7 +16,9 @@
 
 #include "atf-c-leakcheck.h"
 
+#ifndef nitems
 #define nitems(x) (sizeof((x)) / sizeof((x)[0]))
+#endif
 
 ATF_TC_WITHOUT_HEAD(eventfd__init_terminate);
 ATF_TC_BODY_FD_LEAKCHECK(eventfd__init_terminate, tc)

@@ -14,7 +14,7 @@
 #define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 #endif
 
-static_assert(sizeof(unsigned int) < sizeof(uint64_t), "");
+_Static_assert(sizeof(unsigned int) < sizeof(uint64_t), "");
 
 errno_t
 eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)

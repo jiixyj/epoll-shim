@@ -1,14 +1,13 @@
 #ifndef TIMERFD_CTX_H_
 #define TIMERFD_CTX_H_
 
-#include <sys/timespec.h>
-
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 #include <pthread.h>
+#include <time.h>
 
 typedef struct {
 	int kq; // non owning

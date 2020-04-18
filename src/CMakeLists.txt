@@ -11,7 +11,7 @@ add_library(epoll-shim
             signalfd_ctx.c
             eventfd.c
             eventfd_ctx.c)
-target_link_libraries(epoll-shim PRIVATE Threads::Threads rt)
+target_link_libraries(epoll-shim PRIVATE Threads::Threads)
 target_include_directories(
   epoll-shim
   PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)

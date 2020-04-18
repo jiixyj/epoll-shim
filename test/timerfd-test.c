@@ -6,7 +6,6 @@
 
 #ifndef __linux__
 #include <sys/event.h>
-#include <sys/timespec.h>
 #endif
 
 #include <sys/param.h>
@@ -22,6 +21,7 @@
 
 #include <err.h>
 #include <poll.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <sys/timerfd.h>
@@ -64,7 +64,7 @@
 ATF_TC_WITHOUT_HEAD(timerfd__many_timers);
 ATF_TC_BODY(timerfd__many_timers, tc)
 {
-	int timer_fds[512];
+	int timer_fds[256];
 	int i;
 
 	for (i = 0; i < (int)nitems(timer_fds); ++i) {
@@ -180,7 +180,8 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__complex_periodic_timer, tc)
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
 	ATF_REQUIRE_MSG(e.tv_sec == 0 && e.tv_nsec >= 100000000 &&
-	    e.tv_nsec < 100000000 + TIMER_SLACK, "%ld", (long)e.tv_nsec);
+		e.tv_nsec < 100000000 + TIMER_SLACK,
+	    "%ld", (long)e.tv_nsec);
 
 	ATF_REQUIRE(timeouts == 1);
 

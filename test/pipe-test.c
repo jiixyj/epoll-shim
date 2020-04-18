@@ -225,7 +225,13 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close_hup,
 		atf_tc_skip("NetBSD hangs here");
 	}
 	ATF_REQUIRE(ret == 1);
-	ATF_REQUIRE(eps[0].events == POLLERR);
+#if defined(__OpenBSD__)
+	if (eps[0].events == POLLHUP) {
+		atf_tc_skip("OpenBSD has duplex pipes but no way to tell p[0] "
+			    "and p[1] apart");
+	}
+#endif
+	ATF_REQUIRE_MSG(eps[0].events == POLLERR, "%04x", eps[0].events);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 	ATF_REQUIRE(close(ep) == 0);
 
@@ -398,24 +404,24 @@ ATF_TC_BODY_FD_LEAKCHECK(
 static void
 print_statbuf(struct stat *sb)
 {
-	printf("st_dev: %lu\n", sb->st_dev);
-	printf("st_ino: %lu\n", sb->st_ino);
-	printf("st_nlink: %lu\n", sb->st_nlink);
-	printf("st_mode: %ho\n", sb->st_mode);
+	printf("st_dev: %lu\n", (unsigned long)sb->st_dev);
+	printf("st_ino: %llu\n", (unsigned long long)sb->st_ino);
+	printf("st_nlink: %lu\n", (unsigned long)sb->st_nlink);
+	printf("st_mode: %o\n", (int)sb->st_mode);
 	printf("st_uid: %u\n", sb->st_uid);
 	printf("st_gid: %u\n", sb->st_gid);
-	printf("st_rdev: %lu\n", sb->st_rdev);
-	printf("st_size: %lu\n", sb->st_size);
-	printf("st_blocks: %lu\n", sb->st_blocks);
+	printf("st_rdev: %lu\n", (unsigned long)sb->st_rdev);
+	printf("st_size: %llu\n", (unsigned long long)sb->st_size);
+	printf("st_blocks: %llu\n", (unsigned long long)sb->st_blocks);
 	printf("st_blksize: %d\n", sb->st_blksize);
 #if !defined(__linux__)
 	printf("st_flags: %x\n", sb->st_flags);
-	printf("st_gen: %lu\n", sb->st_gen);
+	printf("st_gen: %lu\n", (unsigned long)sb->st_gen);
 #endif
 }
 
 static int const SPURIOUS_EV_ADD = 0
-#ifdef __NetBSD__
+#if defined(__NetBSD__) || defined(__OpenBSD__)
     | EV_ADD
 #endif
     ;
@@ -600,9 +606,12 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 		atf_tc_skip("NetBSD's EVFILT_WRITE broken on FIFOs");
 	}
 
-	ATF_REQUIRE_MSG(kev[0].flags == EV_CLEAR, "%x", kev[0].flags);
+	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD), "%x",
+	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[0].data);
+	ATF_REQUIRE_MSG(kev[0].data == 16384 ||
+		kev[0].data == 4096 /* On OpenBSD */,
+	    "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
 	int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -625,8 +634,17 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
+#ifdef __OpenBSD__
+	/*
+	 * TODO(jan): Check again when OpenBSD 6.7 is released:
+	 * https://github.com/openbsd/src/commit/c35e1d2184cb8ce6b98d01412fcb8fccbf4727ea
+	 */
+	if (r == 1 && kev[0].filter == EVFILT_READ) {
+		atf_tc_skip("OpenBSD's (<= 6.6) EVFILT_WRITE broken on FIFOs");
+	}
+#endif
+	ATF_REQUIRE(r == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
@@ -789,6 +807,17 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 1);
+#ifdef __OpenBSD__
+	/*
+	 * TODO(jan): Check again when OpenBSD 6.7 is released:
+	 * https://github.com/openbsd/src/commit/c35e1d2184cb8ce6b98d01412fcb8fccbf4727ea
+	 */
+	if (kev[0].filter == EVFILT_READ) {
+		atf_tc_skip("OpenBSD's (<= 6.6) EVFILT_WRITE broken on FIFOs");
+	}
+#endif
+	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
+	ATF_REQUIRE((kev[0].flags & EV_EOF) != 0);
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 0);
 #endif
@@ -875,7 +904,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_reads, tc)
 	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 65023 ||
-		kev[0].data == 7679 /* on NetBSD */,
+		kev[0].data == 7679 /* on NetBSD */ ||
+		kev[0].data == 3583 /* on OpenBSD */,
 	    "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
@@ -1145,9 +1175,12 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
 		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]);
-#ifdef __NetBSD__
-		if (ret < 0 && errno == EBADF) {
-			atf_tc_skip("NetBSD does not support EVFILT_USER");
+#if defined(__NetBSD__) || defined(__OpenBSD__)
+		if (ret < 0 &&
+		    (errno == EBADF /* NetBSD */ ||
+			errno == EPIPE /* OpenBSD */)) {
+			atf_tc_skip(
+			    "NetBSD/OpenBSD do not support EVFILT_USER");
 		}
 #endif
 		ATF_REQUIRE(ret == 0);
@@ -1242,6 +1275,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_of_duplex, tc)
 		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
 		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]);
+#ifdef __OpenBSD__
+		if (ret < 0 && errno == EPIPE) {
+			atf_tc_skip("OpenBSD does not support EVFILT_USER");
+		}
+#endif
 		ATF_REQUIRE(ret == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1294,7 +1332,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 	ATF_REQUIRE(p[0] >= 0);
 	ATF_REQUIRE(p[1] >= 0);
 
-#if defined(__FreeBSD__)
+#if defined(__FreeBSD__) || defined(__OpenBSD__)
 	{
 		int fl = fcntl(p[0], F_GETFL, 0);
 		ATF_REQUIRE((fl & O_ACCMODE) == O_RDWR);
@@ -1303,12 +1341,17 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 		int fl = fcntl(p[1], F_GETFL, 0);
 		ATF_REQUIRE((fl & O_ACCMODE) == O_RDWR);
 	}
+#ifdef __OpenBSD__
+	atf_tc_skip("OpenBSD has duplex pipes but no way to tell p[0] "
+		    "and p[1] apart");
+#else
 	{
 		cap_rights_t rights;
 		ATF_REQUIRE(cap_rights_get(p[1], &rights) == 0);
 		cap_rights_clear(&rights, CAP_READ);
 		ATF_REQUIRE(cap_rights_limit(p[1], &rights) == 0);
 	}
+#endif
 #else
 	{
 		int fl = fcntl(p[0], F_GETFL, 0);
@@ -1445,7 +1488,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	int const pipe_read_size =
-#ifdef __NetBSD__
+#if defined(__NetBSD__) || defined(__OpenBSD__)
 	    16384
 #else
 	    65536
@@ -1463,7 +1506,13 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 		eps[0] = (struct epoll_event){
 		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
-		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
+		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]);
+#ifdef __OpenBSD__
+		if (ret < 0 && errno == EPIPE) {
+			atf_tc_skip("OpenBSD does not support EVFILT_USER");
+		}
+#endif
+		ATF_REQUIRE(ret == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 		ATF_REQUIRE(eps[0].events == (EPOLLIN | EPOLLHUP));
@@ -1549,18 +1598,20 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 	ATF_REQUIRE(close(p[1]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined(__OpenBSD__)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 2);
 	{
 		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 		ATF_REQUIRE_MSG(kev[0].flags ==
-			(EV_EOF | EV_CLEAR | EV_ONESHOT | EV_RECEIPT),
+			(EV_EOF | EV_CLEAR | SPURIOUS_EV_ONESHOT | EV_RECEIPT |
+			    SPURIOUS_EV_ADD),
 		    "%04x", kev[0].flags);
 		ATF_REQUIRE(kev[0].fflags == 0);
 		ATF_REQUIRE_MSG(kev[0].data == 4096 ||
-			kev[0].data == 512 /* on FreeBSD 11.3 */,
+			kev[0].data == 512 /* on FreeBSD 11.3 */ ||
+			kev[0].data == 0 /* on OpenBSD 6.6 */,
 		    "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
 	}
@@ -1568,10 +1619,12 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 		ATF_REQUIRE(kev[1].ident == (uintptr_t)p[0]);
 		ATF_REQUIRE(kev[1].filter == EVFILT_READ);
 		ATF_REQUIRE_MSG(kev[1].flags ==
-			(EV_EOF | EV_CLEAR | EV_RECEIPT),
+			(EV_EOF | EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD),
 		    "%04x", kev[1].flags);
 		ATF_REQUIRE(kev[1].fflags == 0);
-		ATF_REQUIRE_MSG(kev[1].data == 65536, "%d", (int)kev[1].data);
+		ATF_REQUIRE_MSG(kev[1].data == 65536 ||
+			kev[1].data == 16384 /* on OpenBSD 6.6 */,
+		    "%d", (int)kev[1].data);
 		ATF_REQUIRE(kev[1].udata == 0);
 	}
 #else

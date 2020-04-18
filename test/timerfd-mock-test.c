@@ -58,7 +58,7 @@ kevent(int kq, const struct kevent *changelist, kevent_n_type nchanges,
 	return -1;
 }
 
-#ifndef __FreeBSD__
+#ifdef __NetBSD__
 static unsigned int
 netbsd_mstohz(unsigned int ms)
 {
@@ -100,9 +100,13 @@ ATF_TC_BODY(timerfd_mock__mocked_kevent, tc)
 		ATF_REQUIRE(evfilt_timer_data >= ms);
 		ATF_REQUIRE(evfilt_timer_data <= UINT_MAX);
 
+#ifdef __NetBSD__
 		unsigned long kernel_ms =
 		    netbsd_mstohz((unsigned int)evfilt_timer_data) * 1000UL /
 		    CLK_TCK;
+#else
+		unsigned long kernel_ms = evfilt_timer_data;
+#endif
 
 		ATF_REQUIRE(kernel_ms >= ms);
 #endif

@@ -15,6 +15,16 @@
 
 /**/
 
+#ifndef STAILQ_ENTRY
+#define STAILQ_ENTRY TAILQ_ENTRY
+#define STAILQ_HEAD TAILQ_HEAD
+#define STAILQ_HEAD_INITIALIZER TAILQ_HEAD_INITIALIZER
+#define STAILQ_INSERT_TAIL TAILQ_INSERT_TAIL
+#define STAILQ_FOREACH TAILQ_FOREACH
+#endif
+
+/**/
+
 #define MICROATF_ATTRIBUTE_UNUSED __attribute__((__unused__))
 
 /**/
@@ -134,12 +144,12 @@ microatf_context_write_result_pack(microatf_context_t *context,
 	}
 
 	if (context->do_close_result_file) {
-#if defined(__NetBSD__) || defined(__linux__)
-		fclose(context->result_file);
-		context->result_file = fopen(context->result_file_path, "w");
-#else
+#if defined(__FreeBSD__)
 		context->result_file =
 		    freopen(NULL, "w", context->result_file);
+#else
+		fclose(context->result_file);
+		context->result_file = fopen(context->result_file_path, "w");
 #endif
 		if (!context->result_file) {
 			return;

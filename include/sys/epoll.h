@@ -15,8 +15,10 @@ extern "C" {
 #include <bits/alltypes.h>
 #endif
 
-#ifdef __NetBSD__
+#if defined(__NetBSD__)
 #include <sys/sigtypes.h>
+#elif defined(__OpenBSD__)
+#include <sys/signal.h>
 #endif
 
 #define EPOLL_CLOEXEC O_CLOEXEC
