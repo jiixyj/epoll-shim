@@ -7,6 +7,7 @@
 #include <sys/time.h>
 
 #include <assert.h>
+#include <errno.h>
 #include <signal.h>
 
 #ifndef nitems

@@ -11,10 +11,17 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
+#if defined(__DragonFly__)
+/* For TAILQ_FOREACH_SAFE. */
+#include <netproto/802_11/ieee80211_dragonfly.h>
+#endif
+
 #include <assert.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <limits.h>
 #include <poll.h>
 #include <unistd.h>
 
@@ -47,12 +54,15 @@ registered_fds_node_destroy(RegisteredFDsNode *node)
 typedef struct {
 	int evfilt_read;
 	int evfilt_write;
+	int evfilt_except;
 } NeededFilters;
 
 static NeededFilters
 get_needed_filters(RegisteredFDsNode *fd2_node)
 {
 	NeededFilters needed_filters;
+
+	needed_filters.evfilt_except = 0;
 
 	if (fd2_node->node_type == NODE_TYPE_FIFO) {
 		if (fd2_node->node_data.fifo.readable &&
@@ -107,6 +117,7 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 
 	if (fd2_node->node_type == NODE_TYPE_SOCKET) {
 		needed_filters.evfilt_read = !!(fd2_node->events & EPOLLIN);
+
 		if (needed_filters.evfilt_read == 0 &&
 		    (fd2_node->events & EPOLLRDHUP)) {
 			needed_filters.evfilt_read =
@@ -114,6 +125,16 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 			    ? 1
 			    : EV_CLEAR;
 		}
+
+#ifdef EVFILT_EXCEPT
+		needed_filters.evfilt_except = !!(fd2_node->events & EPOLLPRI);
+#else
+		if (needed_filters.evfilt_read == 0 &&
+		    (fd2_node->events & EPOLLPRI)) {
+			needed_filters.evfilt_read =
+			    fd2_node->pollpri_active ? 1 : EV_CLEAR;
+		}
+#endif
 
 		needed_filters.evfilt_write = !!(fd2_node->events & EPOLLOUT);
 
@@ -170,6 +191,9 @@ out:
 		if (needed_filters.evfilt_write) {
 			needed_filters.evfilt_write = EV_CLEAR;
 		}
+		if (needed_filters.evfilt_except) {
+			needed_filters.evfilt_except = EV_CLEAR;
+		}
 	}
 
 	assert(needed_filters.evfilt_read || needed_filters.evfilt_write);
@@ -179,6 +203,9 @@ out:
 	assert(needed_filters.evfilt_write == 0 ||
 	    needed_filters.evfilt_write == 1 ||
 	    needed_filters.evfilt_write == EV_CLEAR);
+	assert(needed_filters.evfilt_except == 0 ||
+	    needed_filters.evfilt_except == 1 ||
+	    needed_filters.evfilt_except == EV_CLEAR);
 
 	return needed_filters;
 }
@@ -290,7 +317,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 
 		assert(!fd2_node->has_evfilt_read);
 		assert(!fd2_node->has_evfilt_write);
-		assert(!fd2_node->has_epollpri);
+		assert(!fd2_node->has_evfilt_except);
 
 		NeededFilters needed_filters = get_needed_filters(fd2_node);
 		assert(needed_filters.evfilt_write);
@@ -317,44 +344,43 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 		}
 	}
 
-	if (fd2_node->node_type == NODE_TYPE_SOCKET &&
-#ifdef EVFILT_USER
-	    kev->filter == EVFILT_USER
+#ifdef EVFILT_EXCEPT
+	assert(kev->filter == EVFILT_READ || kev->filter == EVFILT_WRITE ||
+	    kev->filter == EVFILT_EXCEPT);
 #else
-	    (fd2_node->self_pipe[0] >= 0 &&
-		kev->ident == (uintptr_t)fd2_node->self_pipe[0])
-#endif
-	) {
-		assert(fd2_node->events & EPOLLPRI);
-
-#ifndef EVFILT_USER
-		char c[32];
-		while (read(fd2_node->self_pipe[0], c, sizeof(c)) >= 0) {
-		}
-#endif
-
-		struct pollfd pfd = {
-		    .fd = fd2_node->fd,
-		    .events = POLLPRI,
-		};
-
-		revents = (poll(&pfd, 1, 0) == 1) && (pfd.revents & POLLPRI)
-		    ? EPOLLPRI
-		    : 0;
-
-		fd2_node->got_epollpri = true;
-
-		goto out;
-	}
-
 	assert(kev->filter == EVFILT_READ || kev->filter == EVFILT_WRITE);
+#endif
 	assert((int)kev->ident == fd2_node->fd);
 
 	if (kev->filter == EVFILT_READ) {
 		revents |= EPOLLIN;
+#ifndef EVFILT_EXCEPT
+		if (fd2_node->events & EPOLLPRI) {
+			struct pollfd pfd = {
+			    .fd = fd2_node->fd,
+			    .events = POLLPRI,
+			};
+
+			if ((poll(&pfd, 1, 0) == 1) &&
+			    (pfd.revents & POLLPRI)) {
+				revents |= EPOLLPRI;
+				fd2_node->pollpri_active = true;
+			} else {
+				fd2_node->pollpri_active = false;
+			}
+		}
+#endif
 	} else if (kev->filter == EVFILT_WRITE) {
 		revents |= EPOLLOUT;
 	}
+#ifdef EVFILT_EXCEPT
+	else if (kev->filter == EVFILT_EXCEPT) {
+		assert((kev->fflags & NOTE_OOB) != 0);
+
+		revents |= EPOLLPRI;
+		goto out;
+	}
+#endif
 
 	if (fd2_node->node_type == NODE_TYPE_SOCKET) {
 		if (kev->filter == EVFILT_READ) {
@@ -475,16 +501,19 @@ out:
 		} else if (kev->filter == EVFILT_WRITE) {
 			fd2_node->got_evfilt_write = true;
 		}
+#ifdef EVFILT_EXCEPT
+		else if (kev->filter == EVFILT_EXCEPT) {
+			fd2_node->got_evfilt_except = true;
+		}
+#endif
 	}
-
-	return;
 }
 
 static void
 registered_fds_node_register_for_completion(int *kq,
     RegisteredFDsNode *fd2_node)
 {
-	struct kevent kev[2];
+	struct kevent kev[3];
 	int n = 0;
 
 	if (fd2_node->has_evfilt_read && !fd2_node->got_evfilt_read) {
@@ -495,19 +524,13 @@ registered_fds_node_register_for_completion(int *kq,
 		EV_SET(&kev[n++], fd2_node->fd, EVFILT_WRITE,
 		    EV_ADD | EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
 	}
-	if (fd2_node->has_epollpri && !fd2_node->got_epollpri) {
-		struct kevent epollpri_event;
-
-#ifdef EVFILT_USER
-		EV_SET(&epollpri_event, fd2_node->fd, /**/
-		    EVFILT_USER, 0, 0, 0, fd2_node);
+	if (fd2_node->has_evfilt_except && !fd2_node->got_evfilt_except) {
+#ifdef EVFILT_EXCEPT
+		EV_SET(&kev[n++], fd2_node->fd, EVFILT_EXCEPT,
+		    EV_ADD | EV_ONESHOT | EV_RECEIPT, NOTE_OOB, 0, fd2_node);
 #else
-		EV_SET(&epollpri_event, fd2_node->self_pipe[0], /**/
-		    EVFILT_READ, 0, 0, 0, fd2_node);
+		assert(0);
 #endif
-
-		registered_fds_node_feed_event(fd2_node, NULL,
-		    &epollpri_event);
 	}
 
 	if (n == 0) {
@@ -553,7 +576,8 @@ fd_cmp(RegisteredFDsNode *e1, RegisteredFDsNode *e2)
 	return (e1->fd < e2->fd) ? -1 : (e1->fd > e2->fd);
 }
 
-RB_GENERATE_STATIC(registered_fds_set_, registered_fds_node_, entry, fd_cmp)
+RB_PROTOTYPE_STATIC(registered_fds_set_, registered_fds_node_, entry, fd_cmp);
+RB_GENERATE_STATIC(registered_fds_set_, registered_fds_node_, entry, fd_cmp);
 
 errno_t
 epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
@@ -790,7 +814,7 @@ epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
 
 		fd2_node->has_evfilt_read = false;
 		fd2_node->has_evfilt_write = false;
-		fd2_node->has_epollpri = false;
+		fd2_node->has_evfilt_except = false;
 	}
 }
 
@@ -827,7 +851,7 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 		assert(!fd2_node->has_evfilt_read);
 		assert(!fd2_node->has_evfilt_write);
-		assert(!fd2_node->has_epollpri);
+		assert(!fd2_node->has_evfilt_except);
 
 		NeededFilters needed_filters = get_needed_filters(fd2_node);
 
@@ -848,27 +872,15 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 		assert(n != 0);
 
-		if (fd2_node->events & EPOLLPRI) {
-			fd2_node->has_epollpri = true;
-
-			if ((ec = registered_fds_node_add_self_trigger(
-				 fd2_node, epollfd)) != 0) {
-				goto out;
-			}
-
-			if (!fd2_node->is_on_pollfd_list) {
-				if ((ec = epollfd_ctx__add_self_trigger(
-					 epollfd)) != 0) {
-					goto out;
-				}
-
-				TAILQ_INSERT_TAIL(&epollfd->poll_fds, fd2_node,
-				    pollfd_list_entry);
-				fd2_node->is_on_pollfd_list = true;
-				++epollfd->poll_fds_size;
-
-				epollfd_ctx__trigger_repoll(epollfd);
-			}
+		if (needed_filters.evfilt_except) {
+#ifdef EVFILT_EXCEPT
+			fd2_node->has_evfilt_except = true;
+			EV_SET(&kev[n++], fd2, EVFILT_EXCEPT,
+			    EV_ADD | (needed_filters.evfilt_except & EV_CLEAR),
+			    NOTE_OOB, 0, fd2_node);
+#else
+			assert(0);
+#endif
 		}
 
 		for (int i = 0; i < n; ++i) {
@@ -900,7 +912,7 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 		fd2_node->has_evfilt_read = false;
 		fd2_node->has_evfilt_write = false;
-		fd2_node->has_epollpri = false;
+		fd2_node->has_evfilt_except = false;
 
 		fd2_node->node_type = NODE_TYPE_POLL;
 
@@ -1104,7 +1116,7 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 	if (op != EPOLL_CTL_DEL &&
 	    ((ev->events &
 		~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLRDHUP | /**/
-		    EPOLLPRI |		  /* unsupported by kqueue! */
+		    EPOLLPRI | /* unsupported by FreeBSD's kqueue! */
 		    EPOLLHUP | EPOLLERR | /**/
 		    EPOLLET | EPOLLONESHOT)))) {
 		return EINVAL;
@@ -1331,7 +1343,7 @@ again:;
 		fd2_node->revents = 0;
 		fd2_node->got_evfilt_read = false;
 		fd2_node->got_evfilt_write = false;
-		fd2_node->got_epollpri = false;
+		fd2_node->got_evfilt_except = false;
 
 		if (fd2_node->is_oneshot) {
 			epollfd_ctx__remove_node_from_kq(epollfd, fd2_node);

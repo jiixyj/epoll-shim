@@ -5,10 +5,11 @@
 #include <sys/event.h>
 #include <sys/param.h>
 
+#include <assert.h>
+#include <errno.h>
+
 #include <fcntl.h>
 #include <unistd.h>
-
-#include <assert.h>
 
 #ifndef nitems
 #define nitems(x) (sizeof((x)) / sizeof((x)[0]))

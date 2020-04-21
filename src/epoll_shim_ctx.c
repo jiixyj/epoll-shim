@@ -3,6 +3,7 @@
 #include <sys/event.h>
 
 #include <assert.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
 
@@ -82,8 +83,10 @@ fd_context_map_node_cmp(FDContextMapNode *e1, FDContextMapNode *e2)
 	return (e1->fd < e2->fd) ? -1 : (e1->fd > e2->fd);
 }
 
+RB_PROTOTYPE_STATIC(fd_context_map_, fd_context_map_node_, entry,
+    fd_context_map_node_cmp);
 RB_GENERATE_STATIC(fd_context_map_, fd_context_map_node_, entry,
-    fd_context_map_node_cmp)
+    fd_context_map_node_cmp);
 
 EpollShimCtx epoll_shim_ctx = {
     .fd_context_map = RB_INITIALIZER(&fd_context_map),

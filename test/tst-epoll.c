@@ -351,7 +351,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epollfd_osv__some_tests, tc)
 	// We only read one byte out of the 2 on the pipe, so there's still
 	// data on the pipe (and poll() verifies this), but with EPOLLET, epoll
 	// won't return it.
-#ifndef __linux__
+#if !defined(__linux__) && !defined(__DragonFly__)
 	// kqueue based emulation will trigger an edge here.
 	r = epoll_wait(ep, events, MAXEVENTS, 0);
 	ATF_REQUIRE(r == 1);

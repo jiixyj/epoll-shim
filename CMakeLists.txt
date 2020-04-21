@@ -23,7 +23,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_EXTENSIONS ON)
 
 include(CheckTypeSize)
-list(APPEND CMAKE_EXTRA_INCLUDE_FILES "errno.h")
+list(APPEND CMAKE_EXTRA_INCLUDE_FILES "errno.h" "stdlib.h")
 check_type_size(errno_t ERRNO_T BUILTIN_TYPES_ONLY LANGUAGE C)
 if(NOT HAVE_ERRNO_T)
   add_definitions(-Derrno_t=int)

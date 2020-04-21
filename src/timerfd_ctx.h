@@ -1,10 +1,10 @@
 #ifndef TIMERFD_CTX_H_
 #define TIMERFD_CTX_H_
 
-#include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <pthread.h>
 #include <time.h>

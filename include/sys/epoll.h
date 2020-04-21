@@ -17,7 +17,7 @@ extern "C" {
 
 #if defined(__NetBSD__)
 #include <sys/sigtypes.h>
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__DragonFly__)
 #include <sys/signal.h>
 #endif
 

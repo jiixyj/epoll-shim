@@ -103,10 +103,12 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_write_end_after_read_end_close, tc)
 	{
 		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
-#ifdef __linux__
+#if defined(__linux__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLERR));
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
+#elif defined(__DragonFly__)
+		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -156,6 +158,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(pfd.revents == POLLERR);
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
+#elif defined(__DragonFly__)
+		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -210,7 +214,14 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close_hup,
 
 	{
 		struct pollfd pfd = {.fd = p[1]};
-		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+		int rv = poll(&pfd, 1, 1000);
+#if defined(__DragonFly__)
+		if (rv == 0) {
+			atf_tc_skip("polling of pipes broken");
+		}
+#endif
+		ATF_REQUIRE(rv == 1);
+
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == POLLERR);
 #elif defined(__NetBSD__)
@@ -273,6 +284,8 @@ ATF_TC_BODY_FD_LEAKCHECK(
 		ATF_REQUIRE(pfd.revents == POLLERR);
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
+#elif defined(__DragonFly__)
+		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -327,6 +340,8 @@ ATF_TC_BODY_FD_LEAKCHECK(
 		ATF_REQUIRE(pfd.revents == POLLERR);
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
+#elif defined(__DragonFly__)
+		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -382,6 +397,8 @@ ATF_TC_BODY_FD_LEAKCHECK(
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLERR));
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
+#elif defined(__DragonFly__)
+		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -421,14 +438,20 @@ print_statbuf(struct stat *sb)
 }
 
 static int const SPURIOUS_EV_ADD = 0
-#if defined(__NetBSD__) || defined(__OpenBSD__)
+#if defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
     | EV_ADD
 #endif
     ;
 
 static int const SPURIOUS_EV_ONESHOT = 0
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__)
     | EV_ONESHOT
+#endif
+    ;
+
+static int const SPURIOUS_EV_NODATA = 0
+#if defined(__DragonFly__)
+    | EV_NODATA
 #endif
     ;
 
@@ -466,7 +489,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD), "%x",
 	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[0].data);
+	ATF_REQUIRE_MSG(kev[0].data == 16384 ||
+		kev[0].data == 32768 /* on DragonFly */,
+	    "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
 	int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -492,7 +517,15 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
-	for (int i = 0; i < PIPE_BUF - 1; ++i) {
+	const int pipe_buf =
+#ifdef __DragonFly__
+	    16384
+#else
+	    PIPE_BUF
+#endif
+	    ;
+
+	for (int i = 0; i < pipe_buf - 1; ++i) {
 		ATF_REQUIRE(read(p[0], &c, 1) == 1);
 	}
 
@@ -505,13 +538,13 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE(read(p[0], &c, 1) == 1);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
+	ATF_REQUIRE(r == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF, "%d", (int)kev[0].data);
+	ATF_REQUIRE_MSG(kev[0].data == pipe_buf, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -526,7 +559,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
+	ATF_REQUIRE_MSG(kev[0].data == pipe_buf + 1, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 
 	/* kqueue based emulation will trigger another edge here. */
@@ -543,13 +576,14 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE_MSG(kev[0].flags ==
-		(EV_CLEAR | SPURIOUS_EV_ADD | EV_EOF | SPURIOUS_EV_ONESHOT),
+		(EV_CLEAR | SPURIOUS_EV_ADD | EV_EOF | SPURIOUS_EV_ONESHOT |
+		    SPURIOUS_EV_NODATA),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	if (kev[0].data == 0) {
 		atf_tc_skip("kev.data == 0 is a valid value on EV_EOF");
 	}
-	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
+	ATF_REQUIRE_MSG(kev[0].data == pipe_buf + 1, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 	ATF_REQUIRE(close(kq) == 0);
 #endif
@@ -610,7 +644,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 16384 ||
-		kev[0].data == 4096 /* On OpenBSD */,
+		kev[0].data == 4096 /* On OpenBSD */ ||
+		kev[0].data == 65536 /* On DragonFly */,
 	    "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
@@ -643,8 +678,12 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	if (r == 1 && kev[0].filter == EVFILT_READ) {
 		atf_tc_skip("OpenBSD's (<= 6.6) EVFILT_WRITE broken on FIFOs");
 	}
-#endif
+#elif defined(__DragonFly__)
+	ATF_REQUIRE(r == 1);
+	ATF_REQUIRE_MSG(kev[0].filter == EVFILT_READ, "%d", kev[0].filter);
+#else
 	ATF_REQUIRE(r == 0);
+#endif
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
@@ -652,22 +691,50 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 		ATF_REQUIRE(read(p[0], &c, 1) == 1);
 	}
 
+#if defined(__DragonFly__)
+try_again:
+#endif
+
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
+#if defined(__DragonFly__)
+	while (r == 1) {
+		if (kev[0].filter == EVFILT_READ) {
+			goto try_again;
+		}
+
+		ATF_REQUIRE(write(p[1], &c, 1) == 1);
+		goto try_again;
+	}
+#endif
+	ATF_REQUIRE(r == 0);
+#endif
+
+#if defined(__DragonFly__)
+	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
+	ATF_REQUIRE(eps[0].events == EPOLLOUT);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
 	ATF_REQUIRE(read(p[0], &c, 1) == 1);
+
+	const int pipe_buf =
+#ifdef __DragonFly__
+	    65536
+#else
+	    PIPE_BUF
+#endif
+	    ;
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD), "%04x",
+	    kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF, "%d", (int)kev[0].data);
+	ATF_REQUIRE_MSG(kev[0].data == pipe_buf, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -680,9 +747,13 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
 	ATF_REQUIRE(kev[0].fflags == 0);
-	ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d", (int)kev[0].data);
+#ifdef __DragonFly__
+	ATF_REQUIRE_MSG(kev[0].data == pipe_buf + 0, "%d", (int)kev[0].data);
+#else
+	ATF_REQUIRE_MSG(kev[0].data == pipe_buf + 1, "%d", (int)kev[0].data);
+#endif
 	ATF_REQUIRE(kev[0].udata == 0);
 
 	/* kqueue based emulation will trigger another edge here. */
@@ -699,8 +770,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | EV_EOF), "%04x",
-	    kev[0].flags);
+	ATF_REQUIRE_MSG(kev[0].flags ==
+		(EV_CLEAR | EV_EOF | SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA),
+	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	if (kev[0].data == 0) {
 		/*
@@ -712,8 +784,13 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 		 */
 		data_empty = true;
 	} else {
-		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d",
+#ifdef __DragonFly__
+		ATF_REQUIRE_MSG(kev[0].data == pipe_buf + 0, "%d",
 		    (int)kev[0].data);
+#else
+		ATF_REQUIRE_MSG(kev[0].data == pipe_buf + 1, "%d",
+		    (int)kev[0].data);
+#endif
 	}
 	ATF_REQUIRE(kev[0].udata == 0);
 	ATF_REQUIRE(close(kq) == 0);
@@ -805,19 +882,24 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	ATF_REQUIRE(close(p[0]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+#ifdef __DragonFly__
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 2);
+	int index = 1;
+#else
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 1);
+	int index = 0;
+#endif
 #ifdef __OpenBSD__
 	/*
 	 * TODO(jan): Check again when OpenBSD 6.7 is released:
 	 * https://github.com/openbsd/src/commit/c35e1d2184cb8ce6b98d01412fcb8fccbf4727ea
 	 */
-	if (kev[0].filter == EVFILT_READ) {
+	if (kev[index].filter == EVFILT_READ) {
 		atf_tc_skip("OpenBSD's (<= 6.6) EVFILT_WRITE broken on FIFOs");
 	}
 #endif
-	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE((kev[0].flags & EV_EOF) != 0);
+	ATF_REQUIRE(kev[index].filter == EVFILT_WRITE);
+	ATF_REQUIRE((kev[index].flags & EV_EOF) != 0);
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 0);
 #endif
@@ -839,10 +921,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 		ATF_REQUIRE(r == 1);
 		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-		ATF_REQUIRE(kev[0].flags == EV_CLEAR);
+		ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
 		ATF_REQUIRE(kev[0].fflags == 0);
-		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1, "%d",
-		    (int)kev[0].data);
+		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1 ||
+			kev[0].data == 65536 /* On DragonFly. */,
+		    "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
 		ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 				&(struct timespec){0, 0}) == 0);
@@ -984,7 +1067,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
-	ATF_REQUIRE(kev[0].flags == (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD));
+	ATF_REQUIRE(kev[0].flags ==
+	    (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA));
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -1063,7 +1147,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
-	ATF_REQUIRE(kev[0].flags == (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD));
+	ATF_REQUIRE(kev[0].flags ==
+	    (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA));
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -1159,7 +1244,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE_MSG(kev[0].flags ==
-		(EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | EV_RECEIPT),
+		(EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | EV_RECEIPT |
+		    SPURIOUS_EV_NODATA),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
@@ -1178,10 +1264,10 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 		ATF_REQUIRE(ret == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
-#if defined(__OpenBSD__)
+#if defined(__OpenBSD__) || defined(__DragonFly__)
 		if (eps[0].events == EPOLLHUP) {
-			atf_tc_skip("OpenBSD has duplex pipes but no way to "
-				    "tell p[0] and p[1] apart");
+			atf_tc_skip("OpenBSD/DragonFly have duplex pipes but "
+				    "no way to tell p[0] and p[1] apart");
 		}
 #endif
 		ATF_REQUIRE_MSG(eps[0].events == (EPOLLOUT | EPOLLERR), "%04x",
@@ -1326,7 +1412,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 	ATF_REQUIRE(p[0] >= 0);
 	ATF_REQUIRE(p[1] >= 0);
 
-#if defined(__FreeBSD__) || defined(__OpenBSD__)
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
 	{
 		int fl = fcntl(p[0], F_GETFL, 0);
 		ATF_REQUIRE((fl & O_ACCMODE) == O_RDWR);
@@ -1335,9 +1421,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 		int fl = fcntl(p[1], F_GETFL, 0);
 		ATF_REQUIRE((fl & O_ACCMODE) == O_RDWR);
 	}
-#ifdef __OpenBSD__
-	atf_tc_skip("OpenBSD has duplex pipes but no way to tell p[0] "
-		    "and p[1] apart");
+#if defined(__OpenBSD__) || defined(__DragonFly__)
+	atf_tc_skip("OpenBSD/DragonFly have duplex pipes but "
+		    "no way to tell p[0] and p[1] apart");
 #else
 	{
 		cap_rights_t rights;
@@ -1484,6 +1570,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 	int const pipe_read_size =
 #if defined(__NetBSD__) || defined(__OpenBSD__)
 	    16384
+#elif defined(__DragonFly__)
+	    32768
 #else
 	    65536
 #endif
@@ -1518,11 +1606,10 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
-#if defined(__OpenBSD__)
+#if defined(__OpenBSD__) || defined(__DragonFly__)
 		if (eps[0].events == (EPOLLOUT | EPOLLERR)) {
-			atf_tc_skip(
-			    "OpenBSD has duplex pipes but no way to tell p[0] "
-			    "and p[1] apart");
+			atf_tc_skip("OpenBSD/DragonFly have duplex pipes but "
+				    "no way to tell p[0] and p[1] apart");
 		}
 #endif
 		ATF_REQUIRE_MSG(eps[0].events == EPOLLHUP, "%04x",
@@ -1595,7 +1682,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 	ATF_REQUIRE(close(p[1]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-#if defined(__FreeBSD__) || defined(__OpenBSD__)
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 2);
 	{
@@ -1603,7 +1690,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 		ATF_REQUIRE_MSG(kev[0].flags ==
 			(EV_EOF | EV_CLEAR | SPURIOUS_EV_ONESHOT | EV_RECEIPT |
-			    SPURIOUS_EV_ADD),
+			    SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA),
 		    "%04x", kev[0].flags);
 		ATF_REQUIRE(kev[0].fflags == 0);
 		ATF_REQUIRE_MSG(kev[0].data == 4096 ||
@@ -1620,7 +1707,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 		    "%04x", kev[1].flags);
 		ATF_REQUIRE(kev[1].fflags == 0);
 		ATF_REQUIRE_MSG(kev[1].data == 65536 ||
-			kev[1].data == 16384 /* on OpenBSD 6.6 */,
+			kev[1].data == 16384 /* on OpenBSD 6.6 */ ||
+			kev[1].data == 32768 /* on DragonFly 5.8 */,
 		    "%d", (int)kev[1].data);
 		ATF_REQUIRE(kev[1].udata == 0);
 	}

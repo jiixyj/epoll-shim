@@ -4,10 +4,11 @@
 
 #include <sys/event.h>
 
+#include <assert.h>
+#include <errno.h>
+
 #include <fcntl.h>
 #include <unistd.h>
-
-#include <assert.h>
 
 errno_t
 signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)

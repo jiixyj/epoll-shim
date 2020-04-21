@@ -7,9 +7,9 @@
 #include <sys/queue.h>
 #include <sys/tree.h>
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <poll.h>
 #include <pthread.h>
@@ -41,11 +41,11 @@ struct registered_fds_node_ {
 
 	bool has_evfilt_read;
 	bool has_evfilt_write;
-	bool has_epollpri;
+	bool has_evfilt_except;
 
 	bool got_evfilt_read;
 	bool got_evfilt_write;
-	bool got_epollpri;
+	bool got_evfilt_except;
 
 	NodeType node_type;
 	union {
@@ -55,6 +55,7 @@ struct registered_fds_node_ {
 		} fifo;
 	} node_data;
 	int eof_state;
+	bool pollpri_active;
 
 	uint16_t events;
 	uint32_t revents;
