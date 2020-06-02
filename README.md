@@ -56,6 +56,11 @@ To install (as root):
 
 ## Changelog
 
+### 2020-06-02
+
+- On FreeBSD, add missing `sys/signal.h` include that resulted in `sigset_t`
+  errors (#21).
+
 ### 2020-04-25
 
 - Lift limit of 32 descriptors in `epoll_wait(2)`.
