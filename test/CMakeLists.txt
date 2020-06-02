@@ -59,3 +59,11 @@ target_link_libraries(malloc-fail-test PRIVATE ${CMAKE_DL_LIBS})
 atf_test(tst-epoll)
 atf_test(tst-eventfd)
 atf_test(tst-timerfd)
+add_executable(epoll-include-test epoll-include-test.c)
+target_link_libraries(epoll-include-test PRIVATE epoll-shim::epoll-shim)
+set_target_properties(
+  epoll-include-test
+  PROPERTIES C_STANDARD 99 #
+             C_STANDARD_REQUIRED YES #
+             C_EXTENSIONS NO)
+add_test(NAME epoll-include-test COMMAND epoll-include-test)

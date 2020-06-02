@@ -9,15 +9,9 @@ extern "C" {
 #include <sys/types.h>
 #include <fcntl.h>
 
-#if 0
-#define __NEED_sigset_t
-
-#include <bits/alltypes.h>
-#endif
-
 #if defined(__NetBSD__)
 #include <sys/sigtypes.h>
-#elif defined(__OpenBSD__) || defined(__DragonFly__)
+#elif defined(__OpenBSD__) || defined(__DragonFly__) || defined(__FreeBSD__)
 #include <sys/signal.h>
 #endif
 
