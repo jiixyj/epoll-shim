@@ -30,7 +30,7 @@ The following operating systems are supported:
 
 - FreeBSD >= 11.3
 - NetBSD >= 9.0
-- OpenBSD >= 6.6
+- OpenBSD >= 6.7
 - DragonFlyBSD >= 5.8.0
 
 Be aware of some subtle kqueue bugs that may affect the emulated

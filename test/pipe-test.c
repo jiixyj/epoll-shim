@@ -622,10 +622,20 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[1], EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, 0);
-	EV_SET(&kev[1], p[1], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
+	EV_SET(&kev[0], p[1], EVFILT_WRITE, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT, 0, 0, 0);
+	EV_SET(&kev[1], p[1], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT, 0, 0, 0);
 
-	ATF_REQUIRE(kevent(kq, kev, 2, NULL, 0, NULL) == 0);
+	ATF_REQUIRE(kevent(kq, kev, 2, kev, 2, NULL) == 2);
+	ATF_REQUIRE((kev[0].flags & EV_ERROR) != 0);
+	ATF_REQUIRE((kev[1].flags & EV_ERROR) != 0);
+	ATF_REQUIRE(kev[0].data == 0);
+#if defined(__OpenBSD__)
+	ATF_REQUIRE(kev[1].data == EINVAL);
+#else
+	ATF_REQUIRE(kev[1].data == 0);
+#endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 1);
@@ -640,8 +650,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 		atf_tc_skip("NetBSD's EVFILT_WRITE broken on FIFOs");
 	}
 
-	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD), "%x",
-	    kev[0].flags);
+	ATF_REQUIRE_MSG(kev[0].flags ==
+		(EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD),
+	    "%x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 16384 ||
 		kev[0].data == 4096 /* On OpenBSD */ ||
@@ -670,15 +681,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
-#ifdef __OpenBSD__
-	/*
-	 * TODO(jan): Check again when OpenBSD 6.7 is released:
-	 * https://github.com/openbsd/src/commit/c35e1d2184cb8ce6b98d01412fcb8fccbf4727ea
-	 */
-	if (r == 1 && kev[0].filter == EVFILT_READ) {
-		atf_tc_skip("OpenBSD's (<= 6.6) EVFILT_WRITE broken on FIFOs");
-	}
-#elif defined(__DragonFly__)
+#if defined(__DragonFly__)
 	ATF_REQUIRE(r == 1);
 	ATF_REQUIRE_MSG(kev[0].filter == EVFILT_READ, "%d", kev[0].filter);
 #else
@@ -731,8 +734,9 @@ try_again:
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD), "%04x",
-	    kev[0].flags);
+	ATF_REQUIRE_MSG(kev[0].flags ==
+		(EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD),
+	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == pipe_buf, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -747,7 +751,7 @@ try_again:
 			&(struct timespec){0, 0}) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
+	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD));
 	ATF_REQUIRE(kev[0].fflags == 0);
 #ifdef __DragonFly__
 	ATF_REQUIRE_MSG(kev[0].data == pipe_buf + 0, "%d", (int)kev[0].data);
@@ -771,7 +775,8 @@ try_again:
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE_MSG(kev[0].flags ==
-		(EV_CLEAR | EV_EOF | SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA),
+		(EV_CLEAR | EV_RECEIPT | EV_EOF | SPURIOUS_EV_ADD |
+		    SPURIOUS_EV_NODATA),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	if (kev[0].data == 0) {
@@ -836,10 +841,20 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[1], EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, 0);
-	EV_SET(&kev[1], p[1], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
+	EV_SET(&kev[0], p[1], EVFILT_WRITE, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT, 0, 0, 0);
+	EV_SET(&kev[1], p[1], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT, 0, 0, 0);
 
-	ATF_REQUIRE(kevent(kq, kev, 2, NULL, 0, NULL) == 0);
+	ATF_REQUIRE(kevent(kq, kev, 2, kev, 2, NULL) == 2);
+	ATF_REQUIRE((kev[0].flags & EV_ERROR) != 0);
+	ATF_REQUIRE((kev[1].flags & EV_ERROR) != 0);
+	ATF_REQUIRE(kev[0].data == 0);
+#if defined(__OpenBSD__)
+	ATF_REQUIRE(kev[1].data == EINVAL);
+#else
+	ATF_REQUIRE(kev[1].data == 0);
+#endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec){0, 0}) == 1);
@@ -889,15 +904,6 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 1);
 	int index = 0;
 #endif
-#ifdef __OpenBSD__
-	/*
-	 * TODO(jan): Check again when OpenBSD 6.7 is released:
-	 * https://github.com/openbsd/src/commit/c35e1d2184cb8ce6b98d01412fcb8fccbf4727ea
-	 */
-	if (kev[index].filter == EVFILT_READ) {
-		atf_tc_skip("OpenBSD's (<= 6.6) EVFILT_WRITE broken on FIFOs");
-	}
-#endif
 	ATF_REQUIRE(kev[index].filter == EVFILT_WRITE);
 	ATF_REQUIRE((kev[index].flags & EV_EOF) != 0);
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
@@ -921,7 +927,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 		ATF_REQUIRE(r == 1);
 		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-		ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
+		ATF_REQUIRE(kev[0].flags ==
+		    (EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD));
 		ATF_REQUIRE(kev[0].fflags == 0);
 		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1 ||
 			kev[0].data == 65536 /* On DragonFly. */,
