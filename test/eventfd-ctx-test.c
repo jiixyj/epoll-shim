@@ -6,6 +6,7 @@
 #include <sys/param.h>
 
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -20,8 +21,15 @@
 #define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 #endif
 
-ATF_TC_WITHOUT_HEAD(eventfd__init_terminate);
-ATF_TC_BODY_FD_LEAKCHECK(eventfd__init_terminate, tc)
+ATF_TC_WITHOUT_HEAD(eventfd__constants);
+ATF_TC_BODY(eventfd__constants, tc)
+{
+	ATF_REQUIRE(EFD_CLOEXEC == O_CLOEXEC);
+	ATF_REQUIRE(EFD_NONBLOCK == O_NONBLOCK);
+}
+
+ATF_TC_WITHOUT_HEAD(eventfd__pollin);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollin, tc)
 {
 	int efd;
 
@@ -43,6 +51,74 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__init_terminate, tc)
 	ATF_REQUIRE(close(efd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(eventfd__pollout);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollout, tc)
+{
+	int efd;
+
+	ATF_REQUIRE((efd = eventfd(0,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
+	{
+		struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+
+		if (poll(&pfd, 1, 0) == 0) {
+			atf_tc_skip(
+			    "shim layer does not support polling for write");
+		}
+
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+		ATF_REQUIRE(pfd.revents == POLLOUT);
+	}
+	ATF_REQUIRE(close(efd) == 0);
+
+	ATF_REQUIRE((efd = eventfd(1,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
+	{
+		struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+		ATF_REQUIRE(pfd.revents == POLLOUT);
+	}
+	ATF_REQUIRE(close(efd) == 0);
+
+	ATF_REQUIRE((efd = eventfd(UINT_MAX,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
+	{
+		{
+			struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+			ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+			ATF_REQUIRE(pfd.revents == POLLOUT);
+		}
+
+		uint64_t increment = UINT64_MAX - 2 - UINT_MAX;
+		ATF_REQUIRE(write(efd, &increment, sizeof(increment)) ==
+		    (ssize_t)sizeof(increment));
+
+		{
+			struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+			ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+			ATF_REQUIRE(pfd.revents == POLLOUT);
+		}
+
+		increment = 1;
+		ATF_REQUIRE(write(efd, &increment, sizeof(increment)) ==
+		    (ssize_t)sizeof(increment));
+
+		{
+			struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+			ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+		}
+
+		increment = 1;
+		ATF_REQUIRE_ERRNO(EAGAIN,
+		    write(efd, &increment, sizeof(increment)) < 0);
+
+		uint64_t value;
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == UINT64_MAX - 1);
+	}
+	ATF_REQUIRE(close(efd) == 0);
+}
+
 ATF_TC_WITHOUT_HEAD(eventfd__argument_checks);
 ATF_TC_BODY_FD_LEAKCHECK(eventfd__argument_checks, tc)
 {
@@ -51,18 +127,37 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__argument_checks, tc)
 	ATF_REQUIRE_ERRNO(EINVAL,
 	    eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE | 42) < 0);
 
-	ATF_REQUIRE((efd = eventfd(0,
-			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
+	ATF_REQUIRE((efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) >= 0);
 
 	uint16_t dummy = 0;
 	ATF_REQUIRE_ERRNO(EINVAL, write(efd, &dummy, sizeof(dummy)) < 0);
 	ATF_REQUIRE_ERRNO(EINVAL, read(efd, &dummy, sizeof(dummy)) < 0);
 
+	uint64_t value;
+	ATF_REQUIRE_ERRNO(EAGAIN, eventfd_read(efd, &value) < 0);
+	value = 3;
+	ATF_REQUIRE(eventfd_write(efd, value) == 0);
+	ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+	ATF_REQUIRE(value == 3);
+
 	ATF_REQUIRE(close(efd) == 0);
+
+	ATF_REQUIRE_ERRNO(EBADF, eventfd_write(efd, value) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, eventfd_read(efd, &value) < 0);
+
+	ATF_REQUIRE(creat("tmpfile", 0777) == 0);
+	efd = open("tmpfile", O_RDONLY | O_CLOEXEC);
+	ATF_REQUIRE(efd >= 0);
+
+	ATF_REQUIRE_ERRNO(EBADF, eventfd_write(efd, value) < 0);
+	ATF_REQUIRE_ERRNO(EBADF, eventfd_read(efd, &value) < 0);
+
+	ATF_REQUIRE(close(efd) == 0);
+	ATF_REQUIRE(unlink("tmpfile") == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(eventfd__simple_write);
-ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_write, tc)
+ATF_TC_WITHOUT_HEAD(eventfd__write);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__write, tc)
 {
 	int efd;
 
@@ -86,8 +181,8 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_write, tc)
 	ATF_REQUIRE(close(efd) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(eventfd__simple_read);
-ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_read, tc)
+ATF_TC_WITHOUT_HEAD(eventfd__read);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__read, tc)
 {
 	int efd;
 	uint64_t value;
@@ -112,8 +207,41 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_read, tc)
 	ATF_REQUIRE(close(efd) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(eventfd__simple_write_read);
-ATF_TC_BODY_FD_LEAKCHECK(eventfd__simple_write_read, tc)
+ATF_TC_WITHOUT_HEAD(eventfd__write_read);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__write_read, tc)
+{
+	int efd;
+	uint64_t value;
+
+	ATF_REQUIRE((efd = eventfd(6, EFD_CLOEXEC | EFD_NONBLOCK)) >= 0);
+	{
+		{
+			struct pollfd pfd = {.fd = efd, .events = POLLIN};
+			ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+			ATF_REQUIRE(pfd.revents == POLLIN);
+		}
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == 6);
+
+		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+
+		ATF_REQUIRE(eventfd_write(efd, 2) == 0);
+
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
+
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == 2);
+		ATF_REQUIRE_ERRNO(EAGAIN, eventfd_read(efd, &value) < 0);
+
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+	}
+	ATF_REQUIRE(close(efd) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(eventfd__write_read_semaphore);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__write_read_semaphore, tc)
 {
 	int efd;
 	uint64_t value;
@@ -222,14 +350,154 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_read, tc)
 	}
 }
 
+typedef struct {
+	uint64_t ev_count;
+	int loop;
+	int efd;
+} WriteThreadArgs;
+
+static void *
+write_fun(void *arg)
+{
+	WriteThreadArgs *td = arg;
+	ssize_t s;
+	int i;
+
+	for (i = 0; i < td->loop; i++) {
+		ATF_REQUIRE((s = write(td->efd, &td->ev_count,
+				 sizeof(td->ev_count))) ==
+		    sizeof(td->ev_count));
+		usleep(100);
+	}
+	return (NULL);
+}
+
+ATF_TC_WITHOUT_HEAD(eventfd__threads_blocking);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_blocking, tc)
+{
+	/* clang-format off */
+	uint64_t count[] = {
+	    2,   3,   5,   7,   11,  13,  17,  19,  23,  29,
+	    31,  37,  41,  43,  47,  53,  59,  61,  67,  71,
+	    73,  79,  83,  89,  97,  101, 103, 107, 109, 113,
+	    127, 131, 137, 139, 149, 151, 157, 163, 167, 173,
+	    179, 181, 191, 193, 197, 199, 211, 223, 227, 229,
+	    233, 239, 241, 251, 257, 263, 269, 271, 277, 281,
+	    283, 293, 307, 311, 313, 317, 331, 337, 347, 349,
+	    353, 359, 367, 373, 379, 383, 389, 397, 401, 409,
+	    419, 421, 431, 433, 439, 443, 449, 457, 461, 463,
+	    467, 479, 487, 491, 499, 503, 509, 521, 523, 541,
+	    547, 557, 563, 569, 571, 577, 587, 593, 599, 601,
+	    607, 613, 617, 619, 631, 641, 643, 647, 653, 659,
+	    661, 673, 677, 683, 691, 701, 709, 719, 727, 733,
+	    739, 743, 751, 757, 761, 769, 773, 787, 797, 809,
+	    811, 821, 823, 827, 829, 839, 853, 857, 859, 863,
+	    877, 881, 883, 887, 907, 911, 919, 929, 937, 941,
+	    947, 953, 967, 971, 977, 983, 991, 997, 1009,
+	};
+	/* clang-format on */
+
+	const int LOOP = 1000;
+#define THREADS ((int)(sizeof(count) / sizeof(count[0])))
+	int efd;
+	pthread_t thread[THREADS];
+	WriteThreadArgs td[THREADS];
+	uint64_t total;
+	int i;
+	int rc;
+	ssize_t s;
+	uint64_t u;
+	uint64_t v;
+
+	ATF_REQUIRE((efd = eventfd(0, EFD_CLOEXEC)) >= 0);
+
+	total = 0;
+	for (i = 0; i < THREADS; i++) {
+		td[i].efd = efd;
+		td[i].ev_count = count[i];
+		td[i].loop = LOOP;
+		total += (count[i] * LOOP);
+	}
+
+	for (i = 0; i < THREADS; i++) {
+		ATF_REQUIRE(
+		    pthread_create(&thread[i], NULL, write_fun, &td[i]) == 0);
+	}
+
+	v = 0;
+	while (total != v) {
+		ATF_REQUIRE((s = read(efd, &u, sizeof(u))) == sizeof(u));
+		v += u;
+	}
+
+	ATF_REQUIRE(v == total);
+
+	/* verify all threads have finished */
+	for (i = 0; i < THREADS; i++) {
+		ATF_REQUIRE(pthread_join(thread[i], NULL) == 0);
+	}
+	ATF_REQUIRE(close(efd) == 0);
+#undef THREADS
+}
+
 ATF_TP_ADD_TCS(tp)
 {
-	ATF_TP_ADD_TC(tp, eventfd__init_terminate);
+	ATF_TP_ADD_TC(tp, eventfd__constants);
+	ATF_TP_ADD_TC(tp, eventfd__pollin);
+	ATF_TP_ADD_TC(tp, eventfd__pollout);
 	ATF_TP_ADD_TC(tp, eventfd__argument_checks);
-	ATF_TP_ADD_TC(tp, eventfd__simple_write);
-	ATF_TP_ADD_TC(tp, eventfd__simple_read);
-	ATF_TP_ADD_TC(tp, eventfd__simple_write_read);
+	ATF_TP_ADD_TC(tp, eventfd__write);
+	ATF_TP_ADD_TC(tp, eventfd__read);
+	ATF_TP_ADD_TC(tp, eventfd__write_read);
+	ATF_TP_ADD_TC(tp, eventfd__write_read_semaphore);
 	ATF_TP_ADD_TC(tp, eventfd__threads_read);
+	/*
+	 * Following test based on:
+	 * https://raw.githubusercontent.com/cloudius-systems/osv/master/tests/tst-eventfd.cc
+	 *
+	 * https://github.com/cloudius-systems/osv
+	 * https://github.com/cloudius-systems/osv/blob/master/LICENSE
+	 */
+#if 0
+Copyright (C) 2013 Cloudius Systems, Ltd.
+
+Parts are copyright by other contributors. Please refer to copyright notices
+in the individual source files, and to the git commit log, for a more accurate
+list of copyright holders.
+
+OSv is open-source software, distributed under the 3-clause BSD license:
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the documentation
+      and/or other materials provided with the distribution.
+
+    * Neither the name of the Cloudius Systems, Ltd. nor the names of its
+      contributors may be used to endorse or promote products derived from this
+      software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+    OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+This project also includes source code adopted and adapted from four other
+open-source projects - FreeBSD, OpenSolaris, Prex and Musl. These projects have
+their own licenses. Please refer to the files documentation/LICENSE-*
+for the licenses and copyright statements of these projects.
+#endif
+	ATF_TP_ADD_TC(tp, eventfd__threads_blocking);
 
 	return atf_no_error();
 }
