@@ -6,6 +6,7 @@
 
 #include <sys/eventfd.h>
 #include <sys/param.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 
 #include <stdatomic.h>
@@ -390,6 +391,25 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__fork, tc)
 	ATF_REQUIRE(close(efd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(eventfd__stat);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__stat, tc)
+{
+	int efd;
+
+	ATF_REQUIRE((efd = eventfd(5,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
+
+	struct stat sb;
+	ATF_REQUIRE(fstat(efd, &sb) == 0);
+
+	/*
+	 * We actually don't care that much about the stat contents, only that
+	 * it doesn't throw an error.
+	 */
+
+	ATF_REQUIRE(close(efd) == 0);
+}
+
 typedef struct {
 	uint64_t ev_count;
 	int loop;
@@ -491,6 +511,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, eventfd__write_read_semaphore);
 	ATF_TP_ADD_TC(tp, eventfd__threads_read);
 	ATF_TP_ADD_TC(tp, eventfd__fork);
+	ATF_TP_ADD_TC(tp, eventfd__stat);
 	/*
 	 * Following test based on:
 	 * https://raw.githubusercontent.com/cloudius-systems/osv/master/tests/tst-eventfd.cc
