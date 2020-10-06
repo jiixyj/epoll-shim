@@ -147,47 +147,17 @@ eventfd(unsigned int initval, int flags)
 int
 eventfd_read(int fd, eventfd_t *value)
 {
-	FDContextMapNode *node;
-
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &eventfd_vtable) {
-		return (epoll_shim_read(fd, /**/
-			    value, sizeof(*value)) == (ssize_t)sizeof(*value))
-		    ? 0
-		    : -1;
-	}
-
-	size_t bytes_transferred;
-	errno_t ec;
-	if ((ec = eventfd_helper_read(node, value, sizeof(*value),
-		 &bytes_transferred)) != 0) {
-		errno = ec;
-		return -1;
-	}
-
-	return 0;
+	return (epoll_shim_read(fd, /**/
+		    value, sizeof(*value)) == (ssize_t)sizeof(*value))
+	    ? 0
+	    : -1;
 }
 
 int
 eventfd_write(int fd, eventfd_t value)
 {
-	FDContextMapNode *node;
-
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &eventfd_vtable) {
-		return (epoll_shim_write(fd, /**/
-			    &value, sizeof(value)) == (ssize_t)sizeof(value))
-		    ? 0
-		    : -1;
-	}
-
-	size_t bytes_transferred;
-	errno_t ec;
-	if ((ec = eventfd_helper_write(node, &value, sizeof(value),
-		 &bytes_transferred)) != 0) {
-		errno = ec;
-		return -1;
-	}
-
-	return 0;
+	return (epoll_shim_write(fd, /**/
+		    &value, sizeof(value)) == (ssize_t)sizeof(value))
+	    ? 0
+	    : -1;
 }

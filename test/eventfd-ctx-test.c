@@ -444,7 +444,6 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_blocking, tc)
 	WriteThreadArgs td[THREADS];
 	uint64_t total;
 	int i;
-	int rc;
 	ssize_t s;
 	uint64_t u;
 	uint64_t v;
