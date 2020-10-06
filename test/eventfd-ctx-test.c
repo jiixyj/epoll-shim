@@ -145,9 +145,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__argument_checks, tc)
 	ATF_REQUIRE_ERRNO(EBADF, eventfd_write(efd, value) < 0);
 	ATF_REQUIRE_ERRNO(EBADF, eventfd_read(efd, &value) < 0);
 
-	ATF_REQUIRE(creat("tmpfile", 0777) == 0);
-	efd = open("tmpfile", O_RDONLY | O_CLOEXEC);
-	ATF_REQUIRE(efd >= 0);
+	ATF_REQUIRE((efd = creat("tmpfile", 0777)) >= 0);
 
 	ATF_REQUIRE_ERRNO(EBADF, eventfd_write(efd, value) < 0);
 	ATF_REQUIRE_ERRNO(EBADF, eventfd_read(efd, &value) < 0);
