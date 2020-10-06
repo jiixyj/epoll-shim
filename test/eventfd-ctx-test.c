@@ -2,8 +2,11 @@
 
 #include <atf-c.h>
 
+#include <sys/types.h>
+
 #include <sys/eventfd.h>
 #include <sys/param.h>
+#include <sys/wait.h>
 
 #include <stdatomic.h>
 #include <stdint.h>
@@ -13,6 +16,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include "atf-c-leakcheck.h"
@@ -348,6 +352,44 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_read, tc)
 	}
 }
 
+ATF_TC_WITHOUT_HEAD(eventfd__fork);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__fork, tc)
+{
+	int efd;
+
+	ATF_REQUIRE((efd = eventfd(0,
+			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
+
+	int pid;
+	ATF_REQUIRE((pid = fork()) >= 0);
+	if (pid == 0) {
+		int r = eventfd_write(efd, 1);
+		if (r < 0) {
+			_Exit(errno);
+		}
+		if (r > 0) {
+			(void)raise(SIGTERM);
+			_Exit(1);
+		}
+		_Exit(0);
+	}
+
+	int status;
+	ATF_REQUIRE(waitpid(pid, &status, 0) == pid);
+	ATF_REQUIRE(WIFEXITED(status));
+	if (WEXITSTATUS(status) == EBADF) {
+		atf_tc_skip("shimmed eventfd's cannot be shared "
+			    "between processes");
+	}
+	ATF_REQUIRE(WEXITSTATUS(status) == 0);
+
+	uint64_t value;
+	ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+	ATF_REQUIRE(value == 1);
+
+	ATF_REQUIRE(close(efd) == 0);
+}
+
 typedef struct {
 	uint64_t ev_count;
 	int loop;
@@ -449,6 +491,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, eventfd__write_read);
 	ATF_TP_ADD_TC(tp, eventfd__write_read_semaphore);
 	ATF_TP_ADD_TC(tp, eventfd__threads_read);
+	ATF_TP_ADD_TC(tp, eventfd__fork);
 	/*
 	 * Following test based on:
 	 * https://raw.githubusercontent.com/cloudius-systems/osv/master/tests/tst-eventfd.cc

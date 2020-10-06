@@ -26,6 +26,12 @@ example:
   devices under `/dev`. Those descriptors are handled in an outer `poll(2)`
   loop. Edge triggering using `EPOLLET` will not work.
 
+- Shimmed file descriptors cannot be shared between processes. On `fork()`
+  those fds are closed. When trying to pass a shimmed fd to another process the
+  `sendmsg` call will return `EOPNOTSUPP`. In most cases sharing
+  `epoll`/`timerfd`/`signalfd` is a bad idea anyway, but there are some
+  legitimate use cases (for example sharing semaphore `eventfd`s, issue #23).
+
 The following operating systems are supported:
 
 - FreeBSD >= 11.3
