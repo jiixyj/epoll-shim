@@ -151,8 +151,10 @@ eventfd_read(int fd, eventfd_t *value)
 
 	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &eventfd_vtable) {
-		errno = EBADF;
-		return -1;
+		return (epoll_shim_read(fd, /**/
+			    value, sizeof(*value)) == (ssize_t)sizeof(*value))
+		    ? 0
+		    : -1;
 	}
 
 	size_t bytes_transferred;
@@ -173,8 +175,10 @@ eventfd_write(int fd, eventfd_t value)
 
 	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &eventfd_vtable) {
-		errno = EBADF;
-		return -1;
+		return (epoll_shim_write(fd, /**/
+			    &value, sizeof(value)) == (ssize_t)sizeof(value))
+		    ? 0
+		    : -1;
 	}
 
 	size_t bytes_transferred;

@@ -149,7 +149,9 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__argument_checks, tc)
 
 	ATF_REQUIRE((efd = creat("tmpfile", 0777)) >= 0);
 
-	ATF_REQUIRE_ERRNO(EBADF, eventfd_write(efd, value) < 0);
+	/* You are actually able to use eventfd_write/eventfd_read as normal
+	 * write/read, but this is a bad idea! */
+	ATF_REQUIRE(eventfd_write(efd, value) == 0);
 	ATF_REQUIRE_ERRNO(EBADF, eventfd_read(efd, &value) < 0);
 
 	ATF_REQUIRE(close(efd) == 0);
