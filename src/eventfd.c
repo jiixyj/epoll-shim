@@ -6,6 +6,7 @@
 #include <sys/types.h>
 
 #include <sys/event.h>
+#include <sys/ioctl.h>
 #include <sys/param.h>
 
 #include <errno.h>
@@ -17,6 +18,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "epoll-shimd.h"
 #include "epoll_shim_ctx.h"
 
 static errno_t
@@ -129,13 +131,59 @@ fail:
 	return NULL;
 }
 
+static errno_t
+eventfd_try_cuse(unsigned int initval, int flags, /**/
+    bool *cuse_success, int *cuse_fd)
+{
+	errno_t ec;
+	int oe = errno;
+
+	if ((*cuse_fd = open("/dev/epoll_shim/eventfd",
+		 O_RDWR | (flags & (EFD_NONBLOCK | EFD_CLOEXEC)))) < 0) {
+		if (errno != ENOENT && errno != ECAPMODE) {
+			return errno;
+		}
+
+		errno = oe;
+		*cuse_success = false;
+		return 0;
+	}
+
+	if (ioctl(*cuse_fd, EVENTFD_IOCTL_SETUP,
+		&(struct eventfd_setup){
+		    .initval = initval,
+		    .flags = flags,
+		}) < 0) {
+		ec = errno;
+		(void)close(*cuse_fd);
+		return ec;
+	}
+
+	*cuse_success = true;
+	return 0;
+}
+
 int
 eventfd(unsigned int initval, int flags)
 {
-	FDContextMapNode *node;
 	errno_t ec;
 
-	node = eventfd_impl(initval, flags, &ec);
+	{
+		bool cuse_success;
+		int cuse_fd;
+
+		ec = eventfd_try_cuse(initval, flags, &cuse_success, &cuse_fd);
+		if (ec != 0) {
+			errno = ec;
+			return -1;
+		}
+
+		if (cuse_success) {
+			return cuse_fd;
+		}
+	}
+
+	FDContextMapNode *node = eventfd_impl(initval, flags, &ec);
 	if (!node) {
 		errno = ec;
 		return -1;

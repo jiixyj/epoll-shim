@@ -90,8 +90,13 @@ RB_GENERATE_STATIC(fd_context_map_, fd_context_map_node_, entry,
 
 EpollShimCtx epoll_shim_ctx = {
     .fd_context_map = RB_INITIALIZER(&fd_context_map),
-    .mutex = PTHREAD_MUTEX_INITIALIZER,
 };
+
+__attribute__((constructor)) static void
+epoll_shim_initialize_mutex()
+{
+	(void)pthread_mutex_init(&epoll_shim_ctx.mutex, NULL);
+}
 
 static FDContextMapNode *
 epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,

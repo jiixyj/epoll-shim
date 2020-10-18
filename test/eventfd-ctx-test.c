@@ -1,9 +1,59 @@
+/* clang-format off */
+
+/*
+ * 'eventfd__threads_blocking' test based on:
+ * https://raw.githubusercontent.com/cloudius-systems/osv/master/tests/tst-eventfd.cc
+ *
+ * License:
+ *
+ * Copyright (C) 2013 Cloudius Systems, Ltd.
+ *
+ * Parts are copyright by other contributors. Please refer to copyright notices
+ * in the individual source files, and to the git commit log, for a more accurate
+ * list of copyright holders.
+ *
+ * OSv is open-source software, distributed under the 3-clause BSD license:
+ *
+ *     Redistribution and use in source and binary forms, with or without
+ *     modification, are permitted provided that the following conditions are met:
+ *
+ *     * Redistributions of source code must retain the above copyright notice,
+ *       this list of conditions and the following disclaimer.
+ *
+ *     * Redistributions in binary form must reproduce the above copyright notice,
+ *       this list of conditions and the following disclaimer in the documentation
+ *       and/or other materials provided with the distribution.
+ *
+ *     * Neither the name of the Cloudius Systems, Ltd. nor the names of its
+ *       contributors may be used to endorse or promote products derived from this
+ *       software without specific prior written permission.
+ *
+ *     THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *     AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *     IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *     DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *     FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *     DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *     SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *     CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *     OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * This project also includes source code adopted and adapted from four other
+ * open-source projects - FreeBSD, OpenSolaris, Prex and Musl. These projects have
+ * their own licenses. Please refer to the files documentation/LICENSE-*
+ * for the licenses and copyright statements of these projects.
+ */
+
+/* clang-format on */
+
 #define _GNU_SOURCE
 
 #include <atf-c.h>
 
 #include <sys/types.h>
 
+#include <sys/capsicum.h>
 #include <sys/eventfd.h>
 #include <sys/param.h>
 #include <sys/stat.h>
@@ -424,9 +474,10 @@ write_fun(void *arg)
 	int i;
 
 	for (i = 0; i < td->loop; i++) {
-		ATF_REQUIRE((s = write(td->efd, &td->ev_count,
-				 sizeof(td->ev_count))) ==
-		    sizeof(td->ev_count));
+		ATF_REQUIRE_MSG((s = write(td->efd, &td->ev_count,
+				     sizeof(td->ev_count))) ==
+			sizeof(td->ev_count),
+		    "%d, errno %d", (int)s, errno);
 		usleep(100);
 	}
 	return (NULL);
@@ -499,6 +550,17 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_blocking, tc)
 #undef THREADS
 }
 
+ATF_TC_WITHOUT_HEAD(eventfd__capabilities_mode);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__capabilities_mode, tc)
+{
+	int efd;
+
+	ATF_REQUIRE(cap_enter() == 0);
+
+	ATF_REQUIRE((efd = eventfd(0, EFD_CLOEXEC | EFD_SEMAPHORE)) >= 0);
+	ATF_REQUIRE(close(efd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, eventfd__constants);
@@ -512,53 +574,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, eventfd__threads_read);
 	ATF_TP_ADD_TC(tp, eventfd__fork);
 	ATF_TP_ADD_TC(tp, eventfd__stat);
-	/*
-	 * Following test based on:
-	 * https://raw.githubusercontent.com/cloudius-systems/osv/master/tests/tst-eventfd.cc
-	 *
-	 * https://github.com/cloudius-systems/osv
-	 * https://github.com/cloudius-systems/osv/blob/master/LICENSE
-	 */
-#if 0
-Copyright (C) 2013 Cloudius Systems, Ltd.
-
-Parts are copyright by other contributors. Please refer to copyright notices
-in the individual source files, and to the git commit log, for a more accurate
-list of copyright holders.
-
-OSv is open-source software, distributed under the 3-clause BSD license:
-
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are met:
-
-    * Redistributions of source code must retain the above copyright notice,
-      this list of conditions and the following disclaimer.
-
-    * Redistributions in binary form must reproduce the above copyright notice,
-      this list of conditions and the following disclaimer in the documentation
-      and/or other materials provided with the distribution.
-
-    * Neither the name of the Cloudius Systems, Ltd. nor the names of its
-      contributors may be used to endorse or promote products derived from this
-      software without specific prior written permission.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-    OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-This project also includes source code adopted and adapted from four other
-open-source projects - FreeBSD, OpenSolaris, Prex and Musl. These projects have
-their own licenses. Please refer to the files documentation/LICENSE-*
-for the licenses and copyright statements of these projects.
-#endif
 	ATF_TP_ADD_TC(tp, eventfd__threads_blocking);
+	ATF_TP_ADD_TC(tp, eventfd__capabilities_mode);
 
 	return atf_no_error();
 }
