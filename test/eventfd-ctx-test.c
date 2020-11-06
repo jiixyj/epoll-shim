@@ -361,6 +361,11 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__fork, tc)
 	ATF_REQUIRE((efd = eventfd(0,
 			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 
+	if (close(5) == 0) {
+		atf_tc_skip("shimmed eventfd's implemented by self-pipe cannot be shared "
+			    "between processes");
+	}
+
 	int pid;
 	ATF_REQUIRE((pid = fork()) >= 0);
 	if (pid == 0) {
