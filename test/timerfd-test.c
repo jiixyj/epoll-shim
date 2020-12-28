@@ -499,8 +499,9 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_checks, tc)
 	struct itimerspec itimerspec;
 	ATF_REQUIRE_ERRNO(EBADF, timerfd_gettime(timerfd, &itimerspec) < 0);
 
-	ATF_REQUIRE_ERRNO(EBADF,
-	    timerfd_settime(timerfd, 0, &itimerspec, NULL) < 0);
+	ATF_REQUIRE(timerfd_settime(timerfd, 0, &itimerspec, NULL) < 0);
+	/* Linux 5.10 returns EINVAL instead of EBADF. */
+	ATF_REQUIRE(errno == EBADF || errno == EINVAL);
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__upgrade_simple_to_complex);

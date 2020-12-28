@@ -939,8 +939,12 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	}
 	ATF_REQUIRE(close(kq) == 0);
 #endif
+#if defined(__linux__)
+	/* Linux 5.10 doesn't notify on new readers. */
+	will_notice_new_readers = false;
+#endif
 	if (!will_notice_new_readers) {
-		atf_tc_skip("FreeBSD FIFOs don't notify on new readers");
+		atf_tc_skip("FreeBSD/Linux FIFOs don't notify on new readers");
 	} else {
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 		ATF_REQUIRE(eps[0].events == EPOLLOUT);

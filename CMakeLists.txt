@@ -29,6 +29,10 @@ if(NOT HAVE_ERRNO_T)
   add_definitions(-Derrno_t=int)
 endif()
 
+# FreeBSD 13 supports native eventfd descriptors. Prefer them if available.
+include(CheckSymbolExists)
+check_symbol_exists(eventfd "sys/eventfd.h" HAVE_EVENTFD)
+
 add_subdirectory(src)
 
 if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
@@ -62,8 +66,12 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     TARGETS epoll-shim
     EXPORT ${PROJECT_NAME}-targets
     LIBRARY
-    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-  install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/" TYPE INCLUDE)
+    INCLUDES
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+  install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/sys" TYPE INCLUDE)
+  if(NOT HAVE_EVENTFD)
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/eventfd/" TYPE INCLUDE)
+  endif()
 
   install(
     EXPORT ${PROJECT_NAME}-targets

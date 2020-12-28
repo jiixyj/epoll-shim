@@ -215,11 +215,17 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__argument_checks, tcptr)
 	ATF_REQUIRE(pipe2(fds, O_CLOEXEC) == 0);
 
 	ATF_REQUIRE_ERRNO(EBADF, signalfd(invalid_fd, &mask, 0));
-	ATF_REQUIRE_ERRNO(EINVAL, signalfd(invalid_fd, NULL, 0));
-	ATF_REQUIRE_ERRNO(EINVAL, signalfd(-1, NULL, 0));
+	ATF_REQUIRE(signalfd(invalid_fd, NULL, 0));
+	/* Linux 5.10 returns EFAULT. */
+	ATF_REQUIRE(errno == EINVAL || errno == EFAULT);
+	ATF_REQUIRE(signalfd(-1, NULL, 0));
+	/* Linux 5.10 returns EFAULT. */
+	ATF_REQUIRE(errno == EINVAL || errno == EFAULT);
 
 	ATF_REQUIRE_ERRNO(EINVAL, signalfd(fds[0], &mask, 0));
-	ATF_REQUIRE_ERRNO(EINVAL, signalfd(fds[0], NULL, 0));
+	ATF_REQUIRE(signalfd(fds[0], NULL, 0));
+	/* Linux 5.10 returns EFAULT. */
+	ATF_REQUIRE(errno == EINVAL || errno == EFAULT);
 
 	ATF_REQUIRE_ERRNO(EINVAL, signalfd(invalid_fd, &mask, 42));
 

@@ -609,6 +609,10 @@ poll_only_fd_thread_fun(void *arg)
 ATF_TC_WITHOUT_HEAD(epoll__poll_only_fd);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 {
+#ifdef __linux__
+	atf_tc_skip("Test hangs on Linux");
+#endif
+
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
@@ -1633,14 +1637,18 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 	{
 		fd = signalfd(-1, &mask, 0);
 		ATF_REQUIRE(fd >= 0);
-		ATF_REQUIRE_ERRNO(EINVAL, write(fd, &dummy, 1) < 0);
+		ATF_REQUIRE(write(fd, &dummy, 1) < 0);
+		/* FreeBSD's native write returns EOPNOTSUPP. write is not
+		 * shimmed when using native eventfds. */
+		ATF_REQUIRE(errno == EINVAL || errno == EOPNOTSUPP);
 		ATF_REQUIRE(close(fd) == 0);
 	}
 
 	{
 		fd = timerfd_create(CLOCK_MONOTONIC, 0);
 		ATF_REQUIRE(fd >= 0);
-		ATF_REQUIRE_ERRNO(EINVAL, write(fd, &dummy, 1) < 0);
+		ATF_REQUIRE(write(fd, &dummy, 1) < 0);
+		ATF_REQUIRE(errno == EINVAL || errno == EOPNOTSUPP);
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    write(fd, &dummy, (size_t)SSIZE_MAX + 1) < 0);
 		ATF_REQUIRE(close(fd) == 0);
@@ -1649,7 +1657,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 	{
 		fd = epoll_create1(EPOLL_CLOEXEC);
 		ATF_REQUIRE(fd >= 0);
-		ATF_REQUIRE_ERRNO(EINVAL, write(fd, &dummy, 1) < 0);
+		ATF_REQUIRE(write(fd, &dummy, 1) < 0);
+		ATF_REQUIRE(errno == EINVAL || errno == EOPNOTSUPP);
 		ATF_REQUIRE_ERRNO(EINVAL, read(fd, &dummy, 1) < 0);
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    read(fd, &dummy, (size_t)SSIZE_MAX + 1) < 0);
