@@ -31,6 +31,8 @@ example:
   `sendmsg` call will return `EOPNOTSUPP`. In most cases sharing
   `epoll`/`timerfd`/`signalfd` is a bad idea anyway, but there are some
   legitimate use cases (for example sharing semaphore `eventfd`s, issue #23).
+  When the OS natively supports `eventfd`s (as is the case for FreeBSD >= 13)
+  this library won't provide `eventfd` shims or the `sys/eventfd.h` header.
 
 The following operating systems are supported:
 
@@ -61,6 +63,11 @@ To install (as root):
     cmake --build . --target install
 
 ## Changelog
+
+### 2020-12-29
+
+- Add support for native `eventfd`s (provided by FreeBSD >= 13). The
+  `sys/eventfd.h` header will not be installed in this case.
 
 ### 2020-11-06
 
