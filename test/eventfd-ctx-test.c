@@ -4,6 +4,7 @@
 
 #include <sys/types.h>
 
+#include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/param.h>
 #include <sys/stat.h>
@@ -504,6 +505,55 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_blocking, tc)
 #undef THREADS
 }
 
+ATF_TC_WITHOUT_HEAD(eventfd__epoll);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__epoll, tc)
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	int efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+	ATF_REQUIRE(efd >= 0);
+
+	struct epoll_event event;
+
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, efd,
+			&(struct epoll_event){
+			    .events = EPOLLIN | EPOLLET,
+			    .data.fd = efd,
+			}) == 0);
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+
+	ATF_REQUIRE(eventfd_write(efd, 3) == 0);
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 1);
+	ATF_REQUIRE(event.events == EPOLLIN);
+	ATF_REQUIRE(event.data.fd == efd);
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+
+	uint64_t value;
+	ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, efd,
+			&(struct epoll_event){
+			    .events = EPOLLOUT,
+			    .data.fd = efd,
+			}) == 0);
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 1);
+	ATF_REQUIRE(event.events == EPOLLOUT);
+	ATF_REQUIRE(event.data.fd == efd);
+
+	ATF_REQUIRE(eventfd_write(efd, UINT64_MAX - 2) == 0);
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 1);
+	ATF_REQUIRE(event.events == EPOLLOUT);
+	ATF_REQUIRE(event.data.fd == efd);
+
+	ATF_REQUIRE(eventfd_write(efd, 1) == 0);
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+
+	ATF_REQUIRE(close(efd) == 0);
+	ATF_REQUIRE(close(ep) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, eventfd__constants);
@@ -564,6 +614,7 @@ their own licenses. Please refer to the files documentation/LICENSE-*
 for the licenses and copyright statements of these projects.
 #endif
 	ATF_TP_ADD_TC(tp, eventfd__threads_blocking);
+	ATF_TP_ADD_TC(tp, eventfd__epoll);
 
 	return atf_no_error();
 }

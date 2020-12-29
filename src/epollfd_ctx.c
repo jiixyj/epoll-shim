@@ -1031,7 +1031,20 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2, struct epoll_event *ev,
 
 		if (ioctl(fd2_node->fd, FIONREAD, &tmp) < 0 &&
 		    errno == ENOTTY) {
+#ifdef __FreeBSD__
+			/*
+			 * On FreeBSD we need to distinguish between kqueues
+			 * and native eventfds.
+			 */
+			if (ioctl(fd2_node->fd, FIONBIO, &tmp) < 0 &&
+			    errno == ENOTTY) {
+				fd2_node->node_type = NODE_TYPE_KQUEUE;
+			} else {
+				fd2_node->node_type = NODE_TYPE_OTHER;
+			}
+#else
 			fd2_node->node_type = NODE_TYPE_KQUEUE;
+#endif
 		} else {
 			fd2_node->node_type = NODE_TYPE_FIFO;
 
