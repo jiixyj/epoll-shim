@@ -9,7 +9,8 @@ add_library(
   timerfd.c
   timerfd_ctx.c
   signalfd.c
-  signalfd_ctx.c)
+  signalfd_ctx.c
+  timespec_util.c)
 if(NOT HAVE_EVENTFD)
   target_sources(epoll-shim PRIVATE eventfd.c eventfd_ctx.c)
 endif()

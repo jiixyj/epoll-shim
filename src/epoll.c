@@ -120,7 +120,13 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 	}
 
-	return epollfd_ctx_ctl(&node->ctx.epollfd, op, fd2, ev);
+	FDContextMapNode *fd2_node = NULL;
+	if (op == EPOLL_CTL_ADD) {
+		fd2_node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd2);
+	}
+
+	return epollfd_ctx_ctl(&node->ctx.epollfd, op, fd2,
+	    fd_context_map_node_as_pollable_node(fd2_node), ev);
 }
 
 int

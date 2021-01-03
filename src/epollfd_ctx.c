@@ -508,6 +508,13 @@ out:
 		}
 #endif
 	}
+
+	if (fd2_node->node_type == NODE_TYPE_KQUEUE &&
+	    fd2_node->node_data.kqueue.pollable_node.ptr) {
+		pollable_node_poll(fd2_node->node_data.kqueue.pollable_node,
+		    &fd2_node->revents);
+		fd2_node->revents &= (fd2_node->events | EPOLLHUP | EPOLLERR);
+	}
 }
 
 static void
@@ -1019,7 +1026,8 @@ modify_fifo_rights_from_capabilities(RegisteredFDsNode *fd2_node)
 #endif
 
 static errno_t
-epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2, struct epoll_event *ev,
+epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2,
+    PollableNode fd2_pollable_node, struct epoll_event *ev,
     struct stat const *statbuf)
 {
 	RegisteredFDsNode *fd2_node = registered_fds_node_create(fd2);
@@ -1046,6 +1054,16 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2, struct epoll_event *ev,
 #else
 			fd2_node->node_type = NODE_TYPE_KQUEUE;
 #endif
+
+			if (fd2_node->node_type == NODE_TYPE_KQUEUE) {
+				fd2_node->node_data.kqueue.pollable_node =
+				    fd2_pollable_node;
+
+				if (fd2_pollable_node.ptr != NULL) {
+					pollable_node_poll(fd2_pollable_node,
+					    NULL);
+				}
+			}
 		} else {
 			fd2_node->node_type = NODE_TYPE_FIFO;
 
@@ -1119,7 +1137,7 @@ epollfd_ctx_modify_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node,
 
 static errno_t
 epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
-    struct epoll_event *ev)
+    PollableNode fd2_pollable_node, struct epoll_event *ev)
 {
 	assert(op == EPOLL_CTL_DEL || ev != NULL);
 
@@ -1162,9 +1180,9 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 	errno_t ec;
 
 	if (op == EPOLL_CTL_ADD) {
-		ec = fd2_node
-		    ? EEXIST
-		    : epollfd_ctx_add_node(epollfd, fd2, ev, &statbuf);
+		ec = fd2_node ? EEXIST
+			      : epollfd_ctx_add_node(epollfd, fd2,
+				    fd2_pollable_node, ev, &statbuf);
 	} else if (op == EPOLL_CTL_DEL) {
 		ec = !fd2_node
 		    ? ENOENT
@@ -1199,12 +1217,13 @@ epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, struct pollfd *pfds)
 }
 
 errno_t
-epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2, struct epoll_event *ev)
+epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2,
+    PollableNode fd2_pollable_node, struct epoll_event *ev)
 {
 	errno_t ec;
 
 	(void)pthread_mutex_lock(&epollfd->mutex);
-	ec = epollfd_ctx_ctl_impl(epollfd, op, fd2, ev);
+	ec = epollfd_ctx_ctl_impl(epollfd, op, fd2, fd2_pollable_node, ev);
 	(void)pthread_mutex_unlock(&epollfd->mutex);
 
 	return ec;

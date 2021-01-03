@@ -10,85 +10,11 @@
 #include <errno.h>
 #include <signal.h>
 
+#include "timespec_util.h"
+
 #ifndef nitems
 #define nitems(x) (sizeof((x)) / sizeof((x)[0]))
 #endif
-
-#ifndef timespeccmp
-#define timespeccmp(tvp, uvp, cmp)                                            \
-	(((tvp)->tv_sec == (uvp)->tv_sec)                                     \
-		? ((tvp)->tv_nsec cmp(uvp)->tv_nsec)                          \
-		: ((tvp)->tv_sec cmp(uvp)->tv_sec))
-#endif
-
-#ifndef timespecsub
-#define timespecsub(tsp, usp, vsp)                                            \
-	do {                                                                  \
-		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;                \
-		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;             \
-		if ((vsp)->tv_nsec < 0) {                                     \
-			(vsp)->tv_sec--;                                      \
-			(vsp)->tv_nsec += 1000000000L;                        \
-		}                                                             \
-	} while (0)
-#endif
-
-static bool
-timespec_is_valid(struct timespec const *ts)
-{
-	return ts->tv_sec >= 0 && ts->tv_nsec >= 0 && ts->tv_nsec < 1000000000;
-}
-
-static bool
-itimerspec_is_valid(struct itimerspec const *its)
-{
-	return timespec_is_valid(&its->it_value) &&
-	    timespec_is_valid(&its->it_interval);
-}
-
-static errno_t
-timespecadd_safe(struct timespec const *tsp, struct timespec const *usp,
-    struct timespec *vsp)
-{
-	assert(timespec_is_valid(tsp));
-	assert(timespec_is_valid(usp));
-
-	if (__builtin_add_overflow(tsp->tv_sec, usp->tv_sec, &vsp->tv_sec)) {
-		return EINVAL;
-	}
-	vsp->tv_nsec = tsp->tv_nsec + usp->tv_nsec;
-
-	if (vsp->tv_nsec >= 1000000000L) {
-		if (__builtin_add_overflow(vsp->tv_sec, 1, &vsp->tv_sec)) {
-			return EINVAL;
-		}
-		vsp->tv_nsec -= 1000000000L;
-	}
-
-	return 0;
-}
-
-static errno_t
-timespecsub_safe(struct timespec const *tsp, struct timespec const *usp,
-    struct timespec *vsp)
-{
-	assert(timespec_is_valid(tsp));
-	assert(timespec_is_valid(usp));
-
-	if (__builtin_sub_overflow(tsp->tv_sec, usp->tv_sec, &vsp->tv_sec)) {
-		return EINVAL;
-	}
-	vsp->tv_nsec = tsp->tv_nsec - usp->tv_nsec;
-
-	if (vsp->tv_nsec < 0) {
-		if (__builtin_sub_overflow(vsp->tv_sec, 1, &vsp->tv_sec)) {
-			return EINVAL;
-		}
-		vsp->tv_nsec += 1000000000L;
-	}
-
-	return 0;
-}
 
 static bool
 timerfd_ctx_is_disarmed(TimerFDCtx const *timerfd)
@@ -147,9 +73,8 @@ timerfd_ctx_update_to_current_time(TimerFDCtx *timerfd,
 	if (timerfd_ctx_is_interval_timer(timerfd)) {
 		struct timespec diff_time;
 
-		if (timespecsub_safe(current_time,
-			&timerfd->current_itimerspec.it_value,
-			&diff_time) != 0) {
+		if (!timespecsub_safe(current_time,
+			&timerfd->current_itimerspec.it_value, &diff_time)) {
 			goto disarm;
 		}
 
@@ -179,9 +104,9 @@ timerfd_ctx_update_to_current_time(TimerFDCtx *timerfd,
 			}
 
 			struct timespec next_ts = nanos_to_ts(nanos_to_add);
-			if (timespecadd_safe(&next_ts,
+			if (!timespecadd_safe(&next_ts,
 				&timerfd->current_itimerspec.it_value,
-				&next_ts) != 0) {
+				&next_ts)) {
 				goto disarm;
 			}
 
@@ -254,7 +179,7 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 
 	assert(new->tv_sec != 0 || new->tv_nsec != 0);
 
-	if (timespecsub_safe(new, current_time, &diff_time) != 0 ||
+	if (!timespecsub_safe(new, current_time, &diff_time) ||
 	    diff_time.tv_sec < 0) {
 		diff_time.tv_sec = 0;
 		diff_time.tv_nsec = 0;
@@ -401,8 +326,9 @@ timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
 		    .it_value = current_time,
 		};
 
-		if ((ec = timespecadd_safe(&new_absolute.it_value,
-			 &new->it_value, &new_absolute.it_value)) != 0) {
+		if (!timespecadd_safe(&new_absolute.it_value, &new->it_value,
+			&new_absolute.it_value)) {
+			ec = EINVAL;
 			return ec;
 		}
 	}

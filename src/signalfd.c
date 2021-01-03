@@ -1,12 +1,15 @@
 #include <sys/signalfd.h>
 #undef read
 #undef close
+#undef poll
+#undef ppoll
 
 #include <sys/types.h>
 
 #include <sys/event.h>
 #include <sys/stat.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <poll.h>
 #include <pthread.h>
@@ -25,7 +28,7 @@ signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx, uint32_t *value,
 {
 	for (;;) {
 		errno_t ec = signalfd_ctx_read(signalfd_ctx, value);
-		if (nonblock || ec != EAGAIN) {
+		if (nonblock || (ec != EAGAIN && ec != EWOULDBLOCK)) {
 			return (ec);
 		}
 
@@ -79,10 +82,17 @@ signalfd_close(FDContextMapNode *node)
 	return signalfd_ctx_terminate(&node->ctx.signalfd);
 }
 
+static void
+signalfd_poll(FDContextMapNode *node, uint32_t *revents)
+{
+	signalfd_ctx_poll(&node->ctx.signalfd, revents);
+}
+
 static FDContextVTable const signalfd_vtable = {
     .read_fun = signalfd_read,
     .write_fun = fd_context_default_write,
     .close_fun = signalfd_close,
+    .poll_fun = signalfd_poll,
 };
 
 static FDContextMapNode *

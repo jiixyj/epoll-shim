@@ -42,10 +42,23 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__simple_signalfd, tcptr)
 
 	kill(getpid(), SIGINT);
 
+	{
+		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
+	}
+
 	s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
 	ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
 
 	ATF_REQUIRE(fdsi.ssi_signo == SIGINT);
+
+	ATF_REQUIRE(sigprocmask(SIG_UNBLOCK, &mask, NULL) == 0);
+
+	{
+		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+	}
 
 	ATF_REQUIRE(close(sfd) == 0);
 }
@@ -248,6 +261,161 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__argument_checks, tcptr)
 	ATF_REQUIRE(close(fds[1]) == 0);
 }
 
+static sig_atomic_t volatile got_sigint = 0;
+static void
+sigint_handler(int signo)
+{
+	got_sigint = 1;
+}
+
+ATF_TC_WITHOUT_HEAD(signalfd__signal_disposition);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__signal_disposition, tcptr)
+{
+	/*
+	 * Check that signalfd's don't work when signals are handled by a
+	 * different mechanism.
+	 */
+
+	sigset_t mask;
+	int sfd;
+	struct signalfd_siginfo fdsi;
+	ssize_t s;
+
+	ATF_REQUIRE(signal(SIGINT, sigint_handler) != SIG_ERR);
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+
+	sfd = signalfd(-1, &mask, SFD_NONBLOCK);
+	ATF_REQUIRE(sfd >= 0);
+
+	ATF_REQUIRE_ERRNO(EAGAIN, /**/
+	    read(sfd, &fdsi, sizeof(struct signalfd_siginfo)) < 0);
+
+	ATF_REQUIRE(kill(getpid(), SIGINT) == 0);
+	ATF_REQUIRE(got_sigint == 1);
+
+	{
+		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+	}
+
+	ATF_REQUIRE_ERRNO(EAGAIN, /**/
+	    read(sfd, &fdsi, sizeof(struct signalfd_siginfo)) < 0);
+
+	{
+		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+	}
+
+	ATF_REQUIRE(close(sfd) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(signalfd__sigwaitinfo);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
+{
+	sigset_t mask;
+
+	sigemptyset(&mask);
+
+	int sfd2 = signalfd(-1, &mask, SFD_NONBLOCK);
+	ATF_REQUIRE(sfd2 >= 0);
+
+	sigaddset(&mask, SIGUSR1);
+	sigaddset(&mask, SIGUSR2);
+	sigaddset(&mask, SIGINT);
+
+	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+
+	kill(getpid(), SIGINT);
+	kill(getpid(), SIGUSR1);
+	kill(getpid(), SIGUSR2);
+
+	int sfd = signalfd(-1, &mask, 0);
+	ATF_REQUIRE(sfd >= 0);
+
+	int sfd3 = signalfd(-1, &mask, 0);
+	ATF_REQUIRE(sfd3 >= 0);
+
+	{
+		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
+	}
+	{
+		struct pollfd pfd = {.fd = sfd3, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
+	}
+
+	{
+		siginfo_t siginfo;
+		int s = sigwaitinfo(&mask, &siginfo);
+		ATF_REQUIRE(s == SIGINT);
+		ATF_REQUIRE(siginfo.si_signo == SIGINT);
+	}
+
+	{
+		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
+	}
+	{
+		struct pollfd pfd = {.fd = sfd3, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
+	}
+
+	{
+		siginfo_t siginfo;
+		int s = sigtimedwait(&mask, &siginfo, /**/
+		    &(struct timespec){0, 0});
+		ATF_REQUIRE(s == SIGUSR1);
+		ATF_REQUIRE(siginfo.si_signo == SIGUSR1);
+	}
+
+	{
+		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
+	}
+	{
+		struct pollfd pfd = {.fd = sfd3, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+		ATF_REQUIRE(pfd.revents == POLLIN);
+	}
+
+	{
+		struct signalfd_siginfo fdsi;
+		ATF_REQUIRE(
+		    read(sfd, &fdsi, sizeof(struct signalfd_siginfo)) >= 0);
+		ATF_REQUIRE(fdsi.ssi_signo == SIGUSR2);
+	}
+
+	ATF_REQUIRE(sigprocmask(SIG_UNBLOCK, &mask, NULL) == 0);
+
+	{
+		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+	}
+	{
+		struct pollfd pfd = {.fd = sfd3, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+	}
+
+	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+	kill(getpid(), SIGUSR1);
+	struct signalfd_siginfo fdsi;
+	ATF_REQUIRE_ERRNO(EAGAIN, /**/
+	    read(sfd2, &fdsi, sizeof(struct signalfd_siginfo)) < 0);
+	ATF_REQUIRE(read(sfd, &fdsi, sizeof(struct signalfd_siginfo)) >= 0);
+	ATF_REQUIRE(sigprocmask(SIG_UNBLOCK, &mask, NULL) == 0);
+
+	ATF_REQUIRE(close(sfd) == 0);
+	ATF_REQUIRE(close(sfd2) == 0);
+	ATF_REQUIRE(close(sfd3) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, signalfd__simple_signalfd);
@@ -256,6 +424,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, signalfd__multiple_signals);
 	ATF_TP_ADD_TC(tp, signalfd__modify_signalmask);
 	ATF_TP_ADD_TC(tp, signalfd__argument_checks);
+	ATF_TP_ADD_TC(tp, signalfd__signal_disposition);
+	ATF_TP_ADD_TC(tp, signalfd__sigwaitinfo);
 
 	return atf_no_error();
 }

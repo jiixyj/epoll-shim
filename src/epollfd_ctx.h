@@ -14,6 +14,8 @@
 #include <poll.h>
 #include <pthread.h>
 
+#include "pollable_node.h"
+
 struct registered_fds_node_;
 typedef struct registered_fds_node_ RegisteredFDsNode;
 
@@ -53,6 +55,9 @@ struct registered_fds_node_ {
 			bool readable;
 			bool writable;
 		} fifo;
+		struct {
+			PollableNode pollable_node;
+		} kqueue;
 	} node_data;
 	int eof_state;
 	bool pollpri_active;
@@ -99,7 +104,7 @@ errno_t epollfd_ctx_terminate(EpollFDCtx *epollfd);
 void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, struct pollfd *pfds);
 
 errno_t epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2,
-    struct epoll_event *ev);
+    PollableNode fd2_pollable_node, struct epoll_event *ev);
 errno_t epollfd_ctx_wait(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
     int *actual_cnt);
 

@@ -3,6 +3,7 @@
 
 #include <sys/tree.h>
 
+#include <signal.h>
 #include <unistd.h>
 
 #include "epollfd_ctx.h"
@@ -18,11 +19,14 @@ typedef errno_t (*fd_context_read_fun)(FDContextMapNode *node, /**/
 typedef errno_t (*fd_context_write_fun)(FDContextMapNode *node, /**/
     const void *buf, size_t nbytes, size_t *bytes_transferred);
 typedef errno_t (*fd_context_close_fun)(FDContextMapNode *node);
+typedef void (*fd_context_poll_fun)(FDContextMapNode *node, /**/
+    uint32_t *revents);
 
 typedef struct {
 	fd_context_read_fun read_fun;
 	fd_context_write_fun write_fun;
 	fd_context_close_fun close_fun;
+	fd_context_poll_fun poll_fun;
 } FDContextVTable;
 
 errno_t fd_context_default_read(FDContextMapNode *node, /**/
@@ -43,6 +47,7 @@ struct fd_context_map_node_ {
 	FDContextVTable const *vtable;
 };
 
+PollableNode fd_context_map_node_as_pollable_node(FDContextMapNode *node);
 errno_t fd_context_map_node_destroy(FDContextMapNode *node);
 
 /**/
@@ -70,5 +75,9 @@ void epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
 int epoll_shim_close(int fd);
 ssize_t epoll_shim_read(int fd, void *buf, size_t nbytes);
 ssize_t epoll_shim_write(int fd, void const *buf, size_t nbytes);
+
+int epoll_shim_poll(struct pollfd *, nfds_t, int);
+int epoll_shim_ppoll(struct pollfd *, nfds_t, struct timespec const *,
+    sigset_t const *);
 
 #endif
