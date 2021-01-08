@@ -6,6 +6,7 @@ add_library(
   epoll_shim_ctx.c
   epoll.c
   epollfd_ctx.c
+  kqueue_event.c
   timerfd.c
   timerfd_ctx.c
   signalfd.c

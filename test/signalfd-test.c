@@ -349,10 +349,19 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 	}
 
 	{
+#ifdef __OpenBSD__
+		sigset_t mask2;
+		sigemptyset(&mask2);
+		sigaddset(&mask2, SIGINT);
+		int s;
+		ATF_REQUIRE(sigwait(&mask2, &s) == 0);
+		ATF_REQUIRE(s == SIGINT);
+#else
 		siginfo_t siginfo;
 		int s = sigwaitinfo(&mask, &siginfo);
 		ATF_REQUIRE(s == SIGINT);
 		ATF_REQUIRE(siginfo.si_signo == SIGINT);
+#endif
 	}
 
 	{
@@ -367,11 +376,20 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 	}
 
 	{
+#ifdef __OpenBSD__
+		sigset_t mask2;
+		sigemptyset(&mask2);
+		sigaddset(&mask2, SIGUSR1);
+		int s;
+		ATF_REQUIRE(sigwait(&mask2, &s) == 0);
+		ATF_REQUIRE(s == SIGUSR1);
+#else
 		siginfo_t siginfo;
 		int s = sigtimedwait(&mask, &siginfo, /**/
 		    &(struct timespec){0, 0});
 		ATF_REQUIRE(s == SIGUSR1);
 		ATF_REQUIRE(siginfo.si_signo == SIGUSR1);
+#endif
 	}
 
 	{
@@ -416,6 +434,59 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 	ATF_REQUIRE(close(sfd3) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(signalfd__sigwait_openbsd);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwait_openbsd, tcptr)
+{
+#ifndef __OpenBSD__
+	atf_tc_skip("test only valid for OpenBSD");
+#else
+	extern int __thrsigdivert(sigset_t set, siginfo_t * info,
+	    struct timespec const *timeout);
+
+	sigset_t mask;
+
+	ATF_REQUIRE(sigemptyset(&mask) == 0);
+	ATF_REQUIRE(sigaddset(&mask, SIGINT) == 0);
+	ATF_REQUIRE(sigaddset(&mask, SIGUSR1) == 0);
+	ATF_REQUIRE(sigaddset(&mask, SIGUSR2) == 0);
+
+	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+
+	{
+		int s = __thrsigdivert(mask, NULL, &(struct timespec){0, 0});
+		/*
+		 * EAGAIN is correct, but the following shouldn't appear in
+		 * dmesg:
+		 *
+		 * sigwait: trying to sleep zero nanoseconds
+		 *
+		 */
+		ATF_REQUIRE_ERRNO(EAGAIN, s < 0);
+	}
+	{
+		int s = __thrsigdivert(mask, NULL, &(struct timespec){0, -1});
+		/*
+		 * This should probably be EINVAL, see sys/kern/kern_sig.c:
+		 *
+		 *      if (timeinvalid)
+		 *      	error = EINVAL;
+		 *
+		 *      if (SCARG(uap, timeout) != NULL && nsecs == INFSLP)
+		 *      	error = EAGAIN;
+		 *
+		 * ...should be:
+		 *
+		 *      if (timeinvalid)
+		 *      	error = EINVAL;
+		 *      else if (SCARG(uap, timeout) != NULL && nsecs == 0)
+		 *      	error = EAGAIN;
+		 *
+		 */
+		ATF_REQUIRE_ERRNO(EAGAIN, s < 0);
+	}
+#endif
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, signalfd__simple_signalfd);
@@ -426,6 +497,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, signalfd__argument_checks);
 	ATF_TP_ADD_TC(tp, signalfd__signal_disposition);
 	ATF_TP_ADD_TC(tp, signalfd__sigwaitinfo);
+	ATF_TP_ADD_TC(tp, signalfd__sigwait_openbsd);
 
 	return atf_no_error();
 }

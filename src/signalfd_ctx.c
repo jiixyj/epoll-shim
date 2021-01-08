@@ -12,8 +12,14 @@
 #include <poll.h>
 #include <unistd.h>
 
+#ifdef __OpenBSD__
+#define sigisemptyset(sigs) (*(sigs) == 0)
+#define sigandset(sd, sl, sr) ((*(sd) = *(sl) & *(sr)), 0)
+#endif
+
 static errno_t
-signalfd_has_pending(SignalFDCtx const *signalfd, bool *has_pending)
+signalfd_has_pending(SignalFDCtx const *signalfd, bool *has_pending,
+    sigset_t *pending)
 {
 	sigset_t pending_sigs;
 
@@ -23,18 +29,16 @@ signalfd_has_pending(SignalFDCtx const *signalfd, bool *has_pending)
 	}
 
 	*has_pending = !sigisemptyset(&pending_sigs);
+	if (pending) {
+		*pending = pending_sigs;
+	}
 	return 0;
 }
 
 static errno_t
 signalfd_ctx_trigger_manually(SignalFDCtx *signalfd)
 {
-	struct kevent kev;
-	EV_SET(&kev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
-	if (kevent(signalfd->kq, &kev, 1, NULL, 0, NULL) < 0) {
-		return errno;
-	}
-	return 0;
+	return kqueue_event_trigger(&signalfd->kqueue_event);
 }
 
 errno_t
@@ -54,10 +58,13 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 #define _SIG_MAXSIG (8 * sizeof(sigset_t))
 #endif
 
-	struct kevent kevs[_SIG_MAXSIG + 1];
+	struct kevent kevs[_SIG_MAXSIG + 2];
 	int n = 0;
 
-	EV_SET(&kevs[n++], 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
+	if ((ec = kqueue_event_init(&signalfd->kqueue_event, kevs, &n,
+		 false)) != 0) {
+		goto out2;
+	}
 
 	for (int i = 1; i <= _SIG_MAXSIG; ++i) {
 		if (sigismember(&signalfd->sigs, i)) {
@@ -72,7 +79,7 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 	}
 
 	bool has_pending;
-	if ((ec = signalfd_has_pending(signalfd, &has_pending)) != 0) {
+	if ((ec = signalfd_has_pending(signalfd, &has_pending, NULL)) != 0) {
 		goto out;
 	}
 	if (has_pending) {
@@ -84,14 +91,24 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 	return 0;
 
 out:
-	signalfd_ctx_terminate(signalfd);
+	(void)kqueue_event_terminate(&signalfd->kqueue_event);
+out2:
+	pthread_mutex_destroy(&signalfd->mutex);
 	return ec;
 }
 
 errno_t
 signalfd_ctx_terminate(SignalFDCtx *signalfd)
 {
-	return pthread_mutex_destroy(&signalfd->mutex);
+	errno_t ec = 0;
+	errno_t ec_local;
+
+	ec_local = kqueue_event_terminate(&signalfd->kqueue_event);
+	ec = ec != 0 ? ec : ec_local;
+	ec_local = pthread_mutex_destroy(&signalfd->mutex);
+	ec = ec != 0 ? ec : ec_local;
+
+	return ec;
 }
 
 static errno_t
@@ -104,7 +121,45 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd, uint32_t *ident)
 	 * called.
 	 */
 
-	int s = sigtimedwait(&signalfd->sigs, NULL, &(struct timespec){0, 0});
+	int s;
+#ifdef __OpenBSD__
+	for (;;) {
+		errno_t ec;
+		bool has_pending;
+		sigset_t pending_sigs;
+		if ((ec = signalfd_has_pending(signalfd, &has_pending,
+			 &pending_sigs)) != 0) {
+			return ec;
+		}
+		if (!has_pending) {
+			return EAGAIN;
+		}
+
+		/*
+		 * sigwait does not behave nicely when multiple signals
+		 * are pending (as of OpenBSD 6.8). So, only try to
+		 * grab one.
+		 */
+		int signum = __builtin_ffsll((long long)pending_sigs);
+		sigset_t mask = sigmask(signum);
+
+		extern int __thrsigdivert(sigset_t set, siginfo_t * info,
+		    struct timespec const *timeout);
+
+		/* `&(struct timespec){0, 0}` returns EAGAIN but spams
+		 * the dmesg log. Let's do it with an invalid timespec
+		 * and EINVAL. */
+		s = __thrsigdivert(mask, NULL, &(struct timespec){0, -1});
+		if (s < 0 && (errno == EINVAL || errno == EAGAIN)) {
+			/* We must retry because we only checked for
+			 * one signal. There may be others pending. */
+			continue;
+		}
+		break;
+	}
+#else
+	s = sigtimedwait(&signalfd->sigs, NULL, &(struct timespec){0, 0});
+#endif
 	if (s < 0) {
 		return errno;
 	}
@@ -122,7 +177,7 @@ signalfd_ctx_clear_signal(SignalFDCtx *signalfd, bool was_triggered)
 		 * readable and therefore don't need to clear it.
 		 */
 		bool has_pending;
-		if (signalfd_has_pending(signalfd, &has_pending) != 0 ||
+		if (signalfd_has_pending(signalfd, &has_pending, NULL) != 0 ||
 		    has_pending) {
 			return true;
 		}
@@ -132,21 +187,15 @@ signalfd_ctx_clear_signal(SignalFDCtx *signalfd, bool was_triggered)
 	 * Clear the kq. Signals can arrive here, leading to a race.
 	 */
 
-	{
-		struct kevent kevs[32];
-		int n;
-
-		while ((n = kevent(signalfd->kq, NULL, 0, /**/
-			    kevs, 32, &(struct timespec){0, 0})) > 0) {
-		}
-	}
+	kqueue_event_clear(&signalfd->kqueue_event, signalfd->kq);
 
 	/*
 	 * Because of the race, we must recheck and manually trigger if
 	 * necessary.
 	 */
 	bool has_pending;
-	if (signalfd_has_pending(signalfd, &has_pending) != 0 || has_pending) {
+	if (signalfd_has_pending(signalfd, &has_pending, NULL) != 0 ||
+	    has_pending) {
 		(void)signalfd_ctx_trigger_manually(signalfd);
 		return true;
 	}

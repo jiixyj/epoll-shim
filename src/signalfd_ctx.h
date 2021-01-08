@@ -7,11 +7,14 @@
 
 #include <pthread.h>
 
+#include "kqueue_event.h"
+
 typedef struct {
 	int kq; // non owning
 	pthread_mutex_t mutex;
 
 	sigset_t sigs;
+	KQueueEvent kqueue_event;
 } SignalFDCtx;
 
 errno_t signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs);

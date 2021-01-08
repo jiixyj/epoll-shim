@@ -7,6 +7,8 @@
 
 #include <pthread.h>
 
+#include "kqueue_event.h"
+
 #define EVENTFD_CTX_FLAG_SEMAPHORE (1 << 0)
 
 typedef struct {
@@ -14,8 +16,7 @@ typedef struct {
 	int flags_;
 	pthread_mutex_t mutex_;
 
-	bool is_signalled_;
-	int self_pipe_[2]; // only used if EVFILT_USER is not available
+	KQueueEvent kqueue_event_;
 	uint_least64_t counter_;
 } EventFDCtx;
 
