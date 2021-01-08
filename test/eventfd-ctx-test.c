@@ -524,7 +524,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__epoll, tc)
 	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
 
 	ATF_REQUIRE(eventfd_write(efd, 3) == 0);
-	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 1);
+	ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
 	ATF_REQUIRE(event.events == EPOLLIN);
 	ATF_REQUIRE(event.data.fd == efd);
 	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);

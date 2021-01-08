@@ -1048,9 +1048,26 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri, tcptr)
 	c = 'n';
 	ATF_REQUIRE(send(fds[1], &c, 1, 0) == 1);
 
-	ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
-	ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI));
-	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+	for (;;) {
+		ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
+		ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI) ||
+				event.events == EPOLLPRI);
+		if (event.events == EPOLLPRI) {
+			continue;
+		}
+		break;
+	}
+	{
+		int r = epoll_wait(ep, &event, 1, 0);
+		if (r == 1) {
+			/* This can happen if the first event was triggered
+			 * only by a EVFILT_EXCEPT and the EVFILT_READ has not
+			 * arrived yet. */
+			ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI));
+		} else {
+			ATF_REQUIRE(r == 0);
+		}
+	}
 
 	ATF_REQUIRE(recv(fds[0], &c, 1, MSG_OOB) == 1);
 	ATF_REQUIRE(recv(fds[0], &c, 1, MSG_OOB) < 0);
