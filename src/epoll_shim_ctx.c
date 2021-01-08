@@ -13,6 +13,10 @@
 
 #include "timespec_util.h"
 
+#ifdef __NetBSD__
+#define ppoll pollts
+#endif
+
 static void
 fd_context_map_node_init(FDContextMapNode *node, int kq)
 {

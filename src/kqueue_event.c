@@ -5,7 +5,12 @@
 #include <assert.h>
 
 #include <fcntl.h>
+#include <time.h>
 #include <unistd.h>
+
+#ifndef nitems
+#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
+#endif
 
 errno_t
 kqueue_event_init(KQueueEvent *kqueue_event, struct kevent *kevs,

@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <fcntl.h>
 #include <poll.h>
@@ -15,6 +16,9 @@
 #ifdef __OpenBSD__
 #define sigisemptyset(sigs) (*(sigs) == 0)
 #define sigandset(sd, sl, sr) ((*(sd) = *(sl) & *(sr)), 0)
+#elif defined(__NetBSD__)
+#define sigisemptyset(sigs) ({sigset_t e; __sigemptyset(&e); __sigsetequal(sigs, &e); })
+#define sigandset(sd, sl, sr) ({memcpy((sd), (sl), sizeof(sigset_t)); __sigandset((sr), (sd)); 0; })
 #endif
 
 static errno_t
