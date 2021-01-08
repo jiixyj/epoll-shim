@@ -160,9 +160,10 @@ eventfd_ctx_read_impl(EventFDCtx *eventfd, uint64_t *value)
 		return (EAGAIN);
 	}
 
-	uint_least64_t new_value =
-	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? current_value - 1
-							   : 0;
+	uint_least64_t new_value = (eventfd->flags_ &
+				       EVENTFD_CTX_FLAG_SEMAPHORE)
+	    ? current_value - 1
+	    : 0;
 
 	if (new_value == 0 && eventfd->is_signalled_) {
 		struct kevent kevs[32];
@@ -189,8 +190,9 @@ eventfd_ctx_read_impl(EventFDCtx *eventfd, uint64_t *value)
 
 	eventfd->counter_ = new_value;
 
-	*value =
-	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? 1 : current_value;
+	*value = (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE)
+	    ? 1
+	    : current_value;
 	return (0);
 }
 

@@ -67,10 +67,10 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 	if (fd2_node->node_type == NODE_TYPE_FIFO) {
 		if (fd2_node->node_data.fifo.readable &&
 		    fd2_node->node_data.fifo.writable) {
-			needed_filters.evfilt_read =
-			    !!(fd2_node->events & EPOLLIN);
-			needed_filters.evfilt_write =
-			    !!(fd2_node->events & EPOLLOUT);
+			needed_filters.evfilt_read = !!(
+			    fd2_node->events & EPOLLIN);
+			needed_filters.evfilt_write = !!(
+			    fd2_node->events & EPOLLOUT);
 
 			if (fd2_node->events == 0) {
 				needed_filters.evfilt_read =
@@ -78,8 +78,8 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 			}
 
 		} else if (fd2_node->node_data.fifo.readable) {
-			needed_filters.evfilt_read =
-			    !!(fd2_node->events & EPOLLIN);
+			needed_filters.evfilt_read = !!(
+			    fd2_node->events & EPOLLIN);
 			needed_filters.evfilt_write = 0;
 
 			if (needed_filters.evfilt_read == 0) {
@@ -88,8 +88,8 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 			}
 		} else if (fd2_node->node_data.fifo.writable) {
 			needed_filters.evfilt_read = 0;
-			needed_filters.evfilt_write =
-			    !!(fd2_node->events & EPOLLOUT);
+			needed_filters.evfilt_write = !!(
+			    fd2_node->events & EPOLLOUT);
 
 			if (needed_filters.evfilt_write == 0) {
 				needed_filters.evfilt_write =
@@ -120,8 +120,8 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 
 		if (needed_filters.evfilt_read == 0 &&
 		    (fd2_node->events & EPOLLRDHUP)) {
-			needed_filters.evfilt_read =
-			    (fd2_node->eof_state & EOF_STATE_READ_EOF)
+			needed_filters.evfilt_read = (fd2_node->eof_state &
+							 EOF_STATE_READ_EOF)
 			    ? 1
 			    : EV_CLEAR;
 		}
@@ -131,8 +131,9 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 #else
 		if (needed_filters.evfilt_read == 0 &&
 		    (fd2_node->events & EPOLLPRI)) {
-			needed_filters.evfilt_read =
-			    fd2_node->pollpri_active ? 1 : EV_CLEAR;
+			needed_filters.evfilt_read = fd2_node->pollpri_active
+			    ? 1
+			    : EV_CLEAR;
 		}
 #endif
 
@@ -179,8 +180,8 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 	needed_filters.evfilt_write = !!(fd2_node->events & EPOLLOUT);
 
 	if (fd2_node->events == 0) {
-		needed_filters.evfilt_read =
-		    fd2_node->eof_state ? 1 : EV_CLEAR;
+		needed_filters.evfilt_read = fd2_node->eof_state ? 1
+								 : EV_CLEAR;
 	}
 
 out:
@@ -214,8 +215,8 @@ static void
 registered_fds_node_update_flags_from_epoll_event(RegisteredFDsNode *fd2_node,
     struct epoll_event *ev)
 {
-	fd2_node->events =
-	    ev->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT);
+	fd2_node->events = ev->events &
+	    (EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT);
 	fd2_node->data = ev->data;
 	fd2_node->is_edge_triggered = ev->events & EPOLLET;
 	fd2_node->is_oneshot = ev->events & EPOLLONESHOT;
@@ -399,15 +400,15 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node,
 	} else {
 		if (kev->filter == EVFILT_READ) {
 			if (kev->flags & EV_EOF) {
-				fd2_node->eof_state =
-				    EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF;
+				fd2_node->eof_state = EOF_STATE_READ_EOF |
+				    EOF_STATE_WRITE_EOF;
 			} else {
 				fd2_node->eof_state = 0;
 			}
 		} else if (kev->filter == EVFILT_WRITE) {
 			if (kev->flags & EV_EOF) {
-				fd2_node->eof_state =
-				    EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF;
+				fd2_node->eof_state = EOF_STATE_READ_EOF |
+				    EOF_STATE_WRITE_EOF;
 			} else {
 				fd2_node->eof_state = 0;
 			}
@@ -950,8 +951,8 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 			    i == evfilt_write_index &&
 			    fd2_node->node_type == NODE_TYPE_FIFO) {
 
-				fd2_node->eof_state =
-				    EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF;
+				fd2_node->eof_state = EOF_STATE_READ_EOF |
+				    EOF_STATE_WRITE_EOF;
 				fd2_node->has_evfilt_write = false;
 
 				if (evfilt_read_index < 0) {
@@ -1002,12 +1003,12 @@ modify_fifo_rights_from_capabilities(RegisteredFDsNode *fd2_node)
 		cap_rights_t test_rights;
 
 		cap_rights_init(&test_rights, CAP_READ);
-		bool has_read_rights =
-		    cap_rights_contains(&rights, &test_rights);
+		bool has_read_rights = cap_rights_contains(&rights,
+		    &test_rights);
 
 		cap_rights_init(&test_rights, CAP_WRITE);
-		bool has_write_rights =
-		    cap_rights_contains(&rights, &test_rights);
+		bool has_write_rights = cap_rights_contains(&rights,
+		    &test_rights);
 
 		if (has_read_rights != has_write_rights) {
 			fd2_node->node_data.fifo.readable = has_read_rights;
@@ -1082,8 +1083,8 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2, struct epoll_event *ev,
 
 	registered_fds_node_update_flags_from_epoll_event(fd2_node, ev);
 
-	void *colliding_node =
-	    RB_INSERT(registered_fds_set_, &epollfd->registered_fds, fd2_node);
+	void *colliding_node = RB_INSERT(registered_fds_set_,
+	    &epollfd->registered_fds, fd2_node);
 	(void)colliding_node;
 	assert(colliding_node == NULL);
 	++epollfd->registered_fds_size;
@@ -1298,8 +1299,8 @@ again:;
 		}
 
 		uint32_t old_revents = fd2_node->revents;
-		NeededFilters old_needed_filters =
-		    get_needed_filters(fd2_node);
+		NeededFilters old_needed_filters = get_needed_filters(
+		    fd2_node);
 
 		registered_fds_node_feed_event(fd2_node, epollfd, &kevs[i]);
 
@@ -1309,8 +1310,8 @@ again:;
 			    (EOF_STATE_READ_EOF | EOF_STATE_WRITE_EOF) &&
 			fd2_node->node_type != NODE_TYPE_FIFO)) {
 
-			NeededFilters needed_filters =
-			    get_needed_filters(fd2_node);
+			NeededFilters needed_filters = get_needed_filters(
+			    fd2_node);
 
 			if (old_needed_filters.evfilt_read !=
 				needed_filters.evfilt_read ||

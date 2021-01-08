@@ -270,8 +270,8 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 	bool handle_einval_on_zero_value = false;
 
 #ifdef NOTE_USECONDS
-	int64_t micros =
-	    (int64_t)diff_time.tv_sec * 1000000 + diff_time.tv_nsec / 1000;
+	int64_t micros = (int64_t)diff_time.tv_sec * 1000000 +
+	    diff_time.tv_nsec / 1000;
 
 	if ((diff_time.tv_nsec % 1000) != 0) {
 		++micros;
@@ -291,8 +291,8 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 	}
 #endif
 
-	int64_t millis =
-	    (int64_t)diff_time.tv_sec * 1000 + diff_time.tv_nsec / 1000000;
+	int64_t millis = (int64_t)diff_time.tv_sec * 1000 +
+	    diff_time.tv_nsec / 1000000;
 
 	if ((diff_time.tv_nsec % 1000000) != 0) {
 		++millis;

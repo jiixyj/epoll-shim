@@ -298,8 +298,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op2, tc)
 	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
 	ATF_REQUIRE(close(fd) == 0);
 
-	struct epoll_event *evs = malloc(INT_MAX / sizeof(struct epoll_event) *
-	    sizeof(struct epoll_event));
+	struct epoll_event *evs = malloc(
+	    INT_MAX / sizeof(struct epoll_event) * sizeof(struct epoll_event));
 	if (evs == NULL) {
 		atf_tc_skip("could not alloc enough memory for test");
 	}
@@ -952,8 +952,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_connecting_socket, tcptr)
 		    SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 		ATF_REQUIRE(sock >= 0);
 
-		struct epoll_event event = {.events = EPOLLIN | EPOLLRDHUP |
-			EPOLLOUT};
+		struct epoll_event event = {
+		    .events = EPOLLIN | EPOLLRDHUP | EPOLLOUT};
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sock, &event) == 0);
 
 		int server_sock = create_bound_socket();
@@ -966,9 +966,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollout_on_connecting_socket, tcptr)
 			ATF_REQUIRE(inet_pton(AF_INET, "127.0.0.1", /**/
 					&addr.sin_addr) == 1);
 
-			ATF_REQUIRE(connect(sock,
-					(struct sockaddr const *)&addr,
-					sizeof(addr)) < 0);
+			ATF_REQUIRE(
+			    connect(sock, (struct sockaddr const *)&addr,
+				sizeof(addr)) < 0);
 			if (errno == ECONNREFUSED) {
 				goto next;
 			}
@@ -1051,7 +1051,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri, tcptr)
 	for (;;) {
 		ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
 		ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI) ||
-				event.events == EPOLLPRI);
+		    event.events == EPOLLPRI);
 		if (event.events == EPOLLPRI) {
 			continue;
 		}

@@ -289,8 +289,8 @@ read_fun(void *arg)
 		uint64_t value;
 
 		if (eventfd_read(efd, &value) == 0) {
-			int current_counter =
-			    atomic_fetch_add(&read_counter, 1);
+			int current_counter = atomic_fetch_add(&read_counter,
+			    1);
 
 			if (current_counter % 10 == 0 &&
 			    current_counter < 100) {
@@ -430,9 +430,9 @@ write_fun(void *arg)
 	int i;
 
 	for (i = 0; i < td->loop; i++) {
-		ATF_REQUIRE((s = write(td->efd, &td->ev_count,
-				 sizeof(td->ev_count))) ==
-		    sizeof(td->ev_count));
+		ATF_REQUIRE(
+		    (s = write(td->efd, &td->ev_count,
+			 sizeof(td->ev_count))) == sizeof(td->ev_count));
 		usleep(100);
 	}
 	return (NULL);

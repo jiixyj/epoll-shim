@@ -71,9 +71,9 @@ ATF_TC_WITHOUT_HEAD(socketpair__simple_edge_triggering);
 ATF_TC_BODY_FD_LEAKCHECK(socketpair__simple_edge_triggering, tc)
 {
 	int p[2] = {-1, -1};
-	ATF_REQUIRE(socketpair(PF_LOCAL,
-			SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
-			p) == 0);
+	ATF_REQUIRE(
+	    socketpair(PF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
+		p) == 0);
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
@@ -173,9 +173,9 @@ ATF_TC_WITHOUT_HEAD(socketpair__epollhup);
 ATF_TC_BODY_FD_LEAKCHECK(socketpair__epollhup, tc)
 {
 	int p[2] = {-1, -1};
-	ATF_REQUIRE(socketpair(PF_LOCAL,
-			SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
-			p) == 0);
+	ATF_REQUIRE(
+	    socketpair(PF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
+		p) == 0);
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
@@ -204,9 +204,9 @@ ATF_TC_WITHOUT_HEAD(socketpair__epollrdhup);
 ATF_TC_BODY_FD_LEAKCHECK(socketpair__epollrdhup, tc)
 {
 	int p[2] = {-1, -1};
-	ATF_REQUIRE(socketpair(PF_LOCAL,
-			SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
-			p) == 0);
+	ATF_REQUIRE(
+	    socketpair(PF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
+		p) == 0);
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);

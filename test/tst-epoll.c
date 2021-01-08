@@ -343,8 +343,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epollfd_osv__some_tests, tc)
 	r = (int)write(s[1], &c, 1);
 	ATF_REQUIRE_MSG(r == 1, "write single character");
 	r = epoll_wait(ep, events, MAXEVENTS, 0);
-	ATF_REQUIRE_MSG(r == 0 || (r == 1 && (events[0].events & EPOLLIN) &&
-		(events[0].data.u32 == 456)),
+	ATF_REQUIRE_MSG(r == 0 ||
+		(r == 1 && (events[0].events & EPOLLIN) &&
+		    (events[0].data.u32 == 456)),
 	    "epoll_wait false positive (fine)");
 	r = (int)read(s[0], &c, 1);
 	ATF_REQUIRE_MSG(r == 1, "read one byte out of 2 on the pipe");

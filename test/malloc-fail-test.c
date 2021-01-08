@@ -66,9 +66,9 @@ poll(struct pollfd fds[], nfds_t nfds, int timeout)
 		return -1;
 	}
 
-	int (*real_poll)(struct pollfd[], nfds_t, int) =
-	    (int (*)(struct pollfd[], nfds_t, int))dlsym_wrapper(RTLD_NEXT,
-		"poll");
+	int (*real_poll)(struct pollfd[], nfds_t,
+	    int) = (int (*)(struct pollfd[], nfds_t,
+	    int))dlsym_wrapper(RTLD_NEXT, "poll");
 
 	decrement_malloc_fail_cnt();
 
@@ -85,8 +85,8 @@ kqueue(void)
 		return -1;
 	}
 
-	int (*real_kqueue)(void) =
-	    (int (*)(void))dlsym_wrapper(RTLD_NEXT, "kqueue");
+	int (*real_kqueue)(
+	    void) = (int (*)(void))dlsym_wrapper(RTLD_NEXT, "kqueue");
 
 	decrement_malloc_fail_cnt();
 
@@ -105,9 +105,9 @@ kevent(int kq, const struct kevent *changelist, int nchanges,
 	}
 
 	int (*real_kevent)(int, const struct kevent *, int, struct kevent *,
-	    int, const struct timespec *) =
-	    (int (*)(int, const struct kevent *, int, struct kevent *, int,
-		const struct timespec *))dlsym_wrapper(RTLD_NEXT, "kevent");
+	    int, const struct timespec *) = (int (*)(int,
+	    const struct kevent *, int, struct kevent *, int,
+	    const struct timespec *))dlsym_wrapper(RTLD_NEXT, "kevent");
 
 	decrement_malloc_fail_cnt();
 
@@ -126,8 +126,8 @@ malloc(size_t size)
 		return NULL;
 	}
 
-	void *(*real_malloc)(size_t) =
-	    (void *(*)(size_t))dlsym_wrapper(RTLD_NEXT, "malloc");
+	void *(*real_malloc)(
+	    size_t) = (void *(*)(size_t))dlsym_wrapper(RTLD_NEXT, "malloc");
 
 	decrement_malloc_fail_cnt();
 
@@ -151,8 +151,8 @@ calloc(size_t number, size_t size)
 		return NULL;
 	}
 
-	void *(*real_calloc)(size_t, size_t) =
-	    (void *(*)(size_t, size_t))dlsym_wrapper(RTLD_NEXT, "calloc");
+	void *(*real_calloc)(size_t, size_t) = (void *(*)(size_t,
+	    size_t))dlsym_wrapper(RTLD_NEXT, "calloc");
 
 	decrement_malloc_fail_cnt();
 
@@ -169,8 +169,8 @@ realloc(void *ptr, size_t size)
 		return NULL;
 	}
 
-	void *(*real_realloc)(void *, size_t) =
-	    (void *(*)(void *, size_t))dlsym_wrapper(RTLD_NEXT, "realloc");
+	void *(*real_realloc)(void *, size_t) = (void *(*)(void *,
+	    size_t))dlsym_wrapper(RTLD_NEXT, "realloc");
 
 	decrement_malloc_fail_cnt();
 
@@ -187,11 +187,11 @@ pthread_mutex_init(pthread_mutex_t *restrict mutex,
 		return ENOMEM;
 	}
 
-	int (*real_pthread_mutex_init)(pthread_mutex_t * restrict,
+	int (*real_pthread_mutex_init)(pthread_mutex_t *restrict,
 	    const pthread_mutexattr_t *restrict) =
-	    (int (*)(pthread_mutex_t * restrict,
-		const pthread_mutexattr_t *restrict))
-		dlsym_wrapper(RTLD_NEXT, "pthread_mutex_init");
+	    (int (*)(pthread_mutex_t *restrict,
+		const pthread_mutexattr_t *restrict))dlsym_wrapper(RTLD_NEXT,
+		"pthread_mutex_init");
 
 	decrement_malloc_fail_cnt();
 
@@ -366,8 +366,8 @@ ATF_TC_BODY_FD_LEAKCHECK(malloc_fail__signalfd, tc)
 		}
 
 		struct signalfd_siginfo siginfo;
-		ssize_t s =
-		    read(sfd, &siginfo, sizeof(struct signalfd_siginfo));
+		ssize_t s = read(sfd, &siginfo,
+		    sizeof(struct signalfd_siginfo));
 		ATF_REQUIRE(s < 0);
 		ATF_REQUIRE(errno == EAGAIN || errno == ENOMEM);
 

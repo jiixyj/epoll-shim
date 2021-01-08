@@ -145,8 +145,8 @@ microatf_context_write_result_pack(microatf_context_t *context,
 
 	if (context->do_close_result_file) {
 #if defined(__FreeBSD__)
-		context->result_file =
-		    freopen(NULL, "w", context->result_file);
+		context->result_file = freopen(NULL, "w",
+		    context->result_file);
 #else
 		fclose(context->result_file);
 		context->result_file = fopen(context->result_file_path, "w");
@@ -556,8 +556,8 @@ microatf_tp_main(int argc, char **argv,
 			print_newline = true;
 
 			for (size_t i = 0; i < tc->variables_size; ++i) {
-				char *key_end =
-				    strchr(tc->variables_key[i], '=');
+				char *key_end = strchr(tc->variables_key[i],
+				    '=');
 				ptrdiff_t key_length = key_end
 				    ? (key_end - tc->variables_key[i])
 				    : (ptrdiff_t)strlen(tc->variables_key[i]);

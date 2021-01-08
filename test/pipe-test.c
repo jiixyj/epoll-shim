@@ -927,8 +927,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 		ATF_REQUIRE(r == 1);
 		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
-		ATF_REQUIRE(kev[0].flags ==
-		    (EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD));
+		ATF_REQUIRE(
+		    kev[0].flags == (EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD));
 		ATF_REQUIRE(kev[0].fflags == 0);
 		ATF_REQUIRE_MSG(kev[0].data == PIPE_BUF + 1 ||
 			kev[0].data == 65536 /* On DragonFly. */,

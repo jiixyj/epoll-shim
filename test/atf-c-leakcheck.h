@@ -61,15 +61,15 @@ check_for_fd_leaks(void)
 }
 
 #define ATF_TC_BODY_FD_LEAKCHECK(tc, tcptr)                                   \
-	static void fd_leakcheck_##tc##_body(atf_tc_t const *tcptr            \
-	    __attribute__((__unused__)));                                     \
+	static void fd_leakcheck_##tc##_body(                                 \
+	    atf_tc_t const *tcptr __attribute__((__unused__)));               \
 	ATF_TC_BODY(tc, tcptr)                                                \
 	{                                                                     \
 		init_fd_checking();                                           \
 		fd_leakcheck_##tc##_body(tcptr);                              \
 		check_for_fd_leaks();                                         \
 	}                                                                     \
-	static void fd_leakcheck_##tc##_body(atf_tc_t const *tcptr            \
-	    __attribute__((__unused__)))
+	static void fd_leakcheck_##tc##_body(                                 \
+	    atf_tc_t const *tcptr __attribute__((__unused__)))
 
 #endif

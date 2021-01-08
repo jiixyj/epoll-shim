@@ -101,9 +101,9 @@ ATF_TC_BODY(timerfd_mock__mocked_kevent, tc)
 		ATF_REQUIRE(evfilt_timer_data <= UINT_MAX);
 
 #ifdef __NetBSD__
-		unsigned long kernel_ms =
-		    netbsd_mstohz((unsigned int)evfilt_timer_data) * 1000UL /
-		    CLK_TCK;
+		unsigned long kernel_ms = netbsd_mstohz((
+					      unsigned int)evfilt_timer_data) *
+		    1000UL / CLK_TCK;
 #else
 		unsigned long kernel_ms = evfilt_timer_data;
 #endif

@@ -2,6 +2,7 @@ BasedOnStyle: LLVM
 AlignAfterOpenBracket: DontAlign
 AlignOperands: false
 AlignTrailingComments: true
+AllowAllArgumentsOnNextLine: false
 AlwaysBreakAfterDefinitionReturnType: true
 BreakBeforeBinaryOperators: false
 BreakBeforeBraces: Custom
@@ -15,3 +16,5 @@ TabWidth: 8
 ContinuationIndentWidth: 4
 AllowShortFunctionsOnASingleLine: false
 AlwaysBreakTemplateDeclarations: true
+PenaltyBreakAssignment: 100
+PenaltyBreakBeforeFirstCallParameter: 100
