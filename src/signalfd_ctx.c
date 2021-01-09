@@ -52,7 +52,7 @@ signalfd_has_pending(SignalFDCtx const *signalfd, bool *has_pending,
 static errno_t
 signalfd_ctx_trigger_manually(SignalFDCtx *signalfd)
 {
-	return kqueue_event_trigger(&signalfd->kqueue_event);
+	return kqueue_event_trigger(&signalfd->kqueue_event, signalfd->kq);
 }
 
 errno_t

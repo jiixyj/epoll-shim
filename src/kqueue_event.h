@@ -20,7 +20,7 @@ errno_t kqueue_event_terminate(KQueueEvent *kqueue_event);
 
 bool kqueue_event_is_triggered(KQueueEvent *kqueue_event);
 
-errno_t kqueue_event_trigger(KQueueEvent *kqueue_event);
+errno_t kqueue_event_trigger(KQueueEvent *kqueue_event, int kq);
 void kqueue_event_clear(KQueueEvent *kqueue_event, int kq);
 
 #endif

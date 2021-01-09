@@ -77,7 +77,7 @@ kqueue_event_is_triggered(KQueueEvent *kqueue_event)
 }
 
 errno_t
-kqueue_event_trigger(KQueueEvent *kqueue_event)
+kqueue_event_trigger(KQueueEvent *kqueue_event, int kq)
 {
 	if (kqueue_event->is_triggered_) {
 		return 0;
@@ -87,8 +87,7 @@ kqueue_event_trigger(KQueueEvent *kqueue_event)
 	struct kevent kevs[1];
 	EV_SET(&kevs[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
 
-	if (kevent(kqueue_event->kq_, kevs, nitems(kevs), /**/
-		NULL, 0, NULL) < 0) {
+	if (kevent(kq, kevs, nitems(kevs), NULL, 0, NULL) < 0) {
 		return errno;
 	}
 #else
