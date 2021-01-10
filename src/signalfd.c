@@ -23,11 +23,11 @@
 #include "epoll_shim_ctx.h"
 
 static errno_t
-signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx, uint32_t *value,
-    bool nonblock)
+signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx,
+    SignalFDCtxSiginfo *siginfo, bool nonblock)
 {
 	for (;;) {
-		errno_t ec = signalfd_ctx_read(signalfd_ctx, value);
+		errno_t ec = signalfd_ctx_read(signalfd_ctx, siginfo);
 		if (nonblock || (ec != EAGAIN && ec != EWOULDBLOCK)) {
 			return (ec);
 		}
@@ -53,13 +53,18 @@ signalfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
 	size_t bytes_transferred_local = 0;
 
 	while (nbytes >= sizeof(struct signalfd_siginfo)) {
-		uint32_t signo;
+		_Static_assert(sizeof(struct signalfd_siginfo) ==
+			sizeof(SignalFDCtxSiginfo),
+		    "");
+
+		SignalFDCtxSiginfo siginfo;
+		memset(&siginfo, 0, sizeof(siginfo));
+
 		if ((ec = signalfd_ctx_read_or_block(&node->ctx.signalfd,
-			 &signo, nonblock)) != 0) {
+			 &siginfo, nonblock)) != 0) {
 			break;
 		}
 
-		struct signalfd_siginfo siginfo = {.ssi_signo = signo};
 		memcpy(buf, &siginfo, sizeof(siginfo));
 		bytes_transferred_local += sizeof(siginfo);
 

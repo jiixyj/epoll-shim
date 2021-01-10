@@ -87,7 +87,8 @@ eventfd_ctx_write_impl(EventFDCtx *eventfd, uint64_t value)
 
 	eventfd->counter_ = new_value;
 
-	errno_t ec = kqueue_event_trigger(&eventfd->kqueue_event_);
+	errno_t ec = kqueue_event_trigger(&eventfd->kqueue_event_,
+	    eventfd->kq_);
 	if (ec != 0) {
 		return (ec);
 	}

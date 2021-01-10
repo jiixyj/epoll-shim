@@ -39,7 +39,7 @@ kqueue_event_init(KQueueEvent *kqueue_event, struct kevent *kevs,
 	EV_SET(&kevs[(*kevs_length)++], kqueue_event->self_pipe_[0], /**/
 	    EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
 	if (should_trigger) {
-		if ((ec = kqueue_event_trigger(kqueue_event)) != 0) {
+		if ((ec = kqueue_event_trigger(kqueue_event, -1)) != 0) {
 			goto out;
 		}
 		assert(kqueue_event->is_triggered_);

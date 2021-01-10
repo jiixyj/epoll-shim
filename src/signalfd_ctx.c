@@ -126,8 +126,11 @@ signalfd_ctx_terminate(SignalFDCtx *signalfd)
 }
 
 static errno_t
-signalfd_ctx_read_impl(SignalFDCtx *signalfd, uint32_t *ident)
+signalfd_ctx_read_impl(SignalFDCtx *signalfd,
+    SignalFDCtxSiginfo *signalfd_siginfo)
 {
+	_Static_assert(sizeof(*signalfd_siginfo) == 128, "");
+
 	/*
 	 * EVFILT_SIGNAL is an "observer". It does not hook into the
 	 * signal disposition mechanism. On the other hand, `signalfd` does.
@@ -172,13 +175,66 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd, uint32_t *ident)
 		break;
 	}
 #else
-	s = sigtimedwait(&signalfd->sigs, NULL, &(struct timespec){0, 0});
+	siginfo_t siginfo;
+	memset(&siginfo, 0, sizeof(siginfo));
+	s = sigtimedwait(&signalfd->sigs, &siginfo, &(struct timespec){0, 0});
 #endif
 	if (s < 0) {
 		return errno;
 	}
 
-	*ident = (uint32_t)s;
+	signalfd_siginfo->ssi_signo = (uint32_t)s;
+#ifdef __FreeBSD__
+	assert(siginfo.si_signo == s);
+	signalfd_siginfo->ssi_errno = siginfo.si_errno;
+	signalfd_siginfo->ssi_code = siginfo.si_code;
+	signalfd_siginfo->ssi_pid = siginfo.si_pid;
+	signalfd_siginfo->ssi_uid = siginfo.si_uid;
+	signalfd_siginfo->ssi_status = siginfo.si_status;
+	signalfd_siginfo->ssi_addr = (uint64_t)(uintptr_t)siginfo.si_addr;
+	signalfd_siginfo->ssi_int = siginfo.si_value.sival_int;
+	signalfd_siginfo->ssi_ptr = (uint64_t)(uintptr_t)
+					siginfo.si_value.sival_ptr;
+	signalfd_siginfo->ssi_trapno = siginfo.si_trapno;
+	signalfd_siginfo->ssi_tid = siginfo.si_timerid;
+	signalfd_siginfo->ssi_overrun = siginfo.si_overrun;
+	signalfd_siginfo->ssi_band = siginfo.si_band;
+	signalfd_siginfo->ssi_fd = -1; /* Not available on FreeBSD. */
+	if (siginfo.si_code == SI_MESGQ) {
+		/* Re-use this field for si_mqd. */
+		signalfd_siginfo->ssi_fd = siginfo.si_mqd;
+	}
+#elif __NetBSD__
+	/* common */
+	assert(siginfo.si_signo == s);
+	signalfd_siginfo->ssi_code = siginfo.si_code;
+	signalfd_siginfo->ssi_errno = siginfo.si_errno;
+
+	/* rt */
+	signalfd_siginfo->ssi_pid = siginfo.si_pid;
+	signalfd_siginfo->ssi_uid = siginfo.si_uid;
+	signalfd_siginfo->ssi_int = siginfo.si_value.sival_int;
+	signalfd_siginfo->ssi_ptr = (uint64_t)(uintptr_t)
+					siginfo.si_value.sival_ptr;
+
+	/* child */
+	signalfd_siginfo->ssi_status = siginfo.si_status;
+	signalfd_siginfo->ssi_utime = siginfo.si_utime;
+	signalfd_siginfo->ssi_stime = siginfo.si_stime;
+
+	/* fault */
+	signalfd_siginfo->ssi_addr = (uint64_t)(uintptr_t)siginfo.si_addr;
+	signalfd_siginfo->ssi_trapno = siginfo.si_trap;
+	/* No space for trap2/trap3 */
+
+	/* poll */
+	signalfd_siginfo->ssi_band = siginfo.si_band;
+	signalfd_siginfo->ssi_fd = siginfo.si_fd;
+
+	/* No space for syscall/ptrace_state */
+#else
+	/* TODO: fill rest. */
+#endif
 	return 0;
 }
 
@@ -217,12 +273,12 @@ signalfd_ctx_clear_signal(SignalFDCtx *signalfd, bool was_triggered)
 }
 
 errno_t
-signalfd_ctx_read(SignalFDCtx *signalfd, uint32_t *ident)
+signalfd_ctx_read(SignalFDCtx *signalfd, SignalFDCtxSiginfo *siginfo)
 {
 	errno_t ec;
 
 	(void)pthread_mutex_lock(&signalfd->mutex);
-	ec = signalfd_ctx_read_impl(signalfd, ident);
+	ec = signalfd_ctx_read_impl(signalfd, siginfo);
 	if (ec == 0 || ec == EAGAIN || ec == EWOULDBLOCK) {
 		(void)signalfd_ctx_clear_signal(signalfd, false);
 	}
