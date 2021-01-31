@@ -205,9 +205,18 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 	/* If there is NOTE_USECONDS support we assume timeout values of 0 are
 	 * valid. For FreeBSD this is the case. */
 
+	/* The data field is only 32 bit wide on FreeBSD 11 i386. If this
+	 * would overflow, try again with milliseconds. */
+	if (__builtin_add_overflow(micros, 0, &kev[0].data)) {
+		goto try_with_millis;
+	}
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
 	    NOTE_USECONDS, micros, 0);
-#else
+
+	goto set_timer;
+
+try_with_millis:;
+#endif
 
 #ifdef QUIRKY_EVFILT_TIMER
 	/* Let's hope 49 days are enough. */
@@ -233,17 +242,19 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 		handle_einval_on_zero_value = true;
 	}
 
+	if (__builtin_add_overflow(millis, 0, &kev[0].data)) {
+		return 0;
+	}
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
 	    0, millis, 0);
-#endif
 
-retry:
+set_timer:
 	if (kevent(timerfd->kq, kev, nitems(kev), /**/
 		NULL, 0, NULL) < 0) {
 		if (handle_einval_on_zero_value && errno == EINVAL) {
 			kev[0].data = 1;
 			handle_einval_on_zero_value = false;
-			goto retry;
+			goto set_timer;
 		}
 
 		return errno;

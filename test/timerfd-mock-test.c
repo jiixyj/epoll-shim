@@ -93,8 +93,12 @@ ATF_TC_BODY(timerfd_mock__mocked_kevent, tc)
 
 #ifndef __linux__
 #ifdef __FreeBSD__
-		ATF_REQUIRE(evfilt_timer_fflags == NOTE_USECONDS);
-		ATF_REQUIRE(evfilt_timer_data == ms * 1000);
+		if (evfilt_timer_fflags == 0) {
+			ATF_REQUIRE(evfilt_timer_data == ms);
+		} else {
+			ATF_REQUIRE(evfilt_timer_fflags == NOTE_USECONDS);
+			ATF_REQUIRE(evfilt_timer_data == ms * 1000);
+		}
 #else
 		ATF_REQUIRE(evfilt_timer_fflags == 0);
 		ATF_REQUIRE(evfilt_timer_data >= ms);
