@@ -70,7 +70,10 @@ ATF_TC_BODY(timerfd__many_timers, tc)
 	for (i = 0; i < (int)nitems(timer_fds); ++i) {
 		timer_fds[i] = timerfd_create(CLOCK_MONOTONIC, /**/
 		    TFD_CLOEXEC | TFD_NONBLOCK);
-		ATF_REQUIRE(timer_fds[i] >= 0);
+		if (timer_fds[i] < 0 && errno == EMFILE) {
+			atf_tc_skip("timerfd_create: EMFILE");
+		}
+		ATF_REQUIRE_MSG(timer_fds[i] >= 0, "errno: %d", errno);
 	}
 }
 

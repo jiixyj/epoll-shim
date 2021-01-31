@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <sys/epoll.h>
@@ -952,7 +953,7 @@ socket_shutdown_impl(bool specify_rdhup)
 	event.events = EPOLLOUT | EPOLLIN | rdhup_flag;
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, fds[0], &event) == 0);
 
-	shutdown(fds[1], SHUT_WR);
+	ATF_REQUIRE(shutdown(fds[1], SHUT_WR) == 0);
 
 	for (;;) {
 		ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
@@ -970,12 +971,17 @@ socket_shutdown_impl(bool specify_rdhup)
 			ssize_t ret = read(fds[0], &buf, 1);
 			ATF_REQUIRE(ret == 0);
 
+			ATF_REQUIRE(shutdown(fds[0], SHUT_WR) == 0);
 			shutdown(fds[0], SHUT_RDWR);
 		} else if (event.events ==
 		    (EPOLLOUT | EPOLLIN | rdhup_flag | EPOLLHUP)) {
 			/* close() may fail here! Don't check return code. */
 			close(fds[0]);
 			break;
+#ifdef __NetBSD__
+		} else if (event.events == (EPOLLIN | rdhup_flag)) {
+			continue;
+#endif
 		} else {
 			ATF_REQUIRE(false);
 		}
@@ -1247,6 +1253,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri_oobinline, tcptr)
 	char c = 'o';
 	ATF_REQUIRE(send(fds[1], &c, 1, MSG_OOB) == 1);
 
+	usleep(200000);
 	ATF_REQUIRE(epoll_wait(ep, &event, 1, -1) == 1);
 	ATF_REQUIRE(event.events == (EPOLLIN | EPOLLPRI));
 	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
@@ -1320,6 +1327,13 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri_oobinline_lt, tcptr)
 	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
 
 	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+
+	c = 'n';
+	ATF_REQUIRE(send(fds[1], &c, 1, 0) == 1);
+	usleep(200000);
+	int n;
+	ATF_REQUIRE_MSG((n = epoll_wait(ep, &event, 1, 0)) == 0,
+	    "%d 0x%x errno: %d", n, event.events, errno);
 
 	ATF_REQUIRE(close(ep) == 0);
 	ATF_REQUIRE(close(fds[0]) == 0);
@@ -1808,9 +1822,11 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__using_real_close, tcptr)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
+static sig_atomic_t volatile epoll_pwait_got_signal = 0;
 static void
 epoll_pwait_sighandler(int sig)
 {
+	epoll_pwait_got_signal = 1;
 	(void)sig;
 }
 
@@ -1836,7 +1852,23 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epoll_pwait, tcptr)
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event ev;
+	ATF_REQUIRE(epoll_pwait(ep, &ev, 1, 0, &emptyset) == 0);
+	ATF_REQUIRE(epoll_pwait_got_signal == 0);
 	ATF_REQUIRE_ERRNO(EINTR, epoll_pwait(ep, &ev, 1, 1000, &emptyset) < 0);
+	ATF_REQUIRE(epoll_pwait_got_signal == 1);
+
+	epoll_pwait_got_signal = 0;
+	kill(getpid(), SIGINT);
+	{
+		struct pollfd pfd = {.fd = ep, .events = POLLIN};
+
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+		ATF_REQUIRE(epoll_pwait_got_signal == 0);
+
+		int n = ppoll(&pfd, 1, &(struct timespec){0, 0}, &emptyset);
+		ATF_REQUIRE(n == 0 || (n < 0 && errno == EINTR));
+		ATF_REQUIRE(epoll_pwait_got_signal == 1);
+	}
 
 	ATF_REQUIRE(close(ep) == 0);
 }

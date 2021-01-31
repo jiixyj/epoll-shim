@@ -287,7 +287,7 @@ timerfd_ctx_gettime_impl(TimerFDCtx *timerfd, struct itimerspec *cur,
 }
 
 static errno_t
-timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
+timerfd_ctx_settime_impl(TimerFDCtx *timerfd, bool is_abstime,
     struct itimerspec const *new, struct itimerspec *old)
 {
 	errno_t ec;
@@ -295,8 +295,6 @@ timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
 	if (!itimerspec_is_valid(new)) {
 		return EINVAL;
 	}
-
-	assert((flags & ~(TIMER_ABSTIME)) == 0);
 
 	struct timespec current_time;
 	if (clock_gettime(timerfd->clockid, &current_time) < 0) {
@@ -318,7 +316,7 @@ timerfd_ctx_settime_impl(TimerFDCtx *timerfd, int flags,
 	}
 
 	struct itimerspec new_absolute;
-	if (flags & TIMER_ABSTIME) {
+	if (is_abstime) {
 		new_absolute = *new;
 	} else {
 		new_absolute = (struct itimerspec){
@@ -346,13 +344,13 @@ success:
 }
 
 errno_t
-timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
+timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
     struct itimerspec const *new, struct itimerspec *old)
 {
 	errno_t ec;
 
 	(void)pthread_mutex_lock(&timerfd->mutex);
-	ec = timerfd_ctx_settime_impl(timerfd, flags, new, old);
+	ec = timerfd_ctx_settime_impl(timerfd, is_abstime, new, old);
 	(void)pthread_mutex_unlock(&timerfd->mutex);
 
 	return ec;

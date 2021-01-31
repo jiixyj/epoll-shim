@@ -1,6 +1,7 @@
 #ifndef TIMERFD_CTX_H_
 #define TIMERFD_CTX_H_
 
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,7 +28,7 @@ typedef struct {
 errno_t timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid);
 errno_t timerfd_ctx_terminate(TimerFDCtx *timerfd);
 
-errno_t timerfd_ctx_settime(TimerFDCtx *timerfd, int flags,
+errno_t timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
     struct itimerspec const *new, struct itimerspec *old);
 errno_t timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur);
 

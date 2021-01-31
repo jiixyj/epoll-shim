@@ -4,7 +4,16 @@
 
 set(script "")
 
-function(add_test_to_script _name _executable _test _vars _properties)
+function(
+  add_test_to_script
+  _name
+  _executable
+  _executor
+  _translate_signal
+  _test
+  _vars
+  _properties
+  _config_variables)
 
   # default timeout
   set(_timeout 300)
@@ -30,6 +39,9 @@ add_test(
   \"${CMAKE_COMMAND}\"
   -D \"TEST_FOLDER_NAME=${_name}\"
   -D \"TEST_EXECUTABLE=${_executable}\"
+  -D \"TEST_EXECUTOR=${_executor}\"
+  -D \"TRANSLATE_SIGNAL=${_translate_signal}\"
+  -D \"TEST_CONFIG_VARIABLES=${_config_variables}\"
   -D \"TEST_NAME=${_test}\"
   -D \"BINARY_DIR=${BINARY_DIR}\"
   -D \"TIMEOUT=${_timeout}\"
@@ -54,7 +66,7 @@ if(NOT EXISTS "${TEST_EXECUTABLE}")
 endif()
 
 execute_process(
-  COMMAND "${TEST_EXECUTABLE}" -l
+  COMMAND ${TEST_EXECUTOR} "${TEST_EXECUTABLE}" -l
   WORKING_DIRECTORY "${TEST_WORKING_DIR}"
   OUTPUT_VARIABLE output
   RESULT_VARIABLE result)
@@ -75,8 +87,14 @@ string(REPLACE "\n" ";" output "${output}")
 macro(handle_current_tc)
   if(NOT _current_tc STREQUAL "")
     add_test_to_script(
-      "${TEST_TARGET}.${_current_tc}" "${TEST_EXECUTABLE}" "${_current_tc}"
-      "${_current_tc_vars}" "${TEST_PROPERTIES}")
+      "${TEST_TARGET}.${_current_tc}"
+      "${TEST_EXECUTABLE}"
+      "${TEST_EXECUTOR}"
+      "${TRANSLATE_SIGNAL}"
+      "${_current_tc}"
+      "${_current_tc_vars}"
+      "${TEST_PROPERTIES}"
+      "${TEST_CONFIG_VARIABLES}")
     set(_current_tc_vars "")
   endif()
 endmacro()

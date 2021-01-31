@@ -129,6 +129,8 @@ static errno_t
 signalfd_ctx_read_impl(SignalFDCtx *signalfd,
     SignalFDCtxSiginfo *signalfd_siginfo)
 {
+	errno_t ec;
+
 	_Static_assert(sizeof(*signalfd_siginfo) == 128, "");
 
 	/*
@@ -139,9 +141,8 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 	 */
 
 	int s;
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__)
 	for (;;) {
-		errno_t ec;
 		bool has_pending;
 		sigset_t pending_sigs;
 		if ((ec = signalfd_has_pending(signalfd, &has_pending,
@@ -167,7 +168,8 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 		 * the dmesg log. Let's do it with an invalid timespec
 		 * and EINVAL. */
 		s = __thrsigdivert(mask, NULL, &(struct timespec){0, -1});
-		if (s < 0 && (errno == EINVAL || errno == EAGAIN)) {
+		ec = s < 0 ? errno : 0;
+		if (ec == EINVAL || ec == EAGAIN) {
 			/* We must retry because we only checked for
 			 * one signal. There may be others pending. */
 			continue;
@@ -178,9 +180,10 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 	siginfo_t siginfo;
 	memset(&siginfo, 0, sizeof(siginfo));
 	s = sigtimedwait(&signalfd->sigs, &siginfo, &(struct timespec){0, 0});
+	ec = s < 0 ? errno : 0;
 #endif
-	if (s < 0) {
-		return errno;
+	if (ec != 0) {
+		return ec;
 	}
 
 	signalfd_siginfo->ssi_signo = (uint32_t)s;

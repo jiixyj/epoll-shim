@@ -22,6 +22,8 @@ include(CTest)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_EXTENSIONS ON)
 
+add_subdirectory(external)
+
 include(CheckTypeSize)
 list(APPEND CMAKE_EXTRA_INCLUDE_FILES "errno.h" "stdlib.h")
 check_type_size(errno_t ERRNO_T BUILTIN_TYPES_ONLY LANGUAGE C)

@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -72,7 +73,11 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollout, tc)
 		}
 
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
-		ATF_REQUIRE(pfd.revents == POLLOUT);
+		if (pfd.revents == POLLNVAL) {
+			atf_tc_skip(
+			    "shim layer does not support polling for write");
+		}
+		ATF_REQUIRE_MSG(pfd.revents == POLLOUT, "%x", pfd.revents);
 	}
 	ATF_REQUIRE(close(efd) == 0);
 

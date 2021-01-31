@@ -6,11 +6,13 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <poll.h>
 #include <signal.h>
 #include <time.h>
 
+#include "epoll_shim_export.h"
 #include "timespec_util.h"
 
 #ifdef __NetBSD__
@@ -238,6 +240,7 @@ epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
 
 /**/
 
+EPOLL_SHIM_EXPORT
 int
 epoll_shim_close(int fd)
 {
@@ -257,6 +260,7 @@ epoll_shim_close(int fd)
 	return 0;
 }
 
+EPOLL_SHIM_EXPORT
 ssize_t
 epoll_shim_read(int fd, void *buf, size_t nbytes)
 {
@@ -283,6 +287,7 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	return (ssize_t)bytes_transferred;
 }
 
+EPOLL_SHIM_EXPORT
 ssize_t
 epoll_shim_write(int fd, void const *buf, size_t nbytes)
 {
@@ -309,6 +314,7 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	return (ssize_t)bytes_transferred;
 }
 
+EPOLL_SHIM_EXPORT
 int
 epoll_shim_poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
@@ -320,30 +326,11 @@ epoll_shim_poll(struct pollfd *fds, nfds_t nfds, int timeout)
 
 static errno_t
 epoll_shim_ppoll_deadline(struct pollfd *fds, nfds_t nfds,
-    struct timespec const *deadline, sigset_t const *sigmask, int *n_out)
+    struct timespec const *deadline, struct timespec *timeout,
+    sigset_t const *sigmask, int *n_out)
 {
-	struct timespec timeout;
 
-retry:
-	if (deadline) {
-		if (deadline->tv_sec == 0 && deadline->tv_nsec == 0) {
-			timeout.tv_sec = timeout.tv_nsec = 0;
-		} else {
-			struct timespec current_time;
-
-			if (clock_gettime(CLOCK_MONOTONIC, /**/
-				&current_time) < 0) {
-				return errno;
-			}
-
-			timespecsub(deadline, &current_time, &timeout);
-			if (timeout.tv_sec < 0) {
-				timeout.tv_sec = 0;
-				timeout.tv_nsec = 0;
-			}
-		}
-	}
-
+retry:;
 	if (fds != NULL) {
 		(void)pthread_mutex_lock(&epoll_shim_ctx.mutex);
 		for (nfds_t i = 0; i < nfds; ++i) {
@@ -359,7 +346,7 @@ retry:
 		(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
 	}
 
-	int n = ppoll(fds, nfds, deadline ? &timeout : NULL, sigmask);
+	int n = ppoll(fds, nfds, timeout, sigmask);
 	if (n < 0) {
 		return errno;
 	}
@@ -390,7 +377,22 @@ retry:
 	}
 	(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
 
-	if (n == 0) {
+	if (n == 0 &&
+	    !(timeout && timeout->tv_sec == 0 && timeout->tv_nsec == 0)) {
+		if (timeout) {
+			struct timespec current_time;
+
+			if (clock_gettime(CLOCK_MONOTONIC, /**/
+				&current_time) < 0) {
+				return errno;
+			}
+
+			timespecsub(deadline, &current_time, timeout);
+			if (timeout->tv_sec < 0) {
+				timeout->tv_sec = 0;
+				timeout->tv_nsec = 0;
+			}
+		}
 		goto retry;
 	}
 
@@ -405,32 +407,35 @@ epoll_shim_ppoll_impl(struct pollfd *fds, nfds_t nfds,
 	errno_t ec;
 
 	struct timespec deadline;
-	struct timespec const *deadline_p;
+	struct timespec timeout;
 
-	if (!tmo_p) {
-		deadline_p = NULL;
-	} else if (tmo_p->tv_sec == 0 && tmo_p->tv_nsec == 0) {
-		deadline.tv_sec = 0;
-		deadline.tv_nsec = 0;
-		deadline_p = &deadline;
-	} else {
-		if (!timespec_is_valid(tmo_p)) {
-			return EINVAL;
-		}
+	if (tmo_p) {
+		if (tmo_p->tv_sec == 0 && tmo_p->tv_nsec == 0) {
+			deadline = timeout = (struct timespec){0, 0};
+		} else {
+			if (!timespec_is_valid(tmo_p)) {
+				return EINVAL;
+			}
 
-		if (clock_gettime(CLOCK_MONOTONIC, &deadline) < 0) {
-			return errno;
-		}
+			if (clock_gettime(CLOCK_MONOTONIC, &deadline) < 0) {
+				return errno;
+			}
 
-		if (!timespecadd_safe(&deadline, tmo_p, &deadline)) {
-			return EINVAL;
+			if (!timespecadd_safe(&deadline, tmo_p, &deadline)) {
+				return EINVAL;
+			}
+
+			memcpy(&timeout, tmo_p, sizeof(struct timespec));
 		}
-		deadline_p = &deadline;
 	}
 
-	return epoll_shim_ppoll_deadline(fds, nfds, deadline_p, sigmask, n);
+	return epoll_shim_ppoll_deadline(fds, nfds, /**/
+	    tmo_p ? &deadline : NULL,		    /**/
+	    tmo_p ? &timeout : NULL,		    /**/
+	    sigmask, n);
 }
 
+EPOLL_SHIM_EXPORT
 int
 epoll_shim_ppoll(struct pollfd *fds, nfds_t nfds, struct timespec const *tmo_p,
     sigset_t const *sigmask)

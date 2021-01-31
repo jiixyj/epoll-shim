@@ -11,11 +11,6 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
-#if defined(__DragonFly__)
-/* For TAILQ_FOREACH_SAFE. */
-#include <netproto/802_11/ieee80211_dragonfly.h>
-#endif
-
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -1270,8 +1265,6 @@ epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		}
 	}
 
-again:;
-
 	/*
 	 * Each registered fd can produce a maximum of 3 kevents. If
 	 * the provided space in 'ev' is large enough to hold results
@@ -1292,6 +1285,8 @@ again:;
 	if (ec != 0) {
 		return ec;
 	}
+
+again:;
 
 	struct kevent *kevs = epollfd->kevs;
 	assert(kevs != NULL);

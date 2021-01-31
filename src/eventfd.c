@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "epoll_shim_ctx.h"
+#include "epoll_shim_export.h"
 
 static errno_t
 eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
@@ -129,6 +130,7 @@ fail:
 	return NULL;
 }
 
+EPOLL_SHIM_EXPORT
 int
 eventfd(unsigned int initval, int flags)
 {
@@ -144,6 +146,7 @@ eventfd(unsigned int initval, int flags)
 	return node->fd;
 }
 
+EPOLL_SHIM_EXPORT
 int
 eventfd_read(int fd, eventfd_t *value)
 {
@@ -153,6 +156,7 @@ eventfd_read(int fd, eventfd_t *value)
 	    : -1;
 }
 
+EPOLL_SHIM_EXPORT
 int
 eventfd_write(int fd, eventfd_t value)
 {

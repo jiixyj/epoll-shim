@@ -3,32 +3,20 @@ project(epoll-shim-tests LANGUAGES C)
 
 #
 
-option(USE_SYSTEM_PRIVATE_ATF "" OFF)
-
-#
-
 include(CTest)
-
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
-include(ATFTest)
 
 #
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   find_package(epoll-shim REQUIRED)
 else()
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../external/microatf" microatf)
   add_library(epoll-shim INTERFACE)
   add_library(epoll-shim::epoll-shim ALIAS epoll-shim)
 endif()
 
-add_library(atf-c INTERFACE)
-add_library(atf::atf-c ALIAS atf-c)
-if(USE_SYSTEM_PRIVATE_ATF)
-  target_link_libraries(atf-c INTERFACE privateatf-c)
-else()
-  target_include_directories(atf-c
-                             INTERFACE "${CMAKE_CURRENT_LIST_DIR}/microatf")
-endif()
+find_package(microatf REQUIRED)
+include(ATFTest)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -37,8 +25,9 @@ find_package(Threads REQUIRED)
 
 macro(atf_test _testname)
   add_executable("${_testname}" "${_testname}.c")
-  target_link_libraries("${_testname}" PRIVATE epoll-shim::epoll-shim
-                                               Threads::Threads atf::atf-c)
+  target_link_libraries(
+    "${_testname}" PRIVATE epoll-shim::epoll-shim Threads::Threads
+                           microatf::microatf-c)
   atf_discover_tests("${_testname}" ${ARGN})
 endmacro()
 

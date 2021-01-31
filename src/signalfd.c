@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "epoll_shim_ctx.h"
+#include "epoll_shim_export.h"
 
 static errno_t
 signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx,
@@ -137,6 +138,7 @@ fail:
 	return NULL;
 }
 
+EPOLL_SHIM_EXPORT
 int
 signalfd(int fd, const sigset_t *sigs, int flags)
 {

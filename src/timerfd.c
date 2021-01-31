@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "epoll_shim_ctx.h"
+#include "epoll_shim_export.h"
 
 static errno_t
 timerfd_ctx_read_or_block(TimerFDCtx *timerfd, uint64_t *value, bool nonblock)
@@ -103,6 +104,7 @@ fail:
 	return NULL;
 }
 
+EPOLL_SHIM_EXPORT
 int
 timerfd_create(int clockid, int flags)
 {
@@ -140,7 +142,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 	}
 
 	if ((ec = timerfd_ctx_settime(&node->ctx.timerfd,
-		 (flags & TFD_TIMER_ABSTIME) ? TIMER_ABSTIME : 0, /**/
+		 !!(flags & TFD_TIMER_ABSTIME), /**/
 		 new, old)) != 0) {
 		return ec;
 	}
@@ -148,6 +150,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 	return 0;
 }
 
+EPOLL_SHIM_EXPORT
 int
 timerfd_settime(int fd, int flags, const struct itimerspec *new,
     struct itimerspec *old)
@@ -175,6 +178,7 @@ timerfd_gettime_impl(int fd, struct itimerspec *cur)
 	return timerfd_ctx_gettime(&node->ctx.timerfd, cur);
 }
 
+EPOLL_SHIM_EXPORT
 int
 timerfd_gettime(int fd, struct itimerspec *cur)
 {

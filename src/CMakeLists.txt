@@ -1,5 +1,11 @@
+set(CMAKE_C_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
+
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+
+find_package(tree-macros REQUIRED)
+find_package(queue-macros REQUIRED)
 
 add_library(
   epoll-shim
@@ -15,14 +21,18 @@ add_library(
 if(NOT HAVE_EVENTFD)
   target_sources(epoll-shim PRIVATE eventfd.c eventfd_ctx.c)
 endif()
-target_link_libraries(epoll-shim PRIVATE Threads::Threads)
+include(GenerateExportHeader)
+generate_export_header(epoll-shim BASE_NAME epoll_shim)
+target_link_libraries(
+  epoll-shim PRIVATE Threads::Threads #
+                     queue-macros::queue-macros tree-macros::tree-macros)
 target_include_directories(
-  epoll-shim PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
+  epoll-shim
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+  PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 if(NOT HAVE_EVENTFD)
   target_include_directories(
     epoll-shim PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/eventfd>)
 endif()
 
-target_link_options(epoll-shim PRIVATE
-                    "LINKER:--version-script=${PROJECT_SOURCE_DIR}/Version.map")
 set_target_properties(epoll-shim PROPERTIES SOVERSION 0)

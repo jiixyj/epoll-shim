@@ -13,23 +13,11 @@
 #include <time.h>
 
 #include "epoll_shim_ctx.h"
+#include "epoll_shim_export.h"
+#include "timespec_util.h"
 
 #ifdef __NetBSD__
 #define ppoll pollts
-#endif
-
-// TODO(jan): Remove this once the definition is exposed in <sys/time.h> in
-// all supported FreeBSD versions.
-#ifndef timespecsub
-#define timespecsub(tsp, usp, vsp)                                            \
-	do {                                                                  \
-		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;                \
-		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;             \
-		if ((vsp)->tv_nsec < 0) {                                     \
-			(vsp)->tv_sec--;                                      \
-			(vsp)->tv_nsec += 1000000000L;                        \
-		}                                                             \
-	} while (0)
 #endif
 
 static errno_t
@@ -85,6 +73,7 @@ epoll_create_common(void)
 	return node->fd;
 }
 
+EPOLL_SHIM_EXPORT
 int
 epoll_create(int size)
 {
@@ -96,6 +85,7 @@ epoll_create(int size)
 	return epoll_create_common();
 }
 
+EPOLL_SHIM_EXPORT
 int
 epoll_create1(int flags)
 {
@@ -129,6 +119,7 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 	    fd_context_map_node_as_pollable_node(fd2_node), ev);
 }
 
+EPOLL_SHIM_EXPORT
 int
 epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
@@ -141,15 +132,10 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 	return 0;
 }
 
-static bool
-is_no_wait_deadline(struct timespec const *deadline)
-{
-	return (deadline && deadline->tv_sec == 0 && deadline->tv_nsec == 0);
-}
-
 static errno_t
 epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
-    int *actual_cnt, struct timespec const *deadline, sigset_t const *sigs)
+    int *actual_cnt, struct timespec const *deadline, struct timespec *timeout,
+    sigset_t const *sigs)
 {
 	errno_t ec;
 
@@ -159,25 +145,10 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 			return ec;
 		}
 
-		if (*actual_cnt || is_no_wait_deadline(deadline)) {
+		if (*actual_cnt ||
+		    (timeout && timeout->tv_sec == 0 &&
+			timeout->tv_nsec == 0)) {
 			return 0;
-		}
-
-		struct timespec timeout;
-
-		if (deadline) {
-			struct timespec current_time;
-
-			if (clock_gettime(CLOCK_MONOTONIC, /**/
-				&current_time) < 0) {
-				return errno;
-			}
-
-			timespecsub(deadline, &current_time, &timeout);
-			if (timeout.tv_sec < 0 ||
-			    is_no_wait_deadline(&timeout)) {
-				return 0;
-			}
 		}
 
 		(void)pthread_mutex_lock(&epollfd->mutex);
@@ -216,7 +187,7 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		usleep(500000);
 #endif
 
-		int n = ppoll(pfds, nfds, deadline ? &timeout : NULL, sigs);
+		int n = ppoll(pfds, nfds, timeout, sigs);
 		if (n < 0) {
 			ec = errno;
 		}
@@ -234,31 +205,42 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		if (n < 0) {
 			return ec;
 		}
+
+		if (timeout) {
+			struct timespec current_time;
+
+			if (clock_gettime(CLOCK_MONOTONIC, /**/
+				&current_time) < 0) {
+				return errno;
+			}
+
+			timespecsub(deadline, &current_time, timeout);
+			if (timeout->tv_sec < 0) {
+				timeout->tv_sec = 0;
+				timeout->tv_nsec = 0;
+			}
+		}
 	}
 }
 
 static errno_t
-timeout_to_deadline(struct timespec *deadline, int to)
+timeout_to_deadline(struct timespec *deadline, struct timespec *timeout,
+    int to)
 {
 	assert(to >= 0);
 
 	if (to == 0) {
-		*deadline = (struct timespec){0, 0};
+		*deadline = *timeout = (struct timespec){0, 0};
 	} else if (to > 0) {
 		if (clock_gettime(CLOCK_MONOTONIC, deadline) < 0) {
 			return errno;
 		}
-
-		if (__builtin_add_overflow(deadline->tv_sec, to / 1000 + 1,
-			&deadline->tv_sec)) {
+		*timeout = (struct timespec){
+		    .tv_sec = to / 1000,
+		    .tv_nsec = (to % 1000) * 1000000L,
+		};
+		if (!timespecadd_safe(deadline, timeout, deadline)) {
 			return EINVAL;
-		}
-		deadline->tv_sec -= 1;
-
-		deadline->tv_nsec += (to % 1000) * 1000000L;
-		if (deadline->tv_nsec >= 1000000000) {
-			deadline->tv_nsec -= 1000000000;
-			deadline->tv_sec += 1;
 		}
 	}
 
@@ -280,15 +262,21 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 	}
 
 	struct timespec deadline;
+	struct timespec timeout;
 	errno_t ec;
-	if (to >= 0 && (ec = timeout_to_deadline(&deadline, to)) != 0) {
+	if (to >= 0 &&
+	    (ec = timeout_to_deadline(&deadline, &timeout, to)) != 0) {
 		return ec;
 	}
 
 	return epollfd_ctx_wait_or_block(&node->ctx.epollfd, ev, cnt,
-	    actual_cnt, (to >= 0) ? &deadline : NULL, sigs);
+	    actual_cnt,			  /**/
+	    (to >= 0) ? &deadline : NULL, /**/
+	    (to >= 0) ? &timeout : NULL,  /**/
+	    sigs);
 }
 
+EPOLL_SHIM_EXPORT
 int
 epoll_pwait(int fd, struct epoll_event *ev, int cnt, int to,
     sigset_t const *sigs)
@@ -304,6 +292,7 @@ epoll_pwait(int fd, struct epoll_event *ev, int cnt, int to,
 	return actual_cnt;
 }
 
+EPOLL_SHIM_EXPORT
 int
 epoll_wait(int fd, struct epoll_event *ev, int cnt, int to)
 {
