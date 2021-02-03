@@ -842,21 +842,9 @@ signalfd_thread(void *arg)
 {
 	int ep = *(int *)arg;
 
-	// {
-	// 	struct pollfd pfd = { .fd = ep, .events = POLLIN };
-	// 	ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
-	// }
-
 	struct epoll_event event_result;
 	ATF_REQUIRE(epoll_wait(ep, &event_result, 1, 0) == 0);
 
-	// ATF_REQUIRE(event_result.events == EPOLLIN);
-	// ATF_REQUIRE(event_result.data.fd == sfd);
-
-	// s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
-	// ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
-
-	// ATF_REQUIRE(fdsi.ssi_signo == SIGINT);
 	return NULL;
 }
 
@@ -891,6 +879,11 @@ signalfd_in_thread_test(int which)
 
 	{
 		struct pollfd pfd = {.fd = ep, .events = POLLIN};
+#if defined(__DragonFly__)
+               ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+               atf_tc_skip("signals sent to threads won't trigger "
+                           "EVFILT_SIGNAL on DragonFly");
+#endif
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
@@ -1865,7 +1858,13 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epoll_pwait, tcptr)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 		ATF_REQUIRE(epoll_pwait_got_signal == 0);
 
-		int n = ppoll(&pfd, 1, &(struct timespec){0, 0}, &emptyset);
+		int n = ppoll(&pfd, 1, &(struct timespec){0,
+#if defined(__DragonFly__)
+		1
+#else
+		0
+#endif
+		}, &emptyset);
 		ATF_REQUIRE(n == 0 || (n < 0 && errno == EINTR));
 		ATF_REQUIRE(epoll_pwait_got_signal == 1);
 	}

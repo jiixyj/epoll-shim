@@ -29,6 +29,25 @@
 		__sigandset((sr), (sd));                                      \
 		0;                                                            \
 	})
+#elif defined(__DragonFly__)
+static inline int
+sigandset(sigset_t *dest, sigset_t const *left, sigset_t const *right)
+{
+	for (int i = 0; i < _SIG_WORDS; ++i) {
+		dest->__bits[i] = left->__bits[i] & right->__bits[i];
+	}
+	return 0;
+}
+static inline int
+sigisemptyset(sigset_t const *set)
+{
+	for (int i = 0; i < _SIG_WORDS; ++i) {
+		if (set->__bits[i] != 0) {
+			return 0;
+		}
+	}
+	return 1;
+}
 #endif
 
 static errno_t
