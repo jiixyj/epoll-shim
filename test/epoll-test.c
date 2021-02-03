@@ -880,9 +880,9 @@ signalfd_in_thread_test(int which)
 	{
 		struct pollfd pfd = {.fd = ep, .events = POLLIN};
 #if defined(__DragonFly__)
-               ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
-               atf_tc_skip("signals sent to threads won't trigger "
-                           "EVFILT_SIGNAL on DragonFly");
+		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
+		atf_tc_skip("signals sent to threads won't trigger "
+			    "EVFILT_SIGNAL on DragonFly");
 #endif
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
@@ -1858,13 +1858,17 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epoll_pwait, tcptr)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 		ATF_REQUIRE(epoll_pwait_got_signal == 0);
 
-		int n = ppoll(&pfd, 1, &(struct timespec){0,
+		int n = ppoll(
+		    &pfd, 1,
+		    &(struct timespec) {
+			    0,
 #if defined(__DragonFly__)
-		1
+				1
 #else
-		0
+				0
 #endif
-		}, &emptyset);
+		    },
+		    &emptyset);
 		ATF_REQUIRE(n == 0 || (n < 0 && errno == EINTR));
 		ATF_REQUIRE(epoll_pwait_got_signal == 1);
 	}
