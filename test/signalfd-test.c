@@ -7,6 +7,7 @@
 #include <sys/param.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 
 #include <errno.h>
 #include <signal.h>
@@ -487,6 +488,46 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwait_openbsd, tcptr)
 #endif
 }
 
+ATF_TC_WITHOUT_HEAD(signalfd__sigchld);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigchld, tcptr)
+{
+	sigset_t mask;
+
+	ATF_REQUIRE(sigemptyset(&mask) == 0);
+	ATF_REQUIRE(sigaddset(&mask, SIGCHLD) == 0);
+
+	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+
+	int sfd = signalfd(-1, &mask, 0);
+	ATF_REQUIRE(sfd >= 0);
+
+	pid_t pid = fork();
+	ATF_REQUIRE(pid >= 0);
+	if (pid == 0) {
+		_exit(10);
+	}
+
+	struct signalfd_siginfo fdsi;
+	ssize_t s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
+
+	int status;
+	ATF_REQUIRE(waitpid(pid, &status, 0) == pid);
+	ATF_REQUIRE(WIFEXITED(status));
+	ATF_REQUIRE(WEXITSTATUS(status) == 10);
+
+	ATF_REQUIRE(close(sfd) == 0);
+
+	ATF_REQUIRE(fdsi.ssi_signo == SIGCHLD);
+#if defined(__OpenBSD__)
+	ATF_REQUIRE(fdsi.ssi_pid == 0);
+	atf_tc_skip("OpenBSD does not fill si_pid");
+#endif
+	ATF_REQUIRE(fdsi.ssi_pid == pid);
+	ATF_REQUIRE(fdsi.ssi_code == CLD_EXITED);
+	ATF_REQUIRE(fdsi.ssi_status == 10);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, signalfd__simple_signalfd);
@@ -498,6 +539,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, signalfd__signal_disposition);
 	ATF_TP_ADD_TC(tp, signalfd__sigwaitinfo);
 	ATF_TP_ADD_TC(tp, signalfd__sigwait_openbsd);
+	ATF_TP_ADD_TC(tp, signalfd__sigchld);
 
 	return atf_no_error();
 }

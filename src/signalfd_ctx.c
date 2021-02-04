@@ -74,6 +74,12 @@ signalfd_ctx_trigger_manually(SignalFDCtx *signalfd)
 	return kqueue_event_trigger(&signalfd->kqueue_event, signalfd->kq);
 }
 
+static void
+sigchld_handler(int signo)
+{
+	(void)signo;
+}
+
 errno_t
 signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 {
@@ -102,6 +108,24 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 	for (int i = 1; i <= _SIG_MAXSIG; ++i) {
 		if (sigismember(&signalfd->sigs, i)) {
 			EV_SET(&kevs[n++], i, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+
+			/*
+			 * On Linux, SIGCHLD is returned from sigwait even if
+			 * the signal disposition is default (ignored).
+			 */
+			if (i == SIGCHLD) {
+				struct sigaction sa;
+
+				if (sigaction(SIGCHLD, NULL, &sa) == 0 &&
+				    !(sa.sa_flags & SA_SIGINFO) &&
+				    sa.sa_handler == SIG_DFL) {
+					sa = (struct sigaction){
+					    .sa_handler = sigchld_handler,
+					    .sa_flags = SA_RESTART,
+					};
+					(void)sigaction(SIGCHLD, &sa, NULL);
+				}
+			}
 		}
 	}
 
@@ -159,7 +183,8 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 	 * called.
 	 */
 
-	int s;
+	siginfo_t siginfo;
+	memset(&siginfo, 0, sizeof(siginfo));
 #if defined(__OpenBSD__)
 	for (;;) {
 		bool has_pending;
@@ -186,28 +211,37 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 		/* `&(struct timespec){0, 0}` returns EAGAIN but spams
 		 * the dmesg log. Let's do it with an invalid timespec
 		 * and EINVAL. */
-		s = __thrsigdivert(mask, NULL, &(struct timespec){0, -1});
+		int s = __thrsigdivert(mask, NULL, &(struct timespec){0, -1});
 		ec = s < 0 ? errno : 0;
 		if (ec == EINVAL || ec == EAGAIN) {
 			/* We must retry because we only checked for
 			 * one signal. There may be others pending. */
 			continue;
 		}
+		if (ec != 0) {
+			break;
+		}
+
+		siginfo.si_signo = s;
+
 		break;
 	}
 #else
-	siginfo_t siginfo;
-	memset(&siginfo, 0, sizeof(siginfo));
-	s = sigtimedwait(&signalfd->sigs, &siginfo, &(struct timespec){0, 0});
-	ec = s < 0 ? errno : 0;
+	{
+		int s = sigtimedwait(&signalfd->sigs, &siginfo,
+		    &(struct timespec){0, 0});
+		ec = s < 0 ? errno : 0;
+		if (ec == 0) {
+			assert(siginfo.si_signo == s);
+		}
+	}
 #endif
 	if (ec != 0) {
 		return ec;
 	}
 
-	signalfd_siginfo->ssi_signo = (uint32_t)s;
+	signalfd_siginfo->ssi_signo = siginfo.si_signo;
 #ifdef __FreeBSD__
-	assert(siginfo.si_signo == s);
 	signalfd_siginfo->ssi_errno = siginfo.si_errno;
 	signalfd_siginfo->ssi_code = siginfo.si_code;
 	signalfd_siginfo->ssi_pid = siginfo.si_pid;
@@ -228,7 +262,6 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 	}
 #elif __NetBSD__
 	/* common */
-	assert(siginfo.si_signo == s);
 	signalfd_siginfo->ssi_code = siginfo.si_code;
 	signalfd_siginfo->ssi_errno = siginfo.si_errno;
 
