@@ -25,13 +25,17 @@ extern "C" {
 
 /**/
 
-typedef int atf_error_t;
+struct atf_error;
+typedef struct atf_error *atf_error_t;
 
 /**/
 
 struct atf_tc_impl_s_;
 struct atf_tc_s;
 typedef struct atf_tc_s atf_tc_t;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
+#pragma GCC diagnostic ignored "-Wpedantic"
 struct atf_tc_s {
 	MICROATF_ALIGNAS(8192) char const *name;
 	void (*head)(atf_tc_t *);
@@ -39,6 +43,7 @@ struct atf_tc_s {
 	struct atf_tc_impl_s_ *impl_;
 	MICROATF_ALIGNAS(max_align_t) unsigned char impl_space_[];
 };
+#pragma GCC diagnostic pop
 
 atf_error_t atf_tc_set_md_var(atf_tc_t *tc, /**/
     char const *key, char const *value, ...);
@@ -87,20 +92,20 @@ void atf_tc_skip(const char *reason, ...);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 
-#define ATF_REQUIRE_MSG(expression, fmt, ...)                          \
-	do {                                                           \
-		if (!(expression)) {                                   \
-			microatf_fail_require("%s:%d: " fmt, __FILE__, \
-			    __LINE__, ##__VA_ARGS__);                  \
-		}                                                      \
+#define ATF_REQUIRE_MSG(expression, fmt, ...)                     \
+	do {                                                      \
+		if (!(expression)) {                              \
+			microatf_fail_require("%s:%d: " fmt, /**/ \
+			    __FILE__, __LINE__, ##__VA_ARGS__);   \
+		}                                                 \
 	} while (0)
 
-#define ATF_CHECK_MSG(expression, fmt, ...)                                    \
-	do {                                                                   \
-		if (!(expression)) {                                           \
-			microatf_fail_check("%s:%d: " fmt, __FILE__, __LINE__, \
-			    ##__VA_ARGS__);                                    \
-		}                                                              \
+#define ATF_CHECK_MSG(expression, fmt, ...)                     \
+	do {                                                    \
+		if (!(expression)) {                            \
+			microatf_fail_check("%s:%d: " fmt, /**/ \
+			    __FILE__, __LINE__, ##__VA_ARGS__); \
+		}                                               \
 	} while (0)
 
 #pragma clang diagnostic pop
@@ -166,7 +171,7 @@ void atf_tc_skip(const char *reason, ...);
 #define ATF_TP_ADD_TC(tp, tc)                                               \
 	do {                                                                \
 		atf_error_t ec = microatf_tp_add_tc(tp, &microatf_tc_##tc); \
-		if (ec != 0) {                                              \
+		if (atf_is_error(ec)) {                                     \
 			return ec;                                          \
 		}                                                           \
 	} while (0)
@@ -175,6 +180,7 @@ int microatf_tp_main(int argc, char **argv,
     atf_error_t (*add_tcs_hook)(atf_tp_t *));
 
 atf_error_t atf_no_error(void);
+bool atf_is_error(atf_error_t const);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,7 @@
 #include "atf-c.h"
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -10,6 +11,8 @@
 #ifndef O_CLOEXEC
 #define O_CLOEXEC O_NOINHERIT
 #endif
+
+/* Small list implementation to avoid dependency to <sys/queue.h> */
 
 #define STAILQ_ENTRY(s)         \
 	struct {                \
@@ -33,14 +36,19 @@
 #define STAILQ_FOREACH(e, h, n) /**/ \
 	for ((e) = (h)->list; (e); (e) = (e)->n.next)
 
-enum microatf_error_code {
-	MICROATF_SUCCESS,
-	MICROATF_ERROR_ARGUMENT_PARSING,
-	MICROATF_ERROR_NO_MATCHING_TEST_CASE,
-	MICROATF_ERROR_RESULT_FILE,
-	MICROATF_ERROR_TOO_MANY_VARIABLES,
-	MICROATF_ERROR_INITIALIZATION_ERROR,
-};
+/* Internal error codes. */
+
+#define MICROATF_ERROR_CODES(_, ...)                            \
+	_(microatf_error_argument_parsing, 1, __VA_ARGS__)      \
+	_(microatf_error_no_matching_test_case, 2, __VA_ARGS__) \
+	_(microatf_error_result_file, 3, __VA_ARGS__)           \
+	_(microatf_error_too_many_variables, 4, __VA_ARGS__)    \
+	_(microatf_error_initialization_error, 5, __VA_ARGS__)
+
+#define MICROATF_DEFINE_ERROR_CODE(ec, val, ...) \
+	static inline atf_error_t ec(void) { return (void *)(uintptr_t)val; }
+
+MICROATF_ERROR_CODES(MICROATF_DEFINE_ERROR_CODE)
 
 enum microatf_expect_type {
 	MICROATF_EXPECT_PASS,
@@ -86,12 +94,12 @@ atf_tc_set_md_var(atf_tc_t *tc, char const *key, char const *value, ...)
 		if (strncmp(tc->impl_->variables_key[i], /**/
 			key, key_length) == 0) {
 			tc->impl_->variables_value[i] = value;
-			return MICROATF_SUCCESS;
+			return atf_no_error();
 		}
 	}
 
 	if (tc->impl_->variables_size == 128) {
-		return MICROATF_ERROR_TOO_MANY_VARIABLES;
+		return microatf_error_too_many_variables();
 	}
 
 	tc->impl_->variables_key[tc->impl_->variables_size] = key;
@@ -99,7 +107,7 @@ atf_tc_set_md_var(atf_tc_t *tc, char const *key, char const *value, ...)
 
 	++tc->impl_->variables_size;
 
-	return MICROATF_SUCCESS;
+	return atf_no_error();
 }
 
 const char *
@@ -161,7 +169,7 @@ microatf_tp_add_tc(atf_tp_t *tp, atf_tc_t *tst)
 
 	char const *new_ident = atf_tc_get_md_var(tst, "ident");
 	if (new_ident == NULL || strcmp(new_ident, ident) != 0) {
-		return MICROATF_ERROR_INITIALIZATION_ERROR;
+		return microatf_error_initialization_error();
 	}
 
 	STAILQ_INSERT_TAIL(&tp->tcs, tst, impl_->entries);
@@ -456,7 +464,7 @@ microatf_tp_main(int argc, char **argv, atf_error_t (*add_tcs_hook)(atf_tp_t *))
 			break;
 		case 'v':
 			if (config_variables_size == 128) {
-				ec = MICROATF_ERROR_TOO_MANY_VARIABLES;
+				ec = microatf_error_too_many_variables();
 				goto out;
 			}
 			config_variables[config_variables_size] = optarg;
@@ -464,7 +472,7 @@ microatf_tp_main(int argc, char **argv, atf_error_t (*add_tcs_hook)(atf_tp_t *))
 			break;
 		case '?':
 		default:
-			ec = MICROATF_ERROR_ARGUMENT_PARSING;
+			ec = microatf_error_argument_parsing();
 			goto out;
 		}
 	}
@@ -476,12 +484,12 @@ microatf_tp_main(int argc, char **argv, atf_error_t (*add_tcs_hook)(atf_tp_t *))
 
 	if (list_tests) {
 		if (argc != 0) {
-			ec = MICROATF_ERROR_ARGUMENT_PARSING;
+			ec = microatf_error_argument_parsing();
 			goto out;
 		}
 	} else {
 		if (argc != 1) {
-			ec = MICROATF_ERROR_ARGUMENT_PARSING;
+			ec = microatf_error_argument_parsing();
 			goto out;
 		}
 		test_case_name = argv[0];
@@ -534,7 +542,7 @@ microatf_tp_main(int argc, char **argv, atf_error_t (*add_tcs_hook)(atf_tp_t *))
 	}
 
 	if (!matching_tc) {
-		ec = MICROATF_ERROR_NO_MATCHING_TEST_CASE;
+		ec = microatf_error_no_matching_test_case();
 		goto out;
 	}
 
@@ -555,7 +563,7 @@ microatf_tp_main(int argc, char **argv, atf_error_t (*add_tcs_hook)(atf_tp_t *))
 		result_file = open(result_file_path,
 		    O_WRONLY | O_CREAT | O_TRUNC | O_APPEND | O_CLOEXEC, 0666);
 		if (result_file < 0) {
-			ec = MICROATF_ERROR_RESULT_FILE;
+			ec = microatf_error_result_file();
 			goto out;
 		}
 	}
@@ -575,7 +583,7 @@ microatf_tp_main(int argc, char **argv, atf_error_t (*add_tcs_hook)(atf_tp_t *))
 		matching_tc->impl_->config_variables_value[i] =
 		    strchr(config_variables[i], '=');
 		if (!matching_tc->impl_->config_variables_value[i]) {
-			ec = MICROATF_ERROR_ARGUMENT_PARSING;
+			ec = microatf_error_argument_parsing();
 			goto out;
 		}
 		++matching_tc->impl_->config_variables_value[i];
@@ -589,8 +597,8 @@ microatf_tp_main(int argc, char **argv, atf_error_t (*add_tcs_hook)(atf_tp_t *))
 	microatf_context_validate_expect(microatf_context);
 
 	if (microatf_context->fail_count > 0) {
-		microatf_context_write_result(microatf_context, "failed", -1,
-		    "Some checks failed");
+		microatf_context_write_result(microatf_context, /**/
+		    "failed", -1, "Some checks failed");
 		microatf_context_exit(microatf_context, EXIT_FAILURE);
 	} else if (microatf_context->expect_fail_count > 0) {
 		microatf_context_write_result(microatf_context,
@@ -607,5 +615,11 @@ out:
 atf_error_t
 atf_no_error(void)
 {
-	return 0;
+	return NULL;
+}
+
+bool
+atf_is_error(atf_error_t const ec)
+{
+	return ec != atf_no_error();
 }
