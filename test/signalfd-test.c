@@ -519,11 +519,12 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigchld, tcptr)
 	ATF_REQUIRE(close(sfd) == 0);
 
 	ATF_REQUIRE(fdsi.ssi_signo == SIGCHLD);
-#if defined(__OpenBSD__)
+#if defined(__OpenBSD__) || defined(__DragonFly__)
 	ATF_REQUIRE(fdsi.ssi_pid == 0);
-	atf_tc_skip("OpenBSD does not fill si_pid");
+	ATF_REQUIRE(fdsi.ssi_code == 0);
+	atf_tc_skip("OpenBSD/DragonFlyBSD do not fill si_pid on SIGCHLD");
 #endif
-	ATF_REQUIRE(fdsi.ssi_pid == pid);
+	ATF_REQUIRE_MSG(fdsi.ssi_pid == pid, "%d %d", (int)fdsi.ssi_pid, (int)pid);
 	ATF_REQUIRE(fdsi.ssi_code == CLD_EXITED);
 	ATF_REQUIRE(fdsi.ssi_status == 10);
 }
