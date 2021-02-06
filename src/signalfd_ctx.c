@@ -185,6 +185,7 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 
 	siginfo_t siginfo;
 	memset(&siginfo, 0, sizeof(siginfo));
+
 #if defined(__OpenBSD__)
 	for (;;) {
 		bool has_pending;
@@ -240,55 +241,55 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 		return ec;
 	}
 
+	/*
+	 * First, fill the POSIX compatible fields, then anything else OS
+	 * specific we have.
+	 */
+
 	signalfd_siginfo->ssi_signo = siginfo.si_signo;
-#ifdef __FreeBSD__
-	signalfd_siginfo->ssi_errno = siginfo.si_errno;
 	signalfd_siginfo->ssi_code = siginfo.si_code;
+	signalfd_siginfo->ssi_errno = siginfo.si_errno;
+
 	signalfd_siginfo->ssi_pid = siginfo.si_pid;
 	signalfd_siginfo->ssi_uid = siginfo.si_uid;
-	signalfd_siginfo->ssi_status = siginfo.si_status;
+
 	signalfd_siginfo->ssi_addr = (uint64_t)(uintptr_t)siginfo.si_addr;
+
+	signalfd_siginfo->ssi_status = siginfo.si_status;
+
+	signalfd_siginfo->ssi_band = siginfo.si_band;
+
 	signalfd_siginfo->ssi_int = siginfo.si_value.sival_int;
 	signalfd_siginfo->ssi_ptr = (uint64_t)(uintptr_t)
 					siginfo.si_value.sival_ptr;
+
+	/*
+	 * Sane defaults for Linux specific fields, may be amended in the
+	 * future.
+	 */
+	signalfd_siginfo->ssi_fd = -1;
+	signalfd_siginfo->ssi_tid = -1;
+
+#ifdef __FreeBSD__
 	signalfd_siginfo->ssi_trapno = siginfo.si_trapno;
+
 	signalfd_siginfo->ssi_tid = siginfo.si_timerid;
 	signalfd_siginfo->ssi_overrun = siginfo.si_overrun;
-	signalfd_siginfo->ssi_band = siginfo.si_band;
-	signalfd_siginfo->ssi_fd = -1; /* Not available on FreeBSD. */
+
 	if (siginfo.si_code == SI_MESGQ) {
 		/* Re-use this field for si_mqd. */
 		signalfd_siginfo->ssi_fd = siginfo.si_mqd;
 	}
 #elif __NetBSD__
-	/* common */
-	signalfd_siginfo->ssi_code = siginfo.si_code;
-	signalfd_siginfo->ssi_errno = siginfo.si_errno;
-
-	/* rt */
-	signalfd_siginfo->ssi_pid = siginfo.si_pid;
-	signalfd_siginfo->ssi_uid = siginfo.si_uid;
-	signalfd_siginfo->ssi_int = siginfo.si_value.sival_int;
-	signalfd_siginfo->ssi_ptr = (uint64_t)(uintptr_t)
-					siginfo.si_value.sival_ptr;
-
-	/* child */
-	signalfd_siginfo->ssi_status = siginfo.si_status;
 	signalfd_siginfo->ssi_utime = siginfo.si_utime;
 	signalfd_siginfo->ssi_stime = siginfo.si_stime;
 
-	/* fault */
-	signalfd_siginfo->ssi_addr = (uint64_t)(uintptr_t)siginfo.si_addr;
 	signalfd_siginfo->ssi_trapno = siginfo.si_trap;
 	/* No space for trap2/trap3 */
 
-	/* poll */
-	signalfd_siginfo->ssi_band = siginfo.si_band;
 	signalfd_siginfo->ssi_fd = siginfo.si_fd;
 
 	/* No space for syscall/ptrace_state */
-#else
-	/* TODO: fill rest. */
 #endif
 	return 0;
 }
