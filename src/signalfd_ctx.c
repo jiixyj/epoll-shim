@@ -75,7 +75,7 @@ signalfd_ctx_trigger_manually(SignalFDCtx *signalfd)
 }
 
 static void
-sigchld_handler(int signo)
+signalfd_signal_handler(int signo)
 {
 	(void)signo;
 }
@@ -110,20 +110,40 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 			EV_SET(&kevs[n++], i, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
 
 			/*
-			 * On Linux, SIGCHLD is returned from sigwait even if
-			 * the signal disposition is default (ignored).
+			 * On Linux, signals with disposition SIG_DFL and a
+			 * default action of "ignored" are returned from
+			 * sigwait.
+			 * We can emulate this by registering an empty signal
+			 * handler.
 			 */
-			if (i == SIGCHLD) {
+			if (i == SIGCHLD || /**/
+			    i == SIGURG ||  /**/
+			    i == SIGCONT || /**/
+#ifdef SIGIO
+			    i == SIGIO || /**/
+#endif
+#ifdef SIGWINCH
+			    i == SIGWINCH || /**/
+#endif
+#ifdef SIGINFO
+			    i == SIGINFO || /**/
+#endif
+#ifdef SIGPWR
+			    i == SIGPWR || /**/
+#endif
+#ifdef SIGTHR
+			    i == SIGTHR || /**/
+#endif
+			    false) {
 				struct sigaction sa;
 
-				if (sigaction(SIGCHLD, NULL, &sa) == 0 &&
+				if (sigaction(i, NULL, &sa) == 0 &&
 				    !(sa.sa_flags & SA_SIGINFO) &&
 				    sa.sa_handler == SIG_DFL) {
-					sa = (struct sigaction){
-					    .sa_handler = sigchld_handler,
-					    .sa_flags = SA_RESTART,
-					};
-					(void)sigaction(SIGCHLD, &sa, NULL);
+					sa.sa_flags |= SA_RESTART;
+					sa.sa_handler =
+					    signalfd_signal_handler;
+					(void)sigaction(i, &sa, NULL);
 				}
 			}
 		}

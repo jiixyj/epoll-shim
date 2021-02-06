@@ -50,7 +50,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__simple_signalfd, tcptr)
 	}
 
 	s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
-	ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE(s == (ssize_t)sizeof(struct signalfd_siginfo));
 
 	ATF_REQUIRE(fdsi.ssi_signo == SIGINT);
 
@@ -94,7 +94,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__blocking_read, tcptr)
 	    pthread_create(&writer_thread, NULL, sleep_then_kill, NULL) == 0);
 
 	s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
-	ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE(s == (ssize_t)sizeof(struct signalfd_siginfo));
 
 	ATF_REQUIRE(fdsi.ssi_signo == SIGINT);
 
@@ -132,7 +132,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__nonblocking_read, tcptr)
 		s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
 	} while (s < 0 && errno == EAGAIN);
 
-	ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE(s == (ssize_t)sizeof(struct signalfd_siginfo));
 	ATF_REQUIRE_MSG(read_counter > 10, "%d", read_counter);
 
 	ATF_REQUIRE(fdsi.ssi_signo == SIGINT);
@@ -165,7 +165,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__multiple_signals, tcptr)
 	kill(getpid(), SIGUSR2);
 
 	s = read(sfd, &fdsi, sizeof(fdsi));
-	ATF_REQUIRE(s == 3 * sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE(s == 3 * (ssize_t)sizeof(struct signalfd_siginfo));
 
 	printf("%d %d %d\n", /**/
 	    fdsi[0].ssi_signo, fdsi[1].ssi_signo, fdsi[2].ssi_signo);
@@ -509,7 +509,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigchld, tcptr)
 
 	struct signalfd_siginfo fdsi;
 	ssize_t s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
-	ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE(s == (ssize_t)sizeof(struct signalfd_siginfo));
 
 	int status;
 	ATF_REQUIRE(waitpid(pid, &status, 0) == pid);
@@ -529,6 +529,30 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigchld, tcptr)
 	ATF_REQUIRE(fdsi.ssi_status == 10);
 }
 
+ATF_TC_WITHOUT_HEAD(signalfd__sigwinch);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwinch, tcptr)
+{
+	sigset_t mask;
+
+	ATF_REQUIRE(sigemptyset(&mask) == 0);
+	ATF_REQUIRE(sigaddset(&mask, SIGWINCH) == 0);
+
+	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+
+	int sfd = signalfd(-1, &mask, 0);
+	ATF_REQUIRE(sfd >= 0);
+
+	kill(getpid(), SIGWINCH);
+
+	struct signalfd_siginfo fdsi;
+	ssize_t s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE(s == (ssize_t)sizeof(struct signalfd_siginfo));
+
+	ATF_REQUIRE(fdsi.ssi_signo == SIGWINCH);
+
+	ATF_REQUIRE(close(sfd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, signalfd__simple_signalfd);
@@ -541,6 +565,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, signalfd__sigwaitinfo);
 	ATF_TP_ADD_TC(tp, signalfd__sigwait_openbsd);
 	ATF_TP_ADD_TC(tp, signalfd__sigchld);
+	ATF_TP_ADD_TC(tp, signalfd__sigwinch);
 
 	return atf_no_error();
 }
