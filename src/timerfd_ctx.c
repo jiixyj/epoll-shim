@@ -232,7 +232,7 @@ try_with_millis:;
 	}
 
 #ifdef QUIRKY_EVFILT_TIMER
-	if (!round_up_millis(millis, &millis)) {
+	if (millis != 0 && !round_up_millis(millis, &millis)) {
 		return 0;
 	}
 #endif
@@ -247,13 +247,29 @@ try_with_millis:;
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
 	    0, millis, 0);
 
-set_timer:
+set_timer:;
+
+#if !defined(__FreeBSD__)
+	{
+		/*
+		 * On some BSD's, EVFILT_TIMER ignores timer resets using
+		 * EV_ADD, so we have to do it manually.
+		 */
+
+		struct kevent kev_delete;
+		EV_SET(&kev_delete, 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
+		(void)kevent(timerfd->kq, &kev_delete, 1, NULL, 0, NULL);
+	}
+#endif
+
+reset_timer:
+
 	if (kevent(timerfd->kq, kev, nitems(kev), /**/
 		NULL, 0, NULL) < 0) {
 		if (handle_einval_on_zero_value && errno == EINVAL) {
 			kev[0].data = 1;
 			handle_einval_on_zero_value = false;
-			goto set_timer;
+			goto reset_timer;
 		}
 
 		return errno;

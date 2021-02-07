@@ -611,6 +611,106 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(timerfd__absolute_timer_in_the_past);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer_in_the_past, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+
+	ATF_REQUIRE(timerfd >= 0);
+
+	struct timespec b, e;
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
+
+	{
+		struct itimerspec time = {
+		    .it_value = b,
+		    .it_interval.tv_sec = 10,
+		    .it_interval.tv_nsec = 0,
+		};
+		time.it_value.tv_sec -= 1;
+
+		ATF_REQUIRE(timerfd_settime(timerfd, /**/
+				TFD_TIMER_ABSTIME, &time, NULL) == 0);
+
+		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 1000) == 1);
+	}
+
+	{
+		struct itimerspec time = {
+		    .it_value = b,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 10000000,
+		};
+		time.it_value.tv_sec -= 1;
+
+		ATF_REQUIRE(timerfd_settime(timerfd, /**/
+				TFD_TIMER_ABSTIME, &time, NULL) == 0);
+
+		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+	}
+
+	uint64_t timeouts;
+	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
+	    (ssize_t)sizeof(timeouts));
+
+	ATF_REQUIRE_MSG(timeouts >= 101, "%d", (int)timeouts);
+
+	ATF_REQUIRE(close(timerfd) == 0);
+}
+
+ATF_TC_WITHOUT_HEAD(timerfd__reset_absolute);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_absolute, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+
+	ATF_REQUIRE(timerfd >= 0);
+
+	struct timespec b, e;
+	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
+
+	{
+		struct itimerspec time = {
+		    .it_value = b,
+		};
+		time.it_value.tv_sec += 10;
+
+		ATF_REQUIRE(timerfd_settime(timerfd, /**/
+				TFD_TIMER_ABSTIME, &time, NULL) == 0);
+
+		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 100) == 0);
+	}
+
+	{
+		struct itimerspec time = {
+		    .it_value = b,
+		};
+		time.it_value.tv_nsec += 500000000;
+		if (time.it_value.tv_nsec >= 1000000000) {
+			time.it_value.tv_nsec -= 1000000000;
+			time.it_value.tv_sec += 1;
+		}
+
+		ATF_REQUIRE(timerfd_settime(timerfd, /**/
+				TFD_TIMER_ABSTIME, &time, NULL) == 0);
+
+		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		ATF_REQUIRE(poll(&pfd, 1, 1000) == 1);
+	}
+
+	uint64_t timeouts;
+	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
+	    (ssize_t)sizeof(timeouts));
+
+	ATF_REQUIRE_MSG(timeouts == 1, "%d", (int)timeouts);
+
+	ATF_REQUIRE(close(timerfd) == 0);
+}
+
 ATF_TC(timerfd__periodic_timer_performance);
 ATF_TC_HEAD(timerfd__periodic_timer_performance, tc)
 {
@@ -805,6 +905,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__argument_checks);
 	ATF_TP_ADD_TC(tp, timerfd__upgrade_simple_to_complex);
 	ATF_TP_ADD_TC(tp, timerfd__absolute_timer);
+	ATF_TP_ADD_TC(tp, timerfd__absolute_timer_in_the_past);
+	ATF_TP_ADD_TC(tp, timerfd__reset_absolute);
 	ATF_TP_ADD_TC(tp, timerfd__periodic_timer_performance);
 	ATF_TP_ADD_TC(tp, timerfd__argument_overflow);
 	ATF_TP_ADD_TC(tp, timerfd__short_evfilt_timer_timeout);
