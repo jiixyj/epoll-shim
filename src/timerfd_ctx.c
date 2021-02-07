@@ -132,8 +132,7 @@ disarm:
 	timerfd_ctx_disarm(timerfd);
 }
 
-#if defined(__NetBSD__) &&                                                    \
-    (!defined(__NetBSD_Version__) || __NetBSD_Version__ <= 910000000)
+#if defined(__NetBSD__)
 
 /* On NetBSD, EVFILT_TIMER sometimes returns early. */
 #define QUIRKY_EVFILT_TIMER

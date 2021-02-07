@@ -82,16 +82,14 @@ wait_for_timerfd(int timerfd)
 {
 	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
 
-	for (;;) {
-		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 
-		uint64_t timeouts;
-		ssize_t r = read(timerfd, &timeouts, sizeof(timeouts));
+	uint64_t timeouts;
+	ssize_t r = read(timerfd, &timeouts, sizeof(timeouts));
 
-		ATF_REQUIRE(r == (ssize_t)sizeof(timeouts));
-		ATF_REQUIRE(timeouts > 0);
-		return timeouts;
-	}
+	ATF_REQUIRE(r == (ssize_t)sizeof(timeouts));
+	ATF_REQUIRE(timeouts > 0);
+	return timeouts;
 }
 
 ATF_TC_WITHOUT_HEAD(timerfd__simple_timer);
@@ -691,6 +689,108 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_overflow, tc)
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
+ATF_TC(timerfd__short_evfilt_timer_timeout);
+ATF_TC_HEAD(timerfd__short_evfilt_timer_timeout, tc)
+{
+	atf_tc_set_md_var(tc, "timeout", "30");
+}
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__short_evfilt_timer_timeout, tc)
+{
+#ifndef __linux__
+	int kq = kqueue();
+	ATF_REQUIRE(kq >= 0);
+
+	bool returns_early = false;
+
+#ifdef __NetBSD__
+	/*
+	 * Expect that NetBSD's EVFILT_TIMER returns early at some point. The
+	 * test should exceed the timeout and thus fail if/when this bug is
+	 * fixed in NetBSD.
+	 */
+	for (;;) {
+#else
+	for (int l = 0; l < 10; ++l) {
+#endif
+		for (int i = 1; i <= 17; ++i) {
+			struct kevent kev;
+			EV_SET(&kev, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0,
+			    i, 0);
+
+			struct timespec b;
+			ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
+
+			ATF_REQUIRE(kevent(kq, &kev, 1, NULL, 0, NULL) == 0);
+
+			ATF_REQUIRE(kevent(kq, NULL, 0, &kev, 1, NULL) == 1);
+
+			struct timespec e;
+			ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
+
+			struct timespec diff;
+			timespecsub(&e, &b, &diff);
+
+			if (diff.tv_sec != 0 || diff.tv_nsec < i * 1000000) {
+				fprintf(stderr,
+				    "expected: %lldns, got: %lldns\n",
+				    (long long)(i * 1000000LL),
+				    (long long)diff.tv_nsec);
+				returns_early = true;
+				goto check;
+			}
+		}
+	}
+
+check:
+#ifdef __NetBSD__
+	ATF_REQUIRE(returns_early);
+#else
+	ATF_REQUIRE(!returns_early);
+#endif
+
+	ATF_REQUIRE(close(kq) == 0);
+#endif
+
+	/*
+	 * timerfd's should never return early, regardless of how
+	 * EVFILT_TIMER behaves.
+	 */
+
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+
+	ATF_REQUIRE(timerfd >= 0);
+
+	for (int l = 0; l < 10; ++l) {
+		for (int i = 1; i <= 17; ++i) {
+			struct itimerspec time = {
+			    .it_value.tv_sec = 0,
+			    .it_value.tv_nsec = i * 1000000,
+			};
+
+			struct timespec b;
+			ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
+
+			ATF_REQUIRE(
+			    timerfd_settime(timerfd, 0, &time, NULL) == 0);
+			(void)wait_for_timerfd(timerfd);
+
+			struct timespec e;
+			ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
+
+			struct timespec diff;
+			timespecsub(&e, &b, &diff);
+
+			ATF_REQUIRE(
+			    diff.tv_sec == 0 && diff.tv_nsec >= i * 1000000);
+			fprintf(stderr, "%dms, waited %lldns\n", i,
+			    (long long)diff.tv_nsec);
+		}
+	}
+
+	ATF_REQUIRE(close(timerfd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -707,6 +807,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__absolute_timer);
 	ATF_TP_ADD_TC(tp, timerfd__periodic_timer_performance);
 	ATF_TP_ADD_TC(tp, timerfd__argument_overflow);
+	ATF_TP_ADD_TC(tp, timerfd__short_evfilt_timer_timeout);
 
 	return atf_no_error();
 }
