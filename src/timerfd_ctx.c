@@ -258,17 +258,22 @@ set_timer:;
 
 		struct kevent kev_delete;
 		EV_SET(&kev_delete, 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
+
+		int oe = errno;
 		(void)kevent(timerfd->kq, &kev_delete, 1, NULL, 0, NULL);
+		errno = oe;
 	}
 #endif
 
-reset_timer:
+reset_timer:;
 
+	int oe = errno;
 	if (kevent(timerfd->kq, kev, nitems(kev), /**/
 		NULL, 0, NULL) < 0) {
 		if (handle_einval_on_zero_value && errno == EINVAL) {
 			kev[0].data = 1;
 			handle_einval_on_zero_value = false;
+			errno = oe;
 			goto reset_timer;
 		}
 

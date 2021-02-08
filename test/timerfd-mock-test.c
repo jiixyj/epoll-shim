@@ -89,7 +89,7 @@ ATF_TC_BODY(timerfd_mock__mocked_kevent, tc)
 		}
 		ATF_REQUIRE_ERRNO(ENOSYS, r < 0);
 
-		ATF_REQUIRE(kevent_called == 1);
+		ATF_REQUIRE(kevent_called == 1 || kevent_called == 2);
 
 #ifndef __linux__
 #ifdef __FreeBSD__
