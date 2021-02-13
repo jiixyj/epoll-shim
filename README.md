@@ -64,6 +64,17 @@ To install (as root):
 
 ## Changelog
 
+### 2021-02-13
+
+- `signalfd` now hooks into the signal disposition mechanism, just like on
+  Linux. Note: `poll` and `ppoll` are also shimmed with macros in case
+  `sys/signalfd.h` is included to support some use cases seen in the wild. Many
+  more `ssi_*` fields are now set on the resulting `struct signalfd_siginfo`.
+- More accurate timeout calculations for `epoll_wait`/`poll`/`ppoll`.
+- Fix integer overflow on timerfd timeout field on 32-bit machines.
+- Fix re-arming of timerfd timeouts on BSDs where EV_ADD of a EVFILT_TIMER
+  doesn't do it.
+
 ### 2020-12-29
 
 - Add support for native `eventfd`s (provided by FreeBSD >= 13). The
