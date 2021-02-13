@@ -27,7 +27,6 @@ jobs:
 
   testfreebsd:
     runs-on: macos-latest
-    name: A job to run test FreeBSD
     steps:
     - uses: actions/checkout@v2
     - name: Test in FreeBSD
@@ -38,13 +37,9 @@ jobs:
         usesh: true
         prepare: pkg install -y cmake
         run: |
-          pwd
-          ls -lah
-          whoami
-          env
-          freebsd-version
           mkdir build
           cd build
           cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE
           cmake --build . --config $BUILD_TYPE
           ctest -C $BUILD_TYPE
+          false
