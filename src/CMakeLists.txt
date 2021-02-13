@@ -1,3 +1,9 @@
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_library(epoll-shim INTERFACE)
+  add_library(epoll-shim::epoll-shim ALIAS epoll-shim)
+  return()
+endif()
+
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 

@@ -7,13 +7,7 @@ include(CTest)
 
 #
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  find_package(epoll-shim REQUIRED)
-else()
-  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../external/microatf" microatf)
-  add_library(epoll-shim INTERFACE)
-  add_library(epoll-shim::epoll-shim ALIAS epoll-shim)
-endif()
+find_package(epoll-shim REQUIRED)
 
 find_package(microatf REQUIRED)
 include(ATFTest)

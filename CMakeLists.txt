@@ -47,6 +47,10 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     add_subdirectory(test)
   endif()
 
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    return()
+  endif()
+
   include(GNUInstallDirs)
 
   set(CMAKE_INSTALL_PKGCONFIGDIR
