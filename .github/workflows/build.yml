@@ -36,6 +36,7 @@ jobs:
       with:
         envs: 'BUILD_TYPE'
         usesh: true
+        prepare: pkg install -y cmake
         run: |
           pwd
           ls -lah
