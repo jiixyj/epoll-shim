@@ -1769,8 +1769,10 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 		ATF_REQUIRE(fd >= 0);
 		ATF_REQUIRE(write(fd, &dummy, 1) < 0);
 		ATF_REQUIRE(errno == EINVAL || errno == EOPNOTSUPP);
+#ifndef __linux__
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    write(fd, &dummy, (size_t)SSIZE_MAX + 1) < 0);
+#endif
 		ATF_REQUIRE(close(fd) == 0);
 	}
 
@@ -1780,8 +1782,10 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 		ATF_REQUIRE(write(fd, &dummy, 1) < 0);
 		ATF_REQUIRE(errno == EINVAL || errno == EOPNOTSUPP);
 		ATF_REQUIRE_ERRNO(EINVAL, read(fd, &dummy, 1) < 0);
+#ifndef __linux__
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    read(fd, &dummy, (size_t)SSIZE_MAX + 1) < 0);
+#endif
 		ATF_REQUIRE(close(fd) == 0);
 	}
 }
