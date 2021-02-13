@@ -23,7 +23,7 @@ jobs:
     - name: Test
       working-directory: ${{github.workspace}}/build
       shell: bash
-      run: ctest -C $BUILD_TYPE
+      run: ctest -C $BUILD_TYPE --output-on-failure
 
   testfreebsd:
     runs-on: macos-latest
@@ -37,9 +37,8 @@ jobs:
         usesh: true
         prepare: pkg install -y cmake
         run: |
-          mkdir build
-          cd build
-          cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE
-          cmake --build . --config $BUILD_TYPE
-          ctest -C $BUILD_TYPE
-          false
+          mkdir build || exit 1
+          cd build || exit 1
+          cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
+          cmake --build . --config $BUILD_TYPE || exit 1
+          ctest -C $BUILD_TYPE --output-on-failure || exit 1
