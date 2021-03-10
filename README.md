@@ -36,7 +36,7 @@ example:
 
 The following operating systems are supported:
 
-- FreeBSD >= 11.3
+- FreeBSD >= 11.4, >= 12.2, >= 13.0
 - NetBSD >= 9.1
 - OpenBSD >= 6.7
 - DragonFlyBSD >= 5.8.0
