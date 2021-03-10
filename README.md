@@ -64,6 +64,10 @@ To install (as root):
 
 ## Changelog
 
+### 2021-03-10
+
+- Fix compilation on FreeBSD 12.1 (#25).
+
 ### 2021-02-13
 
 - `signalfd` now hooks into the signal disposition mechanism, just like on
