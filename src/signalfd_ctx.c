@@ -29,7 +29,11 @@
 		__sigandset((sr), (sd));                                      \
 		0;                                                            \
 	})
-#elif defined(__DragonFly__)
+#elif defined(__DragonFly__) ||                                               \
+    (defined(__FreeBSD__) &&                                                  \
+	(/**/                                                                 \
+	    (__FreeBSD__ == 11 && __FreeBSD_version < 1103505) ||             \
+	    (__FreeBSD__ == 12 && __FreeBSD_version < 1201505)))
 static inline int
 sigandset(sigset_t *dest, sigset_t const *left, sigset_t const *right)
 {
