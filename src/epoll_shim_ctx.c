@@ -165,7 +165,8 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 }
 
 FDContextMapNode *
-epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, errno_t *ec)
+epoll_shim_ctx_create_node(
+    EpollShimCtx *epoll_shim_ctx, errno_t *ec, bool cloexec)
 {
 	FDContextMapNode *node;
 
@@ -173,6 +174,12 @@ epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, errno_t *ec)
 	if (kq < 0) {
 		*ec = errno;
 		return NULL;
+	}
+	if (cloexec) {
+		int flags;
+
+		flags = fcntl(kq, F_GETFD);
+		fcntl(kq, F_SETFD, flags | FD_CLOEXEC);
 	}
 
 	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);

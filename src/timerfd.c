@@ -83,7 +83,8 @@ timerfd_create_impl(int clockid, int flags, errno_t *ec)
 		return NULL;
 	}
 
-	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec);
+	node = epoll_shim_ctx_create_node(
+	    &epoll_shim_ctx, ec, (flags & TFD_CLOEXEC) != 0);
 	if (!node) {
 		return NULL;
 	}

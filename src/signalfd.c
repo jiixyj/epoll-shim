@@ -117,7 +117,8 @@ signalfd_impl(int fd, const sigset_t *sigs, int flags, errno_t *ec)
 		return NULL;
 	}
 
-	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec);
+	node = epoll_shim_ctx_create_node(
+	    &epoll_shim_ctx, ec, (flags & SFD_CLOEXEC) != 0);
 	if (!node) {
 		return NULL;
 	}
