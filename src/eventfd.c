@@ -104,7 +104,8 @@ eventfd_impl(unsigned int initval, int flags, errno_t *ec)
 	 * will always be CLOEXEC.
 	 */
 
-	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec);
+	node = epoll_shim_ctx_create_node(
+	    &epoll_shim_ctx, ec, (flags & EFD_CLOEXEC) != 0);
 	if (!node) {
 		return NULL;
 	}

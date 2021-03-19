@@ -33,11 +33,11 @@ static FDContextVTable const epollfd_vtable = {
 };
 
 static FDContextMapNode *
-epoll_create_impl(errno_t *ec)
+epoll_create_impl(errno_t *ec, bool cloexec)
 {
 	FDContextMapNode *node;
 
-	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec);
+	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec, cloexec);
 	if (!node) {
 		return NULL;
 	}
@@ -59,12 +59,12 @@ fail:
 }
 
 static int
-epoll_create_common(void)
+epoll_create_common(bool cloexec)
 {
 	FDContextMapNode *node;
 	errno_t ec;
 
-	node = epoll_create_impl(&ec);
+	node = epoll_create_impl(&ec, cloexec);
 	if (!node) {
 		errno = ec;
 		return -1;
@@ -82,7 +82,7 @@ epoll_create(int size)
 		return -1;
 	}
 
-	return epoll_create_common();
+	return epoll_create_common(false);
 }
 
 EPOLL_SHIM_EXPORT
@@ -94,7 +94,7 @@ epoll_create1(int flags)
 		return -1;
 	}
 
-	return epoll_create_common();
+	return epoll_create_common((flags & EPOLL_CLOEXEC) != 0);
 }
 
 static errno_t
