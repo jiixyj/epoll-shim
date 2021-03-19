@@ -1880,6 +1880,35 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epoll_pwait, tcptr)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(epoll__cloexec);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__cloexec, tcptr)
+{
+	int fd;
+	int r;
+
+#define CLOEXEC_TEST(fun, cmp, ...)                                           \
+	do {                                                                  \
+		fd = fun(__VA_ARGS__);                                        \
+		ATF_REQUIRE(fd >= 0);                                         \
+		r = fcntl(fd, F_GETFD);                                       \
+		ATF_REQUIRE(r >= 0);                                          \
+		ATF_REQUIRE((r & FD_CLOEXEC) cmp 0);                          \
+		ATF_REQUIRE(close(fd) == 0);                                  \
+	} while (0)
+
+	CLOEXEC_TEST(epoll_create1, !=, EPOLL_CLOEXEC);
+	CLOEXEC_TEST(epoll_create1, ==, 0);
+	CLOEXEC_TEST(timerfd_create, !=, CLOCK_MONOTONIC, TFD_CLOEXEC);
+	CLOEXEC_TEST(timerfd_create, ==, CLOCK_MONOTONIC, 0);
+	sigset_t mask;
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	CLOEXEC_TEST(signalfd, !=, -1, &mask, SFD_CLOEXEC);
+	CLOEXEC_TEST(signalfd, ==, -1, &mask, 0);
+	CLOEXEC_TEST(eventfd, !=, 0, EFD_CLOEXEC);
+	CLOEXEC_TEST(eventfd, ==, 0, 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, epoll__simple);
@@ -1920,6 +1949,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__invalid_writes);
 	ATF_TP_ADD_TC(tp, epoll__using_real_close);
 	ATF_TP_ADD_TC(tp, epoll__epoll_pwait);
+	ATF_TP_ADD_TC(tp, epoll__cloexec);
 
 	return atf_no_error();
 }
