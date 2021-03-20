@@ -16,6 +16,7 @@ find_package(queue-macros REQUIRED)
 
 macro(add_compat_target _name _condition)
   add_library(compat_${_name} STATIC compat_${_name}.c)
+  set_property(TARGET compat_${_name} PROPERTY POSITION_INDEPENDENT_CODE ON)
   target_compile_options(
     compat_${_name}
     INTERFACE "SHELL:-include \"${CMAKE_CURRENT_LIST_DIR}/compat_${_name}.h\"")
