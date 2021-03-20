@@ -27,35 +27,36 @@ epollfd_close(FDContextMapNode *node)
 }
 
 static FDContextVTable const epollfd_vtable = {
-    .read_fun = fd_context_default_read,
-    .write_fun = fd_context_default_write,
-    .close_fun = epollfd_close,
+	.read_fun = fd_context_default_read,
+	.write_fun = fd_context_default_write,
+	.close_fun = epollfd_close,
 };
 
-static FDContextMapNode *
-epoll_create_impl(errno_t *ec, bool cloexec)
+static errno_t
+epoll_create_impl(FDContextMapNode **node_out, bool cloexec)
 {
-	FDContextMapNode *node;
+	errno_t ec;
 
-	node = epoll_shim_ctx_create_node(&epoll_shim_ctx, ec, cloexec);
-	if (!node) {
-		return NULL;
+	FDContextMapNode *node;
+	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx, cloexec, &node);
+	if (ec != 0) {
+		return ec;
 	}
 
 	node->flags = 0;
 
-	if ((*ec = epollfd_ctx_init(&node->ctx.epollfd, /**/
-		 node->fd)) != 0) {
+	if ((ec = epollfd_ctx_init(&node->ctx.epollfd, node->fd)) != 0) {
 		goto fail;
 	}
 
 	node->vtable = &epollfd_vtable;
-	return node;
+	*node_out = node;
+	return 0;
 
 fail:
 	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
 	(void)fd_context_map_node_destroy(node);
-	return NULL;
+	return ec;
 }
 
 static int
@@ -64,8 +65,8 @@ epoll_create_common(bool cloexec)
 	FDContextMapNode *node;
 	errno_t ec;
 
-	node = epoll_create_impl(&ec, cloexec);
-	if (!node) {
+	ec = epoll_create_impl(&node, cloexec);
+	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
@@ -224,20 +225,19 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 }
 
 static errno_t
-timeout_to_deadline(struct timespec *deadline, struct timespec *timeout,
-    int to)
+timeout_to_deadline(struct timespec *deadline, struct timespec *timeout, int to)
 {
 	assert(to >= 0);
 
 	if (to == 0) {
-		*deadline = *timeout = (struct timespec){0, 0};
+		*deadline = *timeout = (struct timespec) { 0, 0 };
 	} else if (to > 0) {
 		if (clock_gettime(CLOCK_MONOTONIC, deadline) < 0) {
 			return errno;
 		}
-		*timeout = (struct timespec){
-		    .tv_sec = to / 1000,
-		    .tv_nsec = (to % 1000) * 1000000L,
+		*timeout = (struct timespec) {
+			.tv_sec = to / 1000,
+			.tv_nsec = (to % 1000) * 1000000L,
 		};
 		if (!timespecadd_safe(deadline, timeout, deadline)) {
 			return EINVAL;

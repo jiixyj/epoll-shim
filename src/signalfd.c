@@ -33,7 +33,10 @@ signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx,
 			return (ec);
 		}
 
-		struct pollfd pfd = {.fd = signalfd_ctx->kq, .events = POLLIN};
+		struct pollfd pfd = {
+			.fd = signalfd_ctx->kq,
+			.events = POLLIN,
+		};
 		if (poll(&pfd, 1, -1) < 0) {
 			return (errno);
 		}
@@ -95,48 +98,49 @@ signalfd_poll(FDContextMapNode *node, uint32_t *revents)
 }
 
 static FDContextVTable const signalfd_vtable = {
-    .read_fun = signalfd_read,
-    .write_fun = fd_context_default_write,
-    .close_fun = signalfd_close,
-    .poll_fun = signalfd_poll,
+	.read_fun = signalfd_read,
+	.write_fun = fd_context_default_write,
+	.close_fun = signalfd_close,
+	.poll_fun = signalfd_poll,
 };
 
-static FDContextMapNode *
-signalfd_impl(int fd, const sigset_t *sigs, int flags, errno_t *ec)
+static errno_t
+signalfd_impl(FDContextMapNode **node_out, int fd, const sigset_t *sigs,
+    int flags)
 {
-	FDContextMapNode *node;
+	errno_t ec;
 
 	if (sigs == NULL || (flags & ~(SFD_NONBLOCK | SFD_CLOEXEC))) {
-		*ec = EINVAL;
-		return NULL;
+		return EINVAL;
 	}
 
 	if (fd != -1) {
 		struct stat sb;
-		*ec = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
-		return NULL;
+		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 	}
 
-	node = epoll_shim_ctx_create_node(
-	    &epoll_shim_ctx, ec, (flags & SFD_CLOEXEC) != 0);
-	if (!node) {
-		return NULL;
+	FDContextMapNode *node;
+	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
+	    (flags & SFD_CLOEXEC) != 0, &node);
+	if (ec != 0) {
+		return ec;
 	}
 
 	node->flags = flags;
 
-	if ((*ec = signalfd_ctx_init(&node->ctx.signalfd, /**/
+	if ((ec = signalfd_ctx_init(&node->ctx.signalfd, /**/
 		 node->fd, sigs)) != 0) {
 		goto fail;
 	}
 
 	node->vtable = &signalfd_vtable;
-	return node;
+	*node_out = node;
+	return 0;
 
 fail:
 	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
 	(void)fd_context_map_node_destroy(node);
-	return NULL;
+	return ec;
 }
 
 EPOLL_SHIM_EXPORT
@@ -146,8 +150,8 @@ signalfd(int fd, const sigset_t *sigs, int flags)
 	FDContextMapNode *node;
 	errno_t ec;
 
-	node = signalfd_impl(fd, sigs, flags, &ec);
-	if (!node) {
+	ec = signalfd_impl(&node, fd, sigs, flags);
+	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}

@@ -61,8 +61,8 @@ typedef struct {
 
 extern EpollShimCtx epoll_shim_ctx;
 
-FDContextMapNode *epoll_shim_ctx_create_node(
-    EpollShimCtx *epoll_shim_ctx, errno_t *ec, bool cloexec);
+errno_t epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, bool cloexec,
+    FDContextMapNode **node);
 FDContextMapNode *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx,
     int fd);
 FDContextMapNode *epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx,

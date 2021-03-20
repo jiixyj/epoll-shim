@@ -26,19 +26,19 @@ fd_context_map_node_init(FDContextMapNode *node, int kq)
 	node->vtable = NULL;
 }
 
-static FDContextMapNode *
-fd_context_map_node_create(int kq, errno_t *ec)
+static errno_t
+fd_context_map_node_create(FDContextMapNode **node_out, int kq)
 {
 	FDContextMapNode *node;
 
 	node = malloc(sizeof(FDContextMapNode));
 	if (!node) {
-		*ec = errno;
-		return NULL;
+		return errno;
 	}
 
 	fd_context_map_node_init(node, kq);
-	return node;
+	*node_out = node;
+	return 0;
 }
 
 static errno_t
@@ -64,12 +64,12 @@ PollableNode
 fd_context_map_node_as_pollable_node(FDContextMapNode *node)
 {
 	if (!node || !node->vtable->poll_fun) {
-		return (PollableNode){NULL, NULL};
+		return (PollableNode) { NULL, NULL };
 	}
 	static const struct pollable_node_vtable vtable = {
-	    .poll_fun = fd_context_map_node_poll,
+		.poll_fun = fd_context_map_node_poll,
 	};
-	return (PollableNode){node, &vtable};
+	return (PollableNode) { node, &vtable };
 }
 
 errno_t
@@ -120,16 +120,15 @@ RB_GENERATE_STATIC(fd_context_map_, fd_context_map_node_, entry,
     fd_context_map_node_cmp);
 
 EpollShimCtx epoll_shim_ctx = {
-    .fd_context_map = RB_INITIALIZER(&fd_context_map),
-    .mutex = PTHREAD_MUTEX_INITIALIZER,
+	.fd_context_map = RB_INITIALIZER(&fd_context_map),
+	.mutex = PTHREAD_MUTEX_INITIALIZER,
 };
 
-static FDContextMapNode *
+static errno_t
 epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
-    errno_t *ec)
+    FDContextMapNode **node_out)
 {
 	FDContextMapNode *node;
-
 	{
 		FDContextMapNode find;
 		find.fd = kq;
@@ -150,9 +149,9 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 		(void)fd_context_map_node_terminate(node, false);
 		fd_context_map_node_init(node, kq);
 	} else {
-		node = fd_context_map_node_create(kq, ec);
-		if (!node) {
-			return NULL;
+		errno_t ec = fd_context_map_node_create(&node, kq);
+		if (ec != 0) {
+			return ec;
 		}
 
 		void *colliding_node = RB_INSERT(fd_context_map_,
@@ -161,36 +160,41 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 		assert(colliding_node == NULL);
 	}
 
-	return node;
+	*node_out = node;
+	return 0;
 }
 
-FDContextMapNode *
-epoll_shim_ctx_create_node(
-    EpollShimCtx *epoll_shim_ctx, errno_t *ec, bool cloexec)
+errno_t
+epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, bool cloexec,
+    FDContextMapNode **node)
 {
-	FDContextMapNode *node;
+	errno_t ec;
 
 	int kq = kqueue();
 	if (kq < 0) {
-		*ec = errno;
-		return NULL;
+		return errno;
 	}
+
 	if (cloexec) {
 		int flags;
 
-		flags = fcntl(kq, F_GETFD);
-		fcntl(kq, F_SETFD, flags | FD_CLOEXEC);
+		if ((flags = fcntl(kq, F_GETFD)) < 0 ||
+		    fcntl(kq, F_SETFD, flags | FD_CLOEXEC) < 0) {
+			ec = errno;
+			close(kq);
+			return ec;
+		}
 	}
 
 	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
-	node = epoll_shim_ctx_create_node_impl(epoll_shim_ctx, kq, ec);
+	ec = epoll_shim_ctx_create_node_impl(epoll_shim_ctx, kq, node);
 	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 
-	if (!node) {
+	if (ec != 0) {
 		close(kq);
 	}
 
-	return node;
+	return ec;
 }
 
 static FDContextMapNode *
@@ -325,10 +329,14 @@ EPOLL_SHIM_EXPORT
 int
 epoll_shim_poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
-	return epoll_shim_ppoll(fds, nfds, timeout >= 0 ? &(struct timespec) {
-		.tv_sec = timeout / 1000,
-		.tv_nsec = timeout % 1000 * 1000000,
-	} : NULL, NULL);
+	return epoll_shim_ppoll(fds, nfds,
+	    timeout >= 0 ?
+		      &(struct timespec) {
+		    .tv_sec = timeout / 1000,
+		    .tv_nsec = timeout % 1000 * 1000000,
+		} :
+		      NULL,
+	    NULL);
 }
 
 static errno_t
@@ -418,7 +426,7 @@ epoll_shim_ppoll_impl(struct pollfd *fds, nfds_t nfds,
 
 	if (tmo_p) {
 		if (tmo_p->tv_sec == 0 && tmo_p->tv_nsec == 0) {
-			deadline = timeout = (struct timespec){0, 0};
+			deadline = timeout = (struct timespec) { 0, 0 };
 		} else {
 			if (!timespec_is_valid(tmo_p)) {
 				return EINVAL;

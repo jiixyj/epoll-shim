@@ -30,7 +30,10 @@ eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
 			return (ec);
 		}
 
-		struct pollfd pfd = {.fd = eventfd_ctx->kq_, .events = POLLIN};
+		struct pollfd pfd = {
+			.fd = eventfd_ctx->kq_,
+			.events = POLLIN,
+		};
 		if (poll(&pfd, 1, -1) < 0) {
 			return (errno);
 		}
@@ -84,30 +87,25 @@ eventfd_close(FDContextMapNode *node)
 }
 
 static FDContextVTable const eventfd_vtable = {
-    .read_fun = eventfd_helper_read,
-    .write_fun = eventfd_helper_write,
-    .close_fun = eventfd_close,
+	.read_fun = eventfd_helper_read,
+	.write_fun = eventfd_helper_write,
+	.close_fun = eventfd_close,
 };
 
-static FDContextMapNode *
-eventfd_impl(unsigned int initval, int flags, errno_t *ec)
+static errno_t
+eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
 {
-	FDContextMapNode *node;
+	errno_t ec;
 
 	if (flags & ~(EFD_SEMAPHORE | EFD_CLOEXEC | EFD_NONBLOCK)) {
-		*ec = EINVAL;
-		return NULL;
+		return EINVAL;
 	}
 
-	/*
-	 * Don't check that EFD_CLOEXEC is set -- but our kqueue based eventfd
-	 * will always be CLOEXEC.
-	 */
-
-	node = epoll_shim_ctx_create_node(
-	    &epoll_shim_ctx, ec, (flags & EFD_CLOEXEC) != 0);
-	if (!node) {
-		return NULL;
+	FDContextMapNode *node;
+	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
+	    (flags & EFD_CLOEXEC) != 0, &node);
+	if (ec != 0) {
+		return ec;
 	}
 
 	node->flags = flags;
@@ -117,18 +115,19 @@ eventfd_impl(unsigned int initval, int flags, errno_t *ec)
 		ctx_flags |= EVENTFD_CTX_FLAG_SEMAPHORE;
 	}
 
-	if ((*ec = eventfd_ctx_init(&node->ctx.eventfd, /**/
-		 node->fd, initval, ctx_flags)) != 0) {
+	if ((ec = eventfd_ctx_init(&node->ctx.eventfd, node->fd, initval,
+		 ctx_flags)) != 0) {
 		goto fail;
 	}
 
 	node->vtable = &eventfd_vtable;
-	return node;
+	*node_out = node;
+	return 0;
 
 fail:
 	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
 	(void)fd_context_map_node_destroy(node);
-	return NULL;
+	return ec;
 }
 
 EPOLL_SHIM_EXPORT
@@ -138,8 +137,8 @@ eventfd(unsigned int initval, int flags)
 	FDContextMapNode *node;
 	errno_t ec;
 
-	node = eventfd_impl(initval, flags, &ec);
-	if (!node) {
+	ec = eventfd_impl(&node, initval, flags);
+	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
@@ -152,9 +151,9 @@ int
 eventfd_read(int fd, eventfd_t *value)
 {
 	return (epoll_shim_read(fd, /**/
-		    value, sizeof(*value)) == (ssize_t)sizeof(*value))
-	    ? 0
-	    : -1;
+		    value, sizeof(*value)) == (ssize_t)sizeof(*value)) ?
+		  0 :
+		  -1;
 }
 
 EPOLL_SHIM_EXPORT
@@ -162,7 +161,7 @@ int
 eventfd_write(int fd, eventfd_t value)
 {
 	return (epoll_shim_write(fd, /**/
-		    &value, sizeof(value)) == (ssize_t)sizeof(value))
-	    ? 0
-	    : -1;
+		    &value, sizeof(value)) == (ssize_t)sizeof(value)) ?
+		  0 :
+		  -1;
 }

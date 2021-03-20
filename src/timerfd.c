@@ -28,7 +28,10 @@ timerfd_ctx_read_or_block(TimerFDCtx *timerfd, uint64_t *value, bool nonblock)
 			return (ec);
 		}
 
-		struct pollfd pfd = {.fd = timerfd->kq, .events = POLLIN};
+		struct pollfd pfd = {
+			.fd = timerfd->kq,
+			.events = POLLIN,
+		};
 		if (poll(&pfd, 1, -1) < 0) {
 			return (errno);
 		}
@@ -63,46 +66,46 @@ timerfd_close(FDContextMapNode *node)
 }
 
 static FDContextVTable const timerfd_vtable = {
-    .read_fun = timerfd_read,
-    .write_fun = fd_context_default_write,
-    .close_fun = timerfd_close,
+	.read_fun = timerfd_read,
+	.write_fun = fd_context_default_write,
+	.close_fun = timerfd_close,
 };
 
-static FDContextMapNode *
-timerfd_create_impl(int clockid, int flags, errno_t *ec)
+static errno_t
+timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 {
-	FDContextMapNode *node;
+	errno_t ec;
 
 	if (clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME) {
-		*ec = EINVAL;
-		return NULL;
+		return EINVAL;
 	}
 
 	if (flags & ~(TFD_CLOEXEC | TFD_NONBLOCK)) {
-		*ec = EINVAL;
-		return NULL;
+		return EINVAL;
 	}
 
-	node = epoll_shim_ctx_create_node(
-	    &epoll_shim_ctx, ec, (flags & TFD_CLOEXEC) != 0);
-	if (!node) {
-		return NULL;
+	FDContextMapNode *node;
+	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
+	    (flags & TFD_CLOEXEC) != 0, &node);
+	if (ec != 0) {
+		return ec;
 	}
 
 	node->flags = flags;
 
-	if ((*ec = timerfd_ctx_init(&node->ctx.timerfd, /**/
+	if ((ec = timerfd_ctx_init(&node->ctx.timerfd, /**/
 		 node->fd, clockid)) != 0) {
 		goto fail;
 	}
 
 	node->vtable = &timerfd_vtable;
-	return node;
+	*node_out = node;
+	return 0;
 
 fail:
 	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
 	(void)fd_context_map_node_destroy(node);
-	return NULL;
+	return ec;
 }
 
 EPOLL_SHIM_EXPORT
@@ -112,8 +115,8 @@ timerfd_create(int clockid, int flags)
 	FDContextMapNode *node;
 	errno_t ec;
 
-	node = timerfd_create_impl(clockid, flags, &ec);
-	if (!node) {
+	ec = timerfd_create_impl(&node, clockid, flags);
+	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
