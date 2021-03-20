@@ -170,20 +170,9 @@ epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, bool cloexec,
 {
 	errno_t ec;
 
-	int kq = kqueue();
+	int kq = kqueue1(cloexec ? O_CLOEXEC : 0);
 	if (kq < 0) {
 		return errno;
-	}
-
-	if (cloexec) {
-		int flags;
-
-		if ((flags = fcntl(kq, F_GETFD)) < 0 ||
-		    fcntl(kq, F_SETFD, flags | FD_CLOEXEC) < 0) {
-			ec = errno;
-			close(kq);
-			return ec;
-		}
 	}
 
 	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);

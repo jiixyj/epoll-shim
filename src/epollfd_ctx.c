@@ -541,7 +541,7 @@ registered_fds_node_register_for_completion(int *kq,
 	}
 
 	if (*kq < 0) {
-		*kq = kqueue();
+		*kq = kqueue1(O_CLOEXEC);
 	}
 
 	if (*kq >= 0) {

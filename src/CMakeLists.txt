@@ -13,6 +13,26 @@ find_package(Threads REQUIRED)
 find_package(tree-macros REQUIRED)
 find_package(queue-macros REQUIRED)
 
+
+macro(add_compat_target _name _condition)
+  add_library(compat_${_name} STATIC compat_${_name}.c)
+  target_compile_options(
+    compat_${_name}
+    INTERFACE "SHELL:-include \"${CMAKE_CURRENT_LIST_DIR}/compat_${_name}.h\"")
+  add_library(compat_enable_${_name} INTERFACE)
+  if(${_condition})
+    target_link_libraries(compat_enable_${_name} INTERFACE compat_${_name})
+    string(TOUPPER "${_name}" _upper_name)
+    target_compile_definitions(compat_enable_${_name}
+                               INTERFACE COMPAT_ENABLE_${_upper_name})
+  endif()
+endmacro()
+
+include(CheckSymbolExists)
+check_symbol_exists(kqueue1 "sys/event.h;sys/time.h" HAVE_KQUEUE1)
+add_compat_target(kqueue1 "NOT;HAVE_KQUEUE1")
+
+
 add_library(
   epoll-shim
   epoll_shim_ctx.c
@@ -31,7 +51,8 @@ include(GenerateExportHeader)
 generate_export_header(epoll-shim BASE_NAME epoll_shim)
 target_link_libraries(
   epoll-shim PRIVATE Threads::Threads #
-                     queue-macros::queue-macros tree-macros::tree-macros)
+                     queue-macros::queue-macros tree-macros::tree-macros #
+                     compat_enable_kqueue1)
 target_include_directories(
   epoll-shim
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
