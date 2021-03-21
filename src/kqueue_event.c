@@ -16,7 +16,7 @@ errno_t
 kqueue_event_init(KQueueEvent *kqueue_event, struct kevent *kevs,
     int *kevs_length, bool should_trigger)
 {
-	*kqueue_event = (KQueueEvent){.self_pipe_ = {-1, -1}};
+	*kqueue_event = (KQueueEvent) { .self_pipe_ = { -1, -1 } };
 
 #ifdef EVFILT_USER
 	EV_SET(&kevs[(*kevs_length)++], 0, /**/
@@ -116,7 +116,7 @@ kqueue_event_clear(KQueueEvent *kqueue_event, int kq)
 	int n;
 
 	while ((n = kevent(kq, NULL, 0, kevs, nitems(kevs),
-		    &(struct timespec){0, 0})) > 0) {
+		    &(struct timespec) { 0, 0 })) > 0) {
 	}
 
 	kqueue_event->is_triggered_ = false;

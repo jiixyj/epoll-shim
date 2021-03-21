@@ -56,9 +56,9 @@ ts_to_nanos(struct timespec const *ts, int64_t *ts_nanos_out)
 static struct timespec
 nanos_to_ts(int64_t ts_nanos)
 {
-	return (struct timespec){
-	    .tv_sec = ts_nanos / 1000000000,
-	    .tv_nsec = ts_nanos % 1000000000,
+	return (struct timespec) {
+		.tv_sec = ts_nanos / 1000000000,
+		.tv_nsec = ts_nanos % 1000000000,
 	};
 }
 
@@ -290,7 +290,7 @@ timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 
 	assert(clockid == CLOCK_MONOTONIC || clockid == CLOCK_REALTIME);
 
-	*timerfd = (TimerFDCtx){.kq = kq, .clockid = clockid};
+	*timerfd = (TimerFDCtx) { .kq = kq, .clockid = clockid };
 
 	if ((ec = pthread_mutex_init(&timerfd->mutex, NULL)) != 0) {
 		return ec;
@@ -350,9 +350,9 @@ timerfd_ctx_settime_impl(TimerFDCtx *timerfd, bool is_abstime,
 	if (is_abstime) {
 		new_absolute = *new;
 	} else {
-		new_absolute = (struct itimerspec){
-		    .it_interval = new->it_interval,
-		    .it_value = current_time,
+		new_absolute = (struct itimerspec) {
+			.it_interval = new->it_interval,
+			.it_value = current_time,
 		};
 
 		if (!timespecadd_safe(&new_absolute.it_value, &new->it_value,
@@ -409,7 +409,7 @@ timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
 		struct kevent kev;
 
 		int n = kevent(timerfd->kq, NULL, 0, &kev, 1,
-		    &(struct timespec){0, 0});
+		    &(struct timespec) { 0, 0 });
 		if (n < 0) {
 			return errno;
 		}

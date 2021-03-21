@@ -24,10 +24,10 @@ eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 
 	assert((flags & ~(EVENTFD_CTX_FLAG_SEMAPHORE)) == 0);
 
-	*eventfd = (EventFDCtx){
-	    .kq_ = kq,
-	    .flags_ = flags,
-	    .counter_ = counter,
+	*eventfd = (EventFDCtx) {
+		.kq_ = kq,
+		.flags_ = flags,
+		.counter_ = counter,
 	};
 
 	if ((ec = pthread_mutex_init(&eventfd->mutex_, NULL)) != 0) {
@@ -118,10 +118,10 @@ eventfd_ctx_read_impl(EventFDCtx *eventfd, uint64_t *value)
 		return (EAGAIN);
 	}
 
-	uint_least64_t new_value = (eventfd->flags_ &
-				       EVENTFD_CTX_FLAG_SEMAPHORE)
-	    ? current_value - 1
-	    : 0;
+	uint_least64_t new_value =			     /**/
+	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? /**/
+		  current_value - 1 :
+		  0;
 
 	if (new_value == 0 &&
 	    kqueue_event_is_triggered(&eventfd->kqueue_event_)) {
@@ -130,9 +130,10 @@ eventfd_ctx_read_impl(EventFDCtx *eventfd, uint64_t *value)
 
 	eventfd->counter_ = new_value;
 
-	*value = (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE)
-	    ? 1
-	    : current_value;
+	*value =					     /**/
+	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? /**/
+		  1 :
+		  current_value;
 	return (0);
 }
 

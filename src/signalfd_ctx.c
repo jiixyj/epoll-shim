@@ -21,22 +21,22 @@
 #define sigisemptyset(sigs) (*(sigs) == 0)
 #define sigandset(sd, sl, sr) ((*(sd) = *(sl) & *(sr)), 0)
 #elif defined(__NetBSD__)
-#define sigisemptyset(sigs)                                                   \
-	({                                                                    \
-		sigset_t e;                                                   \
-		__sigemptyset(&e);                                            \
-		__sigsetequal(sigs, &e);                                      \
+#define sigisemptyset(sigs)              \
+	({                               \
+		sigset_t e;              \
+		__sigemptyset(&e);       \
+		__sigsetequal(sigs, &e); \
 	})
-#define sigandset(sd, sl, sr)                                                 \
-	({                                                                    \
-		memcpy((sd), (sl), sizeof(sigset_t));                         \
-		__sigandset((sr), (sd));                                      \
-		0;                                                            \
+#define sigandset(sd, sl, sr)                         \
+	({                                            \
+		memcpy((sd), (sl), sizeof(sigset_t)); \
+		__sigandset((sr), (sd));              \
+		0;                                    \
 	})
-#elif defined(__DragonFly__) ||                                               \
-    (defined(__FreeBSD__) &&                                                  \
-	(/**/                                                                 \
-	    (__FreeBSD__ == 11 && __FreeBSD_version < 1103505) ||             \
+#elif defined(__DragonFly__) ||                                   \
+    (defined(__FreeBSD__) &&                                      \
+	(/**/                                                     \
+	    (__FreeBSD__ == 11 && __FreeBSD_version < 1103505) || \
 	    (__FreeBSD__ == 12 && __FreeBSD_version < 1201505)))
 static inline int
 sigandset(sigset_t *dest, sigset_t const *left, sigset_t const *right)
@@ -95,7 +95,7 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 
 	assert(sigs != NULL);
 
-	*signalfd = (SignalFDCtx){.kq = kq, .sigs = *sigs};
+	*signalfd = (SignalFDCtx) { .kq = kq, .sigs = *sigs };
 
 	if ((ec = pthread_mutex_init(&signalfd->mutex, NULL)) != 0) {
 		return ec;
@@ -149,8 +149,7 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 				    !(sa.sa_flags & SA_SIGINFO) &&
 				    sa.sa_handler == SIG_DFL) {
 					sa.sa_flags |= SA_RESTART;
-					sa.sa_handler =
-					    signalfd_signal_handler;
+					sa.sa_handler = signalfd_signal_handler;
 					(void)sigaction(i, &sa, NULL);
 				}
 			}
@@ -240,7 +239,8 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 		/* `&(struct timespec){0, 0}` returns EAGAIN but spams
 		 * the dmesg log. Let's do it with an invalid timespec
 		 * and EINVAL. */
-		int s = __thrsigdivert(mask, NULL, &(struct timespec){0, -1});
+		int s = __thrsigdivert(mask, NULL,
+		    &(struct timespec) { 0, -1 });
 		ec = s < 0 ? errno : 0;
 		if (ec == EINVAL || ec == EAGAIN) {
 			/* We must retry because we only checked for
@@ -258,7 +258,7 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 #else
 	{
 		int s = sigtimedwait(&signalfd->sigs, &siginfo,
-		    &(struct timespec){0, 0});
+		    &(struct timespec) { 0, 0 });
 		ec = s < 0 ? errno : 0;
 		if (ec == 0) {
 			assert(siginfo.si_signo == s);
