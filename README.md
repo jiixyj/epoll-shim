@@ -64,6 +64,14 @@ To install (as root):
 
 ## Changelog
 
+### 2021-03-21
+
+- Add `O_CLOEXEC` handling to created file descriptors (PR #26, thanks
+  arichardson!). Note that the shimmed file descriptors still won't work
+  correctly after `exec(3)`. Therefore, *not* using
+  `EPOLL_CLOEXEC`/`TFD_CLOEXEC`/`SFD_CLOEXEC`/`EFD_CLOEXEC` is strongly
+  discouraged.
+
 ### 2021-03-10
 
 - Fix compilation on FreeBSD 12.1 (#25).
