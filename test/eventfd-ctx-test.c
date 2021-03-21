@@ -43,7 +43,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollin, tc)
 	ATF_REQUIRE((efd = eventfd(0,
 			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 	{
-		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		struct pollfd pfd = { .fd = efd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
 	ATF_REQUIRE(close(efd) == 0);
@@ -51,7 +51,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollin, tc)
 	ATF_REQUIRE((efd = eventfd(1,
 			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 	{
-		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		struct pollfd pfd = { .fd = efd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
@@ -65,7 +65,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollout, tc)
 
 	ATF_REQUIRE((efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) >= 0);
 	{
-		struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+		struct pollfd pfd = { .fd = efd, .events = POLLOUT };
 
 		if (poll(&pfd, 1, 0) == 0) {
 			atf_tc_skip(
@@ -83,7 +83,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollout, tc)
 
 	ATF_REQUIRE((efd = eventfd(1, EFD_CLOEXEC | EFD_NONBLOCK)) >= 0);
 	{
-		struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+		struct pollfd pfd = { .fd = efd, .events = POLLOUT };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 		ATF_REQUIRE(pfd.revents == POLLOUT);
 	}
@@ -93,7 +93,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollout, tc)
 			 EFD_CLOEXEC | EFD_NONBLOCK)) >= 0);
 	{
 		{
-			struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+			struct pollfd pfd = { .fd = efd, .events = POLLOUT };
 			ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 			ATF_REQUIRE(pfd.revents == POLLOUT);
 		}
@@ -103,7 +103,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollout, tc)
 		    (ssize_t)sizeof(increment));
 
 		{
-			struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+			struct pollfd pfd = { .fd = efd, .events = POLLOUT };
 			ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 			ATF_REQUIRE(pfd.revents == POLLOUT);
 		}
@@ -113,7 +113,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__pollout, tc)
 		    (ssize_t)sizeof(increment));
 
 		{
-			struct pollfd pfd = {.fd = efd, .events = POLLOUT};
+			struct pollfd pfd = { .fd = efd, .events = POLLOUT };
 			ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 		}
 
@@ -177,7 +177,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__write, tc)
 		ATF_REQUIRE_ERRNO(EAGAIN, eventfd_write(efd, 1) < 0);
 		ATF_REQUIRE_ERRNO(EAGAIN, eventfd_write(efd, 1) < 0);
 
-		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		struct pollfd pfd = { .fd = efd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 
@@ -199,7 +199,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__read, tc)
 	ATF_REQUIRE((efd = eventfd(3,
 			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 	{
-		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		struct pollfd pfd = { .fd = efd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 
@@ -225,14 +225,14 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__write_read, tc)
 	ATF_REQUIRE((efd = eventfd(6, EFD_CLOEXEC | EFD_NONBLOCK)) >= 0);
 	{
 		{
-			struct pollfd pfd = {.fd = efd, .events = POLLIN};
+			struct pollfd pfd = { .fd = efd, .events = POLLIN };
 			ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 			ATF_REQUIRE(pfd.revents == POLLIN);
 		}
 		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
 		ATF_REQUIRE(value == 6);
 
-		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		struct pollfd pfd = { .fd = efd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 
 		ATF_REQUIRE(eventfd_write(efd, 2) == 0);
@@ -258,7 +258,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__write_read_semaphore, tc)
 	ATF_REQUIRE((efd = eventfd(0,
 			 EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) >= 0);
 	{
-		struct pollfd pfd = {.fd = efd, .events = POLLIN};
+		struct pollfd pfd = { .fd = efd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 
 		ATF_REQUIRE(eventfd_write(efd, 2) == 0);
@@ -307,9 +307,10 @@ read_fun(void *arg)
 
 		ATF_REQUIRE(errno == EAGAIN);
 
-		struct pollfd pfds[2] = {/**/
-		    {.fd = efd, .events = POLLIN},
-		    {.fd = args->signal_pipe[0], .events = POLLIN}};
+		struct pollfd pfds[2] = { /**/
+			{ .fd = efd, .events = POLLIN },
+			{ .fd = args->signal_pipe[0], .events = POLLIN }
+		};
 		ATF_REQUIRE(poll(pfds, nitems(pfds), -1) > 0);
 
 		if (pfds[1].revents) {
@@ -436,8 +437,8 @@ write_fun(void *arg)
 
 	for (i = 0; i < td->loop; i++) {
 		ATF_REQUIRE(
-		    (s = write(td->efd, &td->ev_count,
-			 sizeof(td->ev_count))) == sizeof(td->ev_count));
+		    (s = write(td->efd, &td->ev_count, sizeof(td->ev_count))) ==
+		    sizeof(td->ev_count));
 		usleep(100);
 	}
 	return (NULL);
@@ -522,7 +523,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__epoll, tc)
 	struct epoll_event event;
 
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, efd,
-			&(struct epoll_event){
+			&(struct epoll_event) {
 			    .events = EPOLLIN | EPOLLET,
 			    .data.fd = efd,
 			}) == 0);
@@ -539,7 +540,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__epoll, tc)
 	ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
 
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_MOD, efd,
-			&(struct epoll_event){
+			&(struct epoll_event) {
 			    .events = EPOLLOUT,
 			    .data.fd = efd,
 			}) == 0);

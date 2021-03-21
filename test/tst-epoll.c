@@ -80,14 +80,14 @@ steady_clock_now(void)
 }
 
 #ifndef timespecsub
-#define timespecsub(tsp, usp, vsp)                                            \
-	do {                                                                  \
-		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;                \
-		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;             \
-		if ((vsp)->tv_nsec < 0) {                                     \
-			(vsp)->tv_sec--;                                      \
-			(vsp)->tv_nsec += 1000000000L;                        \
-		}                                                             \
+#define timespecsub(tsp, usp, vsp)                                \
+	do {                                                      \
+		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;    \
+		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec; \
+		if ((vsp)->tv_nsec < 0) {                         \
+			(vsp)->tv_sec--;                          \
+			(vsp)->tv_nsec += 1000000000L;            \
+		}                                                 \
 	} while (0)
 #endif
 
@@ -163,7 +163,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epollfd_osv__epoll_file, tc)
 	int fd = open("/dev/random", O_RDONLY);
 	ATF_REQUIRE_MSG(fd >= 0, "open file");
 
-	struct pollfd pfd = {.fd = fd, .events = POLLIN};
+	struct pollfd pfd = { .fd = fd, .events = POLLIN };
 	ATF_REQUIRE_MSG(poll(&pfd, 1, -1) == 1 && pfd.revents == EPOLLIN,
 	    "poll");
 
@@ -271,7 +271,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epollfd_osv__some_tests, tc)
 	ATF_REQUIRE_MSG(r == 0, "epoll after read");
 
 	pthread_t t1;
-	struct t1_args t1_args = {.ep = ep, .s_0 = s[0]};
+	struct t1_args t1_args = { .ep = ep, .s_0 = s[0] };
 	ATF_REQUIRE(pthread_create(&t1, NULL, t1_func, &t1_args) == 0);
 
 	ATF_REQUIRE(usleep(500000) == 0);

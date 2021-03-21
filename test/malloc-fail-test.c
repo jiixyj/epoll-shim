@@ -105,8 +105,8 @@ kevent(int kq, const struct kevent *changelist, int nchanges,
 	}
 
 	int (*real_kevent)(int, const struct kevent *, int, struct kevent *,
-	    int, const struct timespec *) = (int (*)(int,
-	    const struct kevent *, int, struct kevent *, int,
+	    int, const struct timespec *) = (int (*)(int, const struct kevent *,
+	    int, struct kevent *, int,
 	    const struct timespec *))dlsym_wrapper(RTLD_NEXT, "kevent");
 
 	decrement_malloc_fail_cnt();
@@ -257,7 +257,7 @@ ATF_TC_BODY_FD_LEAKCHECK(malloc_fail__epoll, tc)
 			continue;
 		}
 
-		struct epoll_event event = {.events = EPOLLIN};
+		struct epoll_event event = { .events = EPOLLIN };
 		int r = epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &event);
 		if (r < 0) {
 			ATF_REQUIRE_ERRNO(ENOMEM, true);

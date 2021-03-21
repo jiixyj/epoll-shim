@@ -44,7 +44,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__simple_signalfd, tcptr)
 	kill(getpid(), SIGINT);
 
 	{
-		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
@@ -57,7 +57,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__simple_signalfd, tcptr)
 	ATF_REQUIRE(sigprocmask(SIG_UNBLOCK, &mask, NULL) == 0);
 
 	{
-		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
 
@@ -297,7 +297,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__signal_disposition, tcptr)
 	ATF_REQUIRE(got_sigint == 1);
 
 	{
-		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
 
@@ -305,7 +305,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__signal_disposition, tcptr)
 	    read(sfd, &fdsi, sizeof(struct signalfd_siginfo)) < 0);
 
 	{
-		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
 
@@ -339,12 +339,12 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 	ATF_REQUIRE(sfd3 >= 0);
 
 	{
-		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
 	{
-		struct pollfd pfd = {.fd = sfd3, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd3, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
@@ -366,12 +366,12 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 	}
 
 	{
-		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
 	{
-		struct pollfd pfd = {.fd = sfd3, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd3, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
@@ -387,19 +387,19 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 #else
 		siginfo_t siginfo;
 		int s = sigtimedwait(&mask, &siginfo, /**/
-		    &(struct timespec){0, 0});
+		    &(struct timespec) { 0, 0 });
 		ATF_REQUIRE(s == SIGUSR1);
 		ATF_REQUIRE(siginfo.si_signo == SIGUSR1);
 #endif
 	}
 
 	{
-		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
 	{
-		struct pollfd pfd = {.fd = sfd3, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd3, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
@@ -414,11 +414,11 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 	ATF_REQUIRE(sigprocmask(SIG_UNBLOCK, &mask, NULL) == 0);
 
 	{
-		struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
 	{
-		struct pollfd pfd = {.fd = sfd3, .events = POLLIN};
+		struct pollfd pfd = { .fd = sfd3, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 	}
 
@@ -454,7 +454,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwait_openbsd, tcptr)
 	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
 
 	{
-		int s = __thrsigdivert(mask, NULL, &(struct timespec){0, 0});
+		int s = __thrsigdivert(mask, NULL, &(struct timespec) { 0, 0 });
 		/*
 		 * EAGAIN is correct, but the following shouldn't appear in
 		 * dmesg:
@@ -465,7 +465,8 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwait_openbsd, tcptr)
 		ATF_REQUIRE_ERRNO(EAGAIN, s < 0);
 	}
 	{
-		int s = __thrsigdivert(mask, NULL, &(struct timespec){0, -1});
+		int s = __thrsigdivert(mask, NULL,
+		    &(struct timespec) { 0, -1 });
 		/*
 		 * This should probably be EINVAL, see sys/kern/kern_sig.c:
 		 *
@@ -524,7 +525,8 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigchld, tcptr)
 	ATF_REQUIRE(fdsi.ssi_code == 0);
 	atf_tc_skip("OpenBSD/DragonFlyBSD do not fill si_pid on SIGCHLD");
 #endif
-	ATF_REQUIRE_MSG(fdsi.ssi_pid == pid, "%d %d", (int)fdsi.ssi_pid, (int)pid);
+	ATF_REQUIRE_MSG(fdsi.ssi_pid == pid, "%d %d", (int)fdsi.ssi_pid,
+	    (int)pid);
 	ATF_REQUIRE(fdsi.ssi_code == CLD_EXITED);
 	ATF_REQUIRE(fdsi.ssi_status == 10);
 }

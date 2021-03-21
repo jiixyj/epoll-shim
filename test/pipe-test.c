@@ -38,14 +38,14 @@
 ATF_TC_WITHOUT_HEAD(pipe__simple_poll);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__simple_poll, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
 	ATF_REQUIRE(p[1] >= 0);
 
 	{
-		struct pollfd pfd = {.fd = p[0], .events = POLLIN};
+		struct pollfd pfd = { .fd = p[0], .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 		ATF_REQUIRE(pfd.revents == 0);
 
@@ -53,7 +53,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__simple_poll, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){.events = EPOLLIN | EPOLLET};
+		eps[0] = (struct epoll_event) { .events = EPOLLIN | EPOLLET };
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
@@ -61,7 +61,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__simple_poll, tc)
 	}
 
 	{
-		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
+		struct pollfd pfd = { .fd = p[1], .events = POLLOUT };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 		ATF_REQUIRE(pfd.revents == POLLOUT);
 
@@ -69,7 +69,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__simple_poll, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+		eps[0] = (struct epoll_event) { .events = EPOLLOUT | EPOLLET };
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -85,7 +85,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__simple_poll, tc)
 ATF_TC_WITHOUT_HEAD(pipe__poll_write_end_after_read_end_close);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_write_end_after_read_end_close, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -95,13 +95,13 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	eps[0] = (struct epoll_event) { .events = EPOLLOUT | EPOLLET };
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
-		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
+		struct pollfd pfd = { .fd = p[1], .events = POLLOUT };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #if defined(__linux__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLERR));
@@ -129,7 +129,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_write_end_after_read_end_close, tc)
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_write_end_after_read_end_close);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -146,13 +146,13 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close, tc)
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	eps[0] = (struct epoll_event) { .events = EPOLLOUT | EPOLLET };
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
-		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
+		struct pollfd pfd = { .fd = p[1], .events = POLLOUT };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == POLLERR);
@@ -178,10 +178,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close, tc)
 }
 
 ATF_TC_WITHOUT_HEAD(pipe__poll_full_write_end_after_read_end_close_hup);
-ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close_hup,
-    tc)
+ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close_hup, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -207,13 +206,13 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close_hup,
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){.events = EPOLLET};
+	eps[0] = (struct epoll_event) { .events = EPOLLET };
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
-		struct pollfd pfd = {.fd = p[1]};
+		struct pollfd pfd = { .fd = p[1] };
 		int rv = poll(&pfd, 1, 1000);
 #if defined(__DragonFly__)
 		if (rv == 0) {
@@ -253,7 +252,7 @@ ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_1b_write_end_after_read_end_close);
 ATF_TC_BODY_FD_LEAKCHECK(
     pipe__poll_full_minus_1b_write_end_after_read_end_close, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -272,13 +271,13 @@ ATF_TC_BODY_FD_LEAKCHECK(
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	eps[0] = (struct epoll_event) { .events = EPOLLOUT | EPOLLET };
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
-		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
+		struct pollfd pfd = { .fd = p[1], .events = POLLOUT };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == POLLERR);
@@ -307,7 +306,7 @@ ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_511b_write_end_after_read_end_close);
 ATF_TC_BODY_FD_LEAKCHECK(
     pipe__poll_full_minus_511b_write_end_after_read_end_close, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -328,13 +327,13 @@ ATF_TC_BODY_FD_LEAKCHECK(
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	eps[0] = (struct epoll_event) { .events = EPOLLOUT | EPOLLET };
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
-		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
+		struct pollfd pfd = { .fd = p[1], .events = POLLOUT };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 #ifdef __linux__
 		ATF_REQUIRE(pfd.revents == POLLERR);
@@ -363,7 +362,7 @@ ATF_TC_WITHOUT_HEAD(pipe__poll_full_minus_512b_write_end_after_read_end_close);
 ATF_TC_BODY_FD_LEAKCHECK(
     pipe__poll_full_minus_512b_write_end_after_read_end_close, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -384,13 +383,13 @@ ATF_TC_BODY_FD_LEAKCHECK(
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+	eps[0] = (struct epoll_event) { .events = EPOLLOUT | EPOLLET };
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 	ATF_REQUIRE(close(p[0]) == 0);
 
 	{
-		struct pollfd pfd = {.fd = p[1], .events = POLLOUT};
+		struct pollfd pfd = { .fd = p[1], .events = POLLOUT };
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 1);
 
 #ifdef __linux__
@@ -458,7 +457,7 @@ static int const SPURIOUS_EV_NODATA = 0
 ATF_TC_WITHOUT_HEAD(pipe__pipe_event_poll);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -482,7 +481,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 
@@ -498,7 +497,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){.events = EPOLLIN | EPOLLOUT | EPOLLET};
+	eps[0] = (struct epoll_event) { .events = EPOLLIN | EPOLLOUT |
+		    EPOLLET };
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -513,7 +513,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+			&(struct timespec) { 0, 0 }) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
@@ -531,14 +531,14 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+			&(struct timespec) { 0, 0 }) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
 	ATF_REQUIRE(read(p[0], &c, 1) == 1);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec) { 0, 0 });
 	ATF_REQUIRE(r == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
@@ -554,7 +554,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD));
@@ -572,7 +572,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE_MSG(kev[0].flags ==
@@ -597,7 +597,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 ATF_TC_WITHOUT_HEAD(pipe__fifo_writes);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
 
@@ -638,7 +638,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 #endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 
@@ -664,8 +664,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){
-	    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+	eps[0] = (struct epoll_event) {
+		.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 	};
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
@@ -680,7 +680,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	ATF_REQUIRE(errno == EAGAIN || errno == EWOULDBLOCK);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec) { 0, 0 });
 #if defined(__DragonFly__)
 	ATF_REQUIRE(r == 1);
 	ATF_REQUIRE_MSG(kev[0].filter == EVFILT_READ, "%d", kev[0].filter);
@@ -699,7 +699,7 @@ try_again:
 #endif
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec) { 0, 0 });
 #if defined(__DragonFly__)
 	while (r == 1) {
 		if (kev[0].filter == EVFILT_READ) {
@@ -731,7 +731,7 @@ try_again:
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE_MSG(kev[0].flags ==
@@ -748,7 +748,7 @@ try_again:
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE(kev[0].flags == (EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD));
@@ -816,7 +816,7 @@ try_again:
 ATF_TC_WITHOUT_HEAD(pipe__fifo_connecting_reader);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
 
@@ -857,18 +857,18 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 #endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+			&(struct timespec) { 0, 0 }) == 0);
 #endif
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){
-	    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+	eps[0] = (struct epoll_event) {
+		.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 	};
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
@@ -907,7 +907,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	ATF_REQUIRE(kev[index].filter == EVFILT_WRITE);
 	ATF_REQUIRE((kev[index].flags & EV_EOF) != 0);
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+			&(struct timespec) { 0, 0 }) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
@@ -918,7 +918,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	bool will_notice_new_readers = true;
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){1, 0});
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec) { 1, 0 });
 	if (r == 0) {
 		will_notice_new_readers = false;
 		/* This is the behavior on vanilla FreeBSD. Opening the read
@@ -935,7 +935,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 		    "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
 		ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-				&(struct timespec){0, 0}) == 0);
+				&(struct timespec) { 0, 0 }) == 0);
 	}
 	ATF_REQUIRE(close(kq) == 0);
 #endif
@@ -960,7 +960,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 ATF_TC_WITHOUT_HEAD(pipe__fifo_reads);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_reads, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
 
@@ -991,7 +991,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_reads, tc)
 	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE_MSG(kev[0].flags == (EV_CLEAR | SPURIOUS_EV_ADD), "%x",
@@ -1008,8 +1008,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_reads, tc)
 
 	struct epoll_event eps[32];
 
-	eps[0] = (struct epoll_event){
-	    .events = EPOLLIN | EPOLLRDHUP | EPOLLET,
+	eps[0] = (struct epoll_event) {
+		.events = EPOLLIN | EPOLLRDHUP | EPOLLET,
 	};
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 
@@ -1023,7 +1023,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_reads, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+			&(struct timespec) { 0, 0 }) == 0);
 	ATF_REQUIRE(close(kq) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
@@ -1036,7 +1036,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_reads, tc)
 ATF_TC_WITHOUT_HEAD(pipe__fifo_read_eof_wakeups);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
 
@@ -1058,15 +1058,15 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+			&(struct timespec) { 0, 0 }) == 0);
 #endif
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
 
-	eps[0] = (struct epoll_event){
-	    .events = EPOLLIN | EPOLLRDHUP | EPOLLET,
+	eps[0] = (struct epoll_event) {
+		.events = EPOLLIN | EPOLLRDHUP | EPOLLET,
 	};
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
@@ -1075,7 +1075,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE(kev[0].flags ==
@@ -1094,7 +1094,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 	bool has_spurious_pipe_eof_wakeups_on_read = false;
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec){0, 0});
+	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec) { 0, 0 });
 	if (r == 1) {
 		has_spurious_pipe_eof_wakeups_on_read = true;
 	} else {
@@ -1117,7 +1117,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 ATF_TC_WITHOUT_HEAD(pipe__fifo_read_eof_state_when_reconnecting);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(mkfifo("the_fifo", 0666) == 0);
 
@@ -1138,15 +1138,15 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+			&(struct timespec) { 0, 0 }) == 0);
 #endif
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
 
-	eps[0] = (struct epoll_event){
-	    .events = EPOLLIN | EPOLLRDHUP | EPOLLET,
+	eps[0] = (struct epoll_event) {
+		.events = EPOLLIN | EPOLLRDHUP | EPOLLET,
 	};
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
@@ -1155,7 +1155,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE(kev[0].flags ==
@@ -1172,7 +1172,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 0);
+			&(struct timespec) { 0, 0 }) == 0);
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
@@ -1182,7 +1182,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	if (kev[0].flags == (EV_EOF | EV_CLEAR)) {
@@ -1212,7 +1212,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 ATF_TC_WITHOUT_HEAD(pipe__closed_read_end);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -1251,7 +1251,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 #endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE_MSG(kev[0].flags ==
@@ -1268,8 +1268,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){
-		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+		eps[0] = (struct epoll_event) {
+			.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
 		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]);
 		ATF_REQUIRE(ret == 0);
@@ -1292,8 +1292,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){
-		    .events = EPOLLIN | EPOLLRDHUP | EPOLLET,
+		eps[0] = (struct epoll_event) {
+			.events = EPOLLIN | EPOLLRDHUP | EPOLLET,
 		};
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
@@ -1308,7 +1308,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){.events = EPOLLET};
+		eps[0] = (struct epoll_event) { .events = EPOLLET };
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1322,7 +1322,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){.events = 0};
+		eps[0] = (struct epoll_event) { .events = 0 };
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1341,7 +1341,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 ATF_TC_WITHOUT_HEAD(pipe__closed_read_end_of_duplex);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_of_duplex, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -1367,8 +1367,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_of_duplex, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){
-		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+		eps[0] = (struct epoll_event) {
+			.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
 		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]);
 		ATF_REQUIRE(ret == 0);
@@ -1384,7 +1384,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_of_duplex, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){.events = EPOLLET};
+		eps[0] = (struct epoll_event) { .events = EPOLLET };
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1398,7 +1398,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_of_duplex, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){.events = 0};
+		eps[0] = (struct epoll_event) { .events = 0 };
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1417,7 +1417,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_of_duplex, tc)
 ATF_TC_WITHOUT_HEAD(pipe__closed_read_end_register_before_close);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -1476,8 +1476,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){
-	    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+	eps[0] = (struct epoll_event) {
+		.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 	};
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[1], &eps[0]) == 0);
 
@@ -1485,7 +1485,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 2);
+			&(struct timespec) { 0, 0 }) == 2);
 	{
 		ATF_REQUIRE(kev[1].ident == (uintptr_t)p[1]);
 		ATF_REQUIRE(kev[1].filter == EVFILT_READ);
@@ -1505,8 +1505,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 		    "%04x", kev[0].flags);
 		ATF_REQUIRE(kev[0].fflags == 0);
 		if (kev[0].data == 0) {
-			atf_tc_skip(
-			    "kev.data == 0 is a valid value on EV_EOF");
+			atf_tc_skip("kev.data == 0 is a valid value on EV_EOF");
 		}
 		ATF_REQUIRE_MSG(kev[0].data == 16384, "%d", (int)kev[0].data);
 		ATF_REQUIRE(kev[0].udata == 0);
@@ -1524,7 +1523,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 ATF_TC_WITHOUT_HEAD(pipe__closed_write_end);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -1571,7 +1570,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 #endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE_MSG(kev[0].flags ==
@@ -1596,8 +1595,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){
-		    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+		eps[0] = (struct epoll_event) {
+			.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 		};
 		int ret = epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]);
 		ATF_REQUIRE(ret == 0);
@@ -1613,7 +1612,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){.events = EPOLLOUT | EPOLLET};
+		eps[0] = (struct epoll_event) { .events = EPOLLOUT | EPOLLET };
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1634,7 +1633,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 		ATF_REQUIRE(ep >= 0);
 
 		struct epoll_event eps[32];
-		eps[0] = (struct epoll_event){.events = EPOLLET};
+		eps[0] = (struct epoll_event) { .events = EPOLLET };
 		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
@@ -1650,7 +1649,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 ATF_TC_WITHOUT_HEAD(pipe__closed_write_end_register_before_close);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 {
-	int p[2] = {-1, -1};
+	int p[2] = { -1, -1 };
 
 	ATF_REQUIRE(pipe2(p, O_CLOEXEC | O_NONBLOCK) == 0);
 	ATF_REQUIRE(p[0] >= 0);
@@ -1678,8 +1677,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 	ATF_REQUIRE(ep >= 0);
 
 	struct epoll_event eps[32];
-	eps[0] = (struct epoll_event){
-	    .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
+	eps[0] = (struct epoll_event) {
+		.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
 	};
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, p[0], &eps[0]) == 0);
 
@@ -1695,7 +1694,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 #if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 2);
+			&(struct timespec) { 0, 0 }) == 2);
 	{
 		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
@@ -1725,7 +1724,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 	}
 #else
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec){0, 0}) == 1);
+			&(struct timespec) { 0, 0 }) == 1);
 	{
 		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 		ATF_REQUIRE(kev[0].filter == EVFILT_READ);

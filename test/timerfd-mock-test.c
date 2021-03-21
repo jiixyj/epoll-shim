@@ -62,8 +62,7 @@ kevent(int kq, const struct kevent *changelist, kevent_n_type nchanges,
 static unsigned int
 netbsd_mstohz(unsigned int ms)
 {
-	return ms >= 0x20000u ? (ms / 1000u) * CLK_TCK
-			      : (ms * CLK_TCK) / 1000u;
+	return ms >= 0x20000u ? (ms / 1000u) * CLK_TCK : (ms * CLK_TCK) / 1000u;
 }
 #endif
 
@@ -77,8 +76,8 @@ ATF_TC_BODY(timerfd_mock__mocked_kevent, tc)
 
 	for (int64_t ms = 1; ms < 3600000; ++ms) {
 		struct itimerspec time = {
-		    .it_value.tv_sec = ms / 1000,
-		    .it_value.tv_nsec = (ms % 1000) * 1000000L,
+			.it_value.tv_sec = ms / 1000,
+			.it_value.tv_nsec = (ms % 1000) * 1000000L,
 		};
 
 		kevent_called = 0;
@@ -105,8 +104,8 @@ ATF_TC_BODY(timerfd_mock__mocked_kevent, tc)
 		ATF_REQUIRE(evfilt_timer_data <= UINT_MAX);
 
 #ifdef __NetBSD__
-		unsigned long kernel_ms = netbsd_mstohz((
-					      unsigned int)evfilt_timer_data) *
+		unsigned long kernel_ms = netbsd_mstohz(
+					      (unsigned int)evfilt_timer_data) *
 		    1000UL / CLK_TCK;
 #else
 		unsigned long kernel_ms = evfilt_timer_data;

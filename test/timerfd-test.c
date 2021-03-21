@@ -31,26 +31,26 @@
 // TODO(jan): Remove this once the definition is exposed in <sys/time.h> in
 // all supported FreeBSD versions.
 #ifndef timespecsub
-#define timespecsub(tsp, usp, vsp)                                            \
-	do {                                                                  \
-		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;                \
-		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;             \
-		if ((vsp)->tv_nsec < 0) {                                     \
-			(vsp)->tv_sec--;                                      \
-			(vsp)->tv_nsec += 1000000000L;                        \
-		}                                                             \
+#define timespecsub(tsp, usp, vsp)                                \
+	do {                                                      \
+		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;    \
+		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec; \
+		if ((vsp)->tv_nsec < 0) {                         \
+			(vsp)->tv_sec--;                          \
+			(vsp)->tv_nsec += 1000000000L;            \
+		}                                                 \
 	} while (0)
 #endif
 
 #ifndef timespecadd
-#define timespecadd(tsp, usp, vsp)                                            \
-	do {                                                                  \
-		(vsp)->tv_sec = (tsp)->tv_sec + (usp)->tv_sec;                \
-		(vsp)->tv_nsec = (tsp)->tv_nsec + (usp)->tv_nsec;             \
-		if ((vsp)->tv_nsec >= 1000000000L) {                          \
-			(vsp)->tv_sec++;                                      \
-			(vsp)->tv_nsec -= 1000000000L;                        \
-		}                                                             \
+#define timespecadd(tsp, usp, vsp)                                \
+	do {                                                      \
+		(vsp)->tv_sec = (tsp)->tv_sec + (usp)->tv_sec;    \
+		(vsp)->tv_nsec = (tsp)->tv_nsec + (usp)->tv_nsec; \
+		if ((vsp)->tv_nsec >= 1000000000L) {              \
+			(vsp)->tv_sec++;                          \
+			(vsp)->tv_nsec -= 1000000000L;            \
+		}                                                 \
 	} while (0)
 #endif
 
@@ -80,7 +80,7 @@ ATF_TC_BODY(timerfd__many_timers, tc)
 static uint64_t
 wait_for_timerfd(int timerfd)
 {
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+	struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 
 	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 
@@ -101,8 +101,8 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_timer, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 100000000,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 100000000,
 	};
 
 	struct timespec b, e;
@@ -129,10 +129,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_periodic_timer, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 200000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 200000000,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 200000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 200000000,
 	};
 
 	struct timespec b, e;
@@ -166,10 +166,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__complex_periodic_timer, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 100000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 200000001,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 100000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 200000001,
 	};
 
 	struct timespec b, e;
@@ -204,10 +204,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_periodic_timer, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 100000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 100000000,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 100000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 100000000,
 	};
 
 	struct timespec b, e;
@@ -216,11 +216,11 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_periodic_timer, tc)
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 	(void)wait_for_timerfd(timerfd);
 
-	time = (struct itimerspec){
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 50000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 100000000,
+	time = (struct itimerspec) {
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 50000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 100000000,
 	};
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
@@ -245,10 +245,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 100000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 100000000,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 100000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 100000000,
 	};
 
 	struct timespec b, e;
@@ -259,16 +259,16 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 
 	ATF_REQUIRE(timeouts == 1);
 
-	time = (struct itimerspec){
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 0,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 0,
+	time = (struct itimerspec) {
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 0,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 0,
 	};
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+	struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 	ATF_REQUIRE(poll(&pfd, 1, 250) == 0);
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
@@ -277,11 +277,11 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 350000000 &&
 	    e.tv_nsec < 350000000 + TIMER_SLACK * 2);
 
-	time = (struct itimerspec){
-	    .it_value.tv_sec = 1,
-	    .it_value.tv_nsec = 0,
-	    .it_interval.tv_sec = 1,
-	    .it_interval.tv_nsec = 0,
+	time = (struct itimerspec) {
+		.it_value.tv_sec = 1,
+		.it_value.tv_nsec = 0,
+		.it_interval.tv_sec = 1,
+		.it_interval.tv_nsec = 0,
 	};
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
@@ -348,10 +348,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_gettime, tc)
 	ATF_REQUIRE(curr_value.it_interval.tv_nsec == 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 100000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 100000000,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 100000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 100000000,
 	};
 
 	curr_value = time;
@@ -372,10 +372,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_blocking_periodic_timer, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 100000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 100000000,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 100000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 100000000,
 	};
 
 	struct timespec b, e;
@@ -415,10 +415,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_checks, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 100000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 100000000,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 100000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 100000000,
 	};
 
 	ATF_REQUIRE_ERRNO(EFAULT, timerfd_settime(timerfd, 0, NULL, NULL) < 0);
@@ -430,61 +430,61 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_checks, tc)
 	    timerfd_settime(timerfd, 42, &time, NULL) < 0);
 
 	{
-		time = (struct itimerspec){
-		    .it_value.tv_sec = -1,
-		    .it_value.tv_nsec = 100000000,
-		    .it_interval.tv_sec = 0,
-		    .it_interval.tv_nsec = 100000000,
+		time = (struct itimerspec) {
+			.it_value.tv_sec = -1,
+			.it_value.tv_nsec = 100000000,
+			.it_interval.tv_sec = 0,
+			.it_interval.tv_nsec = 100000000,
 		};
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
 	}
 	{
-		time = (struct itimerspec){
-		    .it_value.tv_sec = 0,
-		    .it_value.tv_nsec = -1,
-		    .it_interval.tv_sec = 0,
-		    .it_interval.tv_nsec = 100000000,
+		time = (struct itimerspec) {
+			.it_value.tv_sec = 0,
+			.it_value.tv_nsec = -1,
+			.it_interval.tv_sec = 0,
+			.it_interval.tv_nsec = 100000000,
 		};
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
 	}
 	{
-		time = (struct itimerspec){
-		    .it_value.tv_sec = 0,
-		    .it_value.tv_nsec = 100000000,
-		    .it_interval.tv_sec = -1,
-		    .it_interval.tv_nsec = 100000000,
+		time = (struct itimerspec) {
+			.it_value.tv_sec = 0,
+			.it_value.tv_nsec = 100000000,
+			.it_interval.tv_sec = -1,
+			.it_interval.tv_nsec = 100000000,
 		};
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
 	}
 	{
-		time = (struct itimerspec){
-		    .it_value.tv_sec = 0,
-		    .it_value.tv_nsec = 100000000,
-		    .it_interval.tv_sec = 0,
-		    .it_interval.tv_nsec = -1,
+		time = (struct itimerspec) {
+			.it_value.tv_sec = 0,
+			.it_value.tv_nsec = 100000000,
+			.it_interval.tv_sec = 0,
+			.it_interval.tv_nsec = -1,
 		};
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
 	}
 	{
-		time = (struct itimerspec){
-		    .it_value.tv_sec = 0,
-		    .it_value.tv_nsec = 1000000000,
-		    .it_interval.tv_sec = 0,
-		    .it_interval.tv_nsec = 100000000,
+		time = (struct itimerspec) {
+			.it_value.tv_sec = 0,
+			.it_value.tv_nsec = 1000000000,
+			.it_interval.tv_sec = 0,
+			.it_interval.tv_nsec = 100000000,
 		};
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
 	}
 	{
-		time = (struct itimerspec){
-		    .it_value.tv_sec = 0,
-		    .it_value.tv_nsec = 100000000,
-		    .it_interval.tv_sec = 0,
-		    .it_interval.tv_nsec = 1000000000,
+		time = (struct itimerspec) {
+			.it_value.tv_sec = 0,
+			.it_value.tv_nsec = 100000000,
+			.it_interval.tv_sec = 0,
+			.it_interval.tv_nsec = 1000000000,
 		};
 		ATF_REQUIRE_ERRNO(EINVAL,
 		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
@@ -514,20 +514,20 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 100000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 100000000,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 100000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 100000000,
 	};
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 	(void)wait_for_timerfd(timerfd);
 
-	time = (struct itimerspec){
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 50000000,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 95000000,
+	time = (struct itimerspec) {
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 50000000,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 95000000,
 	};
 
 	struct timespec b, e;
@@ -567,14 +567,14 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
 
 	struct itimerspec time = {
-	    .it_value = b,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 0,
+		.it_value = b,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 0,
 	};
 
 	struct timespec ts_600ms = {
-	    .tv_sec = 0,
-	    .tv_nsec = 600000000,
+		.tv_sec = 0,
+		.tv_nsec = 600000000,
 	};
 
 	timespecadd(&time.it_value, &ts_600ms, &time.it_value);
@@ -582,7 +582,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
 	ATF_REQUIRE(timerfd_settime(timerfd, /**/
 			TFD_TIMER_ABSTIME, &time, NULL) == 0);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+	struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 
 	// Don't read(2) here!
@@ -595,10 +595,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
 	    e.tv_nsec < 600000000 + TIMER_SLACK);
 
 	struct itimerspec zeroed_its = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 0,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 0,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 0,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 0,
 	};
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &zeroed_its, NULL) == 0);
 
@@ -624,31 +624,31 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer_in_the_past, tc)
 
 	{
 		struct itimerspec time = {
-		    .it_value = b,
-		    .it_interval.tv_sec = 10,
-		    .it_interval.tv_nsec = 0,
+			.it_value = b,
+			.it_interval.tv_sec = 10,
+			.it_interval.tv_nsec = 0,
 		};
 		time.it_value.tv_sec -= 1;
 
 		ATF_REQUIRE(timerfd_settime(timerfd, /**/
 				TFD_TIMER_ABSTIME, &time, NULL) == 0);
 
-		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 1000) == 1);
 	}
 
 	{
 		struct itimerspec time = {
-		    .it_value = b,
-		    .it_interval.tv_sec = 0,
-		    .it_interval.tv_nsec = 10000000,
+			.it_value = b,
+			.it_interval.tv_sec = 0,
+			.it_interval.tv_nsec = 10000000,
 		};
 		time.it_value.tv_sec -= 1;
 
 		ATF_REQUIRE(timerfd_settime(timerfd, /**/
 				TFD_TIMER_ABSTIME, &time, NULL) == 0);
 
-		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 	}
 
@@ -674,20 +674,20 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_absolute, tc)
 
 	{
 		struct itimerspec time = {
-		    .it_value = b,
+			.it_value = b,
 		};
 		time.it_value.tv_sec += 10;
 
 		ATF_REQUIRE(timerfd_settime(timerfd, /**/
 				TFD_TIMER_ABSTIME, &time, NULL) == 0);
 
-		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 100) == 0);
 	}
 
 	{
 		struct itimerspec time = {
-		    .it_value = b,
+			.it_value = b,
 		};
 		time.it_value.tv_nsec += 500000000;
 		if (time.it_value.tv_nsec >= 1000000000) {
@@ -698,7 +698,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_absolute, tc)
 		ATF_REQUIRE(timerfd_settime(timerfd, /**/
 				TFD_TIMER_ABSTIME, &time, NULL) == 0);
 
-		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 1000) == 1);
 	}
 
@@ -724,17 +724,17 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__periodic_timer_performance, tc)
 	ATF_REQUIRE(timerfd >= 0);
 
 	struct itimerspec time = {
-	    .it_value.tv_sec = 0,
-	    .it_value.tv_nsec = 1,
-	    .it_interval.tv_sec = 0,
-	    .it_interval.tv_nsec = 1,
+		.it_value.tv_sec = 0,
+		.it_value.tv_nsec = 1,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 1,
 	};
 
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
 	usleep(400000);
 
-	struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+	struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 	ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 
 	uint64_t timeouts;
@@ -753,14 +753,14 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_overflow, tc)
 	ATF_REQUIRE(timerfd >= 0);
 	{
 		struct itimerspec time = {
-		    .it_value.tv_sec = 0,
-		    .it_value.tv_nsec = 1,
+			.it_value.tv_sec = 0,
+			.it_value.tv_nsec = 1,
 		};
 
 		ATF_REQUIRE(timerfd_settime(timerfd, /**/
 				TFD_TIMER_ABSTIME, &time, NULL) == 0);
 
-		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 
 		uint64_t timeouts;
@@ -772,14 +772,14 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_overflow, tc)
 	}
 	{
 		struct itimerspec time = {
-		    .it_value.tv_sec = INT_MAX,
-		    .it_value.tv_nsec = 999999999,
+			.it_value.tv_sec = INT_MAX,
+			.it_value.tv_nsec = 999999999,
 		};
 
 		ATF_REQUIRE(timerfd_settime(timerfd, /**/
 				TFD_TIMER_ABSTIME, &time, NULL) == 0);
 
-		struct pollfd pfd = {.fd = timerfd, .events = POLLIN};
+		struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
 		ATF_REQUIRE(poll(&pfd, 1, 500) == 0);
 
 		uint64_t timeouts;
@@ -814,8 +814,8 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__short_evfilt_timer_timeout, tc)
 #endif
 		for (int i = 1; i <= 17; ++i) {
 			struct kevent kev;
-			EV_SET(&kev, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0,
-			    i, 0);
+			EV_SET(&kev, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, i,
+			    0);
 
 			struct timespec b;
 			ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
@@ -864,8 +864,8 @@ check:
 	for (int l = 0; l < 10; ++l) {
 		for (int i = 1; i <= 17; ++i) {
 			struct itimerspec time = {
-			    .it_value.tv_sec = 0,
-			    .it_value.tv_nsec = i * 1000000,
+				.it_value.tv_sec = 0,
+				.it_value.tv_nsec = i * 1000000,
 			};
 
 			struct timespec b;

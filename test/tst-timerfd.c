@@ -68,40 +68,40 @@ for the licenses and copyright statements of these projects.
 
 #include <sys/timerfd.h>
 
-#define do_expect(actual, expected, actuals, expecteds, file, line)           \
-	do {                                                                  \
-		if (actual != expected) {                                     \
-			fprintf(stderr,                                       \
-			    "expecteds: %s, actuals: %s, "                    \
-			    "file: %s, line: %d\n",                           \
-			    expecteds, actuals, file, line);                  \
-			abort();                                              \
-		}                                                             \
+#define do_expect(actual, expected, actuals, expecteds, file, line) \
+	do {                                                        \
+		if (actual != expected) {                           \
+			fprintf(stderr,                             \
+			    "expecteds: %s, actuals: %s, "          \
+			    "file: %s, line: %d\n",                 \
+			    expecteds, actuals, file, line);        \
+			abort();                                    \
+		}                                                   \
 	} while (0)
 
-#define do_expectge(actual, expected, actuals, expecteds, file, line)         \
-	do {                                                                  \
-		if (actual < expected) {                                      \
-			fprintf(stderr,                                       \
-			    "expecteds: %s, actuals: %s, "                    \
-			    "file: %s, line: %d\n",                           \
-			    expecteds, actuals, file, line);                  \
-			abort();                                              \
-		}                                                             \
+#define do_expectge(actual, expected, actuals, expecteds, file, line) \
+	do {                                                          \
+		if (actual < expected) {                              \
+			fprintf(stderr,                               \
+			    "expecteds: %s, actuals: %s, "            \
+			    "file: %s, line: %d\n",                   \
+			    expecteds, actuals, file, line);          \
+			abort();                                      \
+		}                                                     \
 	} while (0)
 
-#define expect(actual, expected)                                              \
+#define expect(actual, expected) \
 	do_expect(actual, expected, #actual, #expected, __FILE__, __LINE__)
-#define expectge(actual, expected)                                            \
+#define expectge(actual, expected) \
 	do_expectge(actual, expected, #actual, #expected, __FILE__, __LINE__)
-#define expect_errno(call, experrno)                                          \
-	do_expect((long)(call), (long)-1, #call, "-1", __FILE__, __LINE__);   \
-	do_expect(errno, experrno, #call " errno", #experrno, __FILE__,       \
+#define expect_errno(call, experrno)                                        \
+	do_expect((long)(call), (long)-1, #call, "-1", __FILE__, __LINE__); \
+	do_expect(errno, experrno, #call " errno", #experrno, __FILE__,     \
 	    __LINE__);
-#define expect_success(var, call)                                             \
-	errno = 0;                                                            \
-	var = call;                                                           \
-	do_expectge(var, 0, #call, "0", __FILE__, __LINE__);                  \
+#define expect_success(var, call)                            \
+	errno = 0;                                           \
+	var = call;                                          \
+	do_expectge(var, 0, #call, "0", __FILE__, __LINE__); \
 	do_expect(errno, 0, #call " errno", "0", __FILE__, __LINE__);
 
 #define MS_TO_NSEC(x) ((long long)(x * 1000000LL))
@@ -119,14 +119,14 @@ steady_clock_now(void)
 }
 
 #ifndef timespecsub
-#define timespecsub(tsp, usp, vsp)                                            \
-	do {                                                                  \
-		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;                \
-		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;             \
-		if ((vsp)->tv_nsec < 0) {                                     \
-			(vsp)->tv_sec--;                                      \
-			(vsp)->tv_nsec += 1000000000L;                        \
-		}                                                             \
+#define timespecsub(tsp, usp, vsp)                                \
+	do {                                                      \
+		(vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;    \
+		(vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec; \
+		if ((vsp)->tv_nsec < 0) {                         \
+			(vsp)->tv_sec--;                          \
+			(vsp)->tv_nsec += 1000000000L;            \
+		}                                                 \
 	} while (0)
 #endif
 
@@ -159,7 +159,7 @@ dotest(int clockid)
 	int junk;
 
 	// Before we set a timer, timerfd has no events for polling or reading
-	struct pollfd pfd = {.fd = fd, .events = POLLIN};
+	struct pollfd pfd = { .fd = fd, .events = POLLIN };
 	expect(poll(&pfd, 1, 0), 0);
 	char buf[1024];
 	expect_errno(read(fd, buf, sizeof(buf)), EAGAIN);
@@ -167,7 +167,7 @@ dotest(int clockid)
 	expect_errno(read(fd, buf, 7), EINVAL);
 
 	// Set a timer to expire in 500ms from now (relative time)
-	struct itimerspec t1 = {{0, 0}, {0, MS_TO_NSEC(500)}};
+	struct itimerspec t1 = { { 0, 0 }, { 0, MS_TO_NSEC(500) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t1, NULL));
 	// If we check now, the timer should have not yet expired
 	expect_errno(read(fd, buf, sizeof(buf)), EAGAIN);
@@ -183,7 +183,8 @@ dotest(int clockid)
 	// 200ms. After 400ms, poll sees the timer expired at least once, but
 	// we do not read. After 400ms more, we read and see the timer expired
 	// 3 times.
-	struct itimerspec t2 = {{0, MS_TO_NSEC(200)}, {0, MS_TO_NSEC(300)}};
+	struct itimerspec t2 = { { 0, MS_TO_NSEC(200) },
+		{ 0, MS_TO_NSEC(300) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t2, NULL));
 	expect_errno(read(fd, buf, sizeof(buf)), EAGAIN);
 	usleep(400000);
@@ -200,7 +201,7 @@ dotest(int clockid)
 	// timer, the counter remains zero
 	usleep(400000);
 	expect(poll(&pfd, 1, 0), 1); // counter is nonzero
-	struct itimerspec t3 = {{0, 0}, {0, 0}};
+	struct itimerspec t3 = { { 0, 0 }, { 0, 0 } };
 	expect_success(junk, timerfd_settime(fd, 0, &t3, NULL));
 	expect(poll(&pfd, 1, 0), 0); // counter is back to zero
 	usleep(400000);
@@ -208,15 +209,14 @@ dotest(int clockid)
 
 	// Check absolute time setting
 	// Set a timer to expire in 300ms from now (using absolute time)
-	struct itimerspec t4 = {{0, 0}, {0, 0}};
+	struct itimerspec t4 = { { 0, 0 }, { 0, 0 } };
 	clock_gettime(clockid, &(t4.it_value));
 	t4.it_value.tv_nsec += MS_TO_NSEC(300);
 	if (t4.it_value.tv_nsec >= MS_TO_NSEC(1000)) {
 		t4.it_value.tv_nsec -= MS_TO_NSEC(1000);
 		t4.it_value.tv_sec++;
 	}
-	expect_success(junk,
-	    timerfd_settime(fd, TFD_TIMER_ABSTIME, &t4, NULL));
+	expect_success(junk, timerfd_settime(fd, TFD_TIMER_ABSTIME, &t4, NULL));
 	expect_errno(read(fd, buf, sizeof(buf)), EAGAIN);
 	usleep(500000);
 	expect(read(fd, &counter, sizeof(counter)), (ssize_t)8);
@@ -225,7 +225,7 @@ dotest(int clockid)
 
 	// Check blocking poll - simple case, no interval (see more complex
 	// cases in blocking read tests below).
-	struct itimerspec t45 = {{0, 0}, {0, MS_TO_NSEC(400)}};
+	struct itimerspec t45 = { { 0, 0 }, { 0, MS_TO_NSEC(400) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t45, NULL));
 	struct timespec before = steady_clock_now();
 	expect(poll(&pfd, 1, 0), 0);
@@ -241,7 +241,7 @@ dotest(int clockid)
 	// timer
 	expect_success(fd, timerfd_create(CLOCK_REALTIME, 0));
 	pfd.fd = fd;
-	struct itimerspec t46 = {{0, 0}, {10, 0}};
+	struct itimerspec t46 = { { 0, 0 }, { 10, 0 } };
 	expect_success(junk, timerfd_settime(fd, 0, &t46, NULL));
 	expect(poll(&pfd, 1, 0), 0);
 	expect_success(junk, close(fd));
@@ -251,7 +251,7 @@ dotest(int clockid)
 	pfd.fd = fd;
 
 	// Check blocking read, no interval, timer set before read blocks
-	struct itimerspec t5 = {{0, 0}, {0, MS_TO_NSEC(500)}};
+	struct itimerspec t5 = { { 0, 0 }, { 0, MS_TO_NSEC(500) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t5, NULL));
 	before = steady_clock_now();
 	expect(read(fd, &counter, sizeof(counter)), (ssize_t)8);
@@ -263,12 +263,13 @@ dotest(int clockid)
 	pthread_t th2;
 	expect(pthread_create(&th2, NULL, th2_func, &fd), 0);
 	usleep(400000);
-	struct itimerspec t6 = {{0, 0}, {0, MS_TO_NSEC(200)}};
+	struct itimerspec t6 = { { 0, 0 }, { 0, MS_TO_NSEC(200) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t6, NULL));
 	expect(pthread_join(th2, NULL), 0);
 
 	// Check blocking read, with interval
-	struct itimerspec t7 = {{0, MS_TO_NSEC(200)}, {0, MS_TO_NSEC(500)}};
+	struct itimerspec t7 = { { 0, MS_TO_NSEC(200) },
+		{ 0, MS_TO_NSEC(500) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t7, NULL));
 	before = steady_clock_now();
 	expect(read(fd, &counter, sizeof(counter)), (ssize_t)8);
@@ -279,7 +280,8 @@ dotest(int clockid)
 	expectge(nano_diff(after, before), (int64_t)MS_TO_NSEC(600));
 
 	// Check timerfd_gettime():
-	struct itimerspec t8 = {{0, MS_TO_NSEC(400)}, {0, MS_TO_NSEC(300)}};
+	struct itimerspec t8 = { { 0, MS_TO_NSEC(400) },
+		{ 0, MS_TO_NSEC(300) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t8, NULL));
 	struct itimerspec tout;
 	// Right in the beginning:
@@ -310,7 +312,7 @@ dotest(int clockid)
 	expectge((long)MS_TO_NSEC(400), tout.it_value.tv_nsec);
 
 	// Check timerfd_gettime() after expiration of a single-time timer:
-	struct itimerspec t9 = {{0, 0}, {0, MS_TO_NSEC(100)}};
+	struct itimerspec t9 = { { 0, 0 }, { 0, MS_TO_NSEC(100) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t9, NULL));
 	usleep(200000);
 	expect_success(junk, timerfd_gettime(fd, &tout));
