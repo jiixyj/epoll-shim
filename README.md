@@ -64,6 +64,10 @@ To install (as root):
 
 ## Changelog
 
+### 2021-03-22
+
+- Fix compilation on FreeBSD < 12 (#28).
+
 ### 2021-03-21
 
 - Add `O_CLOEXEC` handling to created file descriptors (PR #26, thanks
