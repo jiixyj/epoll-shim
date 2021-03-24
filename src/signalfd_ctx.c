@@ -285,7 +285,9 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 
 	signalfd_siginfo->ssi_status = siginfo.si_status;
 
+#ifndef __OpenBSD__
 	signalfd_siginfo->ssi_band = siginfo.si_band;
+#endif
 
 	signalfd_siginfo->ssi_int = siginfo.si_value.sival_int;
 	signalfd_siginfo->ssi_ptr = (uint64_t)(uintptr_t)
