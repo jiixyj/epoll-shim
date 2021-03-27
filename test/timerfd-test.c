@@ -619,7 +619,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer_in_the_past, tc)
 
 	ATF_REQUIRE(timerfd >= 0);
 
-	struct timespec b, e;
+	struct timespec b;
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
 
 	{
@@ -669,7 +669,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_absolute, tc)
 
 	ATF_REQUIRE(timerfd >= 0);
 
-	struct timespec b, e;
+	struct timespec b;
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &b) == 0);
 
 	{

@@ -266,6 +266,7 @@ static sig_atomic_t volatile got_sigint = 0;
 static void
 sigint_handler(int signo)
 {
+	(void)signo;
 	got_sigint = 1;
 }
 
@@ -280,7 +281,6 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__signal_disposition, tcptr)
 	sigset_t mask;
 	int sfd;
 	struct signalfd_siginfo fdsi;
-	ssize_t s;
 
 	ATF_REQUIRE(signal(SIGINT, sigint_handler) != SIG_ERR);
 
@@ -525,8 +525,8 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigchld, tcptr)
 	ATF_REQUIRE(fdsi.ssi_code == 0);
 	atf_tc_skip("OpenBSD/DragonFlyBSD do not fill si_pid on SIGCHLD");
 #endif
-	ATF_REQUIRE_MSG(fdsi.ssi_pid == pid, "%d %d", (int)fdsi.ssi_pid,
-	    (int)pid);
+	ATF_REQUIRE_MSG(fdsi.ssi_pid == (uint32_t)pid, "%d %d",
+	    (int)fdsi.ssi_pid, (int)pid);
 	ATF_REQUIRE(fdsi.ssi_code == CLD_EXITED);
 	ATF_REQUIRE(fdsi.ssi_status == 10);
 }

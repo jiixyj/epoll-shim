@@ -57,6 +57,7 @@ errno_t
 kqueue_event_terminate(KQueueEvent *kqueue_event)
 {
 #ifdef EVFILT_USER
+	(void)kqueue_event;
 	return 0;
 #else
 	errno_t ec = 0;

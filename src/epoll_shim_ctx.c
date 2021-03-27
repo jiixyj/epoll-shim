@@ -373,7 +373,7 @@ retry:;
 		if (node->vtable->poll_fun != NULL) {
 			uint32_t revents;
 			node->vtable->poll_fun(node, &revents);
-			fds[i].revents = revents;
+			fds[i].revents = (short)revents;
 			if (fds[i].revents == 0) {
 				--n;
 			}
@@ -408,8 +408,6 @@ static errno_t
 epoll_shim_ppoll_impl(struct pollfd *fds, nfds_t nfds,
     struct timespec const *tmo_p, sigset_t const *sigmask, int *n)
 {
-	errno_t ec;
-
 	struct timespec deadline;
 	struct timespec timeout;
 

@@ -11,7 +11,6 @@ if(ENABLE_COMPILER_WARNINGS)
     "-Wconversion"
     "-Wsign-conversion"
     "-Wmissing-prototypes"
-    "-pedantic"
     "-Werror=implicit-function-declaration"
     "-Werror=return-type"
     "-Werror=incompatible-pointer-types")

@@ -229,11 +229,11 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 	 * specific we have.
 	 */
 
-	signalfd_siginfo->ssi_signo = siginfo.si_signo;
+	signalfd_siginfo->ssi_signo = (uint32_t)siginfo.si_signo;
 	signalfd_siginfo->ssi_code = siginfo.si_code;
 	signalfd_siginfo->ssi_errno = siginfo.si_errno;
 
-	signalfd_siginfo->ssi_pid = siginfo.si_pid;
+	signalfd_siginfo->ssi_pid = (uint32_t)siginfo.si_pid;
 	signalfd_siginfo->ssi_uid = siginfo.si_uid;
 
 	signalfd_siginfo->ssi_addr = (uint64_t)(uintptr_t)siginfo.si_addr;
@@ -241,7 +241,7 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 	signalfd_siginfo->ssi_status = siginfo.si_status;
 
 #ifndef __OpenBSD__
-	signalfd_siginfo->ssi_band = siginfo.si_band;
+	signalfd_siginfo->ssi_band = (uint32_t)siginfo.si_band;
 #endif
 
 	signalfd_siginfo->ssi_int = siginfo.si_value.sival_int;
@@ -253,13 +253,13 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 	 * future.
 	 */
 	signalfd_siginfo->ssi_fd = -1;
-	signalfd_siginfo->ssi_tid = -1;
+	signalfd_siginfo->ssi_tid = (uint32_t)-1;
 
 #ifdef __FreeBSD__
-	signalfd_siginfo->ssi_trapno = siginfo.si_trapno;
+	signalfd_siginfo->ssi_trapno = (uint32_t)siginfo.si_trapno;
 
-	signalfd_siginfo->ssi_tid = siginfo.si_timerid;
-	signalfd_siginfo->ssi_overrun = siginfo.si_overrun;
+	signalfd_siginfo->ssi_tid = (uint32_t)siginfo.si_timerid;
+	signalfd_siginfo->ssi_overrun = (uint32_t)siginfo.si_overrun;
 
 	if (siginfo.si_code == SI_MESGQ) {
 		/* Re-use this field for si_mqd. */

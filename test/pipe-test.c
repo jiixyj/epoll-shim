@@ -1747,6 +1747,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 
 ATF_TP_ADD_TCS(tp)
 {
+	(void)print_statbuf;
+
 	ATF_TP_ADD_TC(tp, pipe__simple_poll);
 	ATF_TP_ADD_TC(tp, pipe__poll_write_end_after_read_end_close);
 	ATF_TP_ADD_TC(tp, pipe__poll_full_write_end_after_read_end_close);
