@@ -15,7 +15,7 @@ typedef struct {
 	int flags;
 	pthread_mutex_t mutex;
 
-	int clockid;
+	clockid_t clockid;
 	/*
 	 * Next expiration time, absolute (clock given by clockid).
 	 * If it_interval is != 0, it is a periodic timer.

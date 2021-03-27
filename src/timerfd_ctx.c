@@ -278,7 +278,7 @@ timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 
 	assert(clockid == CLOCK_MONOTONIC || clockid == CLOCK_REALTIME);
 
-	*timerfd = (TimerFDCtx) { .kq = kq, .clockid = clockid };
+	*timerfd = (TimerFDCtx) { .kq = kq, .clockid = (clockid_t)clockid };
 
 	if ((ec = pthread_mutex_init(&timerfd->mutex, NULL)) != 0) {
 		return ec;
