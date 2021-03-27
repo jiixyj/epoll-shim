@@ -29,8 +29,13 @@ macro(add_compat_target _name _condition)
 endmacro()
 
 include(CheckSymbolExists)
-check_symbol_exists(kqueue1 "sys/event.h;sys/time.h" HAVE_KQUEUE1)
+check_symbol_exists(kqueue1 "sys/event.h" HAVE_KQUEUE1)
 add_compat_target(kqueue1 "NOT;HAVE_KQUEUE1")
+check_symbol_exists(sigandset "signal.h" HAVE_SIGANDSET)
+check_symbol_exists(sigorset "signal.h" HAVE_SIGORSET)
+check_symbol_exists(sigisemptyset "signal.h" HAVE_SIGISEMPTYSET)
+add_compat_target(
+  sigops "NOT;HAVE_SIGANDSET;AND;NOT;HAVE_SIGORSET;AND;NOT;HAVE_SIGISEMPTYSET")
 
 add_library(
   epoll-shim
@@ -52,7 +57,7 @@ target_link_libraries(
   epoll-shim
   PRIVATE Threads::Threads #
           queue-macros::queue-macros tree-macros::tree-macros #
-          compat_enable_kqueue1)
+          compat_enable_kqueue1 compat_enable_sigops)
 target_include_directories(
   epoll-shim
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
