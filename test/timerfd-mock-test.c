@@ -49,10 +49,18 @@ kevent(int kq, const struct kevent *changelist, kevent_n_type nchanges,
 
 	++kevent_called;
 
-	ATF_REQUIRE(nchanges == 1);
-	ATF_REQUIRE(changelist[0].filter == EVFILT_TIMER);
-	evfilt_timer_fflags = changelist[0].fflags;
-	evfilt_timer_data = changelist[0].data;
+	if (nchanges == 1) {
+		ATF_REQUIRE(changelist[0].filter == EVFILT_TIMER);
+		evfilt_timer_fflags = changelist[0].fflags;
+		evfilt_timer_data = changelist[0].data;
+	} else if (nchanges == 2) {
+		ATF_REQUIRE(changelist[0].filter == EVFILT_TIMER);
+		ATF_REQUIRE(changelist[1].filter == EVFILT_TIMER);
+		evfilt_timer_fflags = changelist[1].fflags;
+		evfilt_timer_data = changelist[1].data;
+	} else {
+		ATF_REQUIRE(false);
+	}
 
 	errno = ENOSYS;
 	return -1;

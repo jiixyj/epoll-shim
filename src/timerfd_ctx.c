@@ -173,7 +173,7 @@ static errno_t
 timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
     struct timespec const *current_time)
 {
-	struct kevent kev[1];
+	struct kevent kev[2];
 	struct timespec diff_time;
 
 	assert(new->tv_sec != 0 || new->tv_nsec != 0);
@@ -205,8 +205,9 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 
 		/* The data field is only 32 bit wide on FreeBSD 11 i386. If
 		 * this would overflow, try again with milliseconds. */
-		if (!__builtin_add_overflow(micros, 0, &kev[0].data)) {
-			EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT,
+		if (!__builtin_add_overflow(micros, 0, &kev[1].data)) {
+			EV_SET(&kev[1], 0, EVFILT_TIMER,
+			    EV_ADD | EV_ONESHOT | EV_RECEIPT, /**/
 			    NOTE_USECONDS, micros, 0);
 			kev_is_set = true;
 		}
@@ -234,43 +235,40 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 		}
 #endif
 
-		if (__builtin_add_overflow(millis, 0, &kev[0].data)) {
+		if (__builtin_add_overflow(millis, 0, &kev[1].data)) {
 			return 0;
 		}
-		EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
+		EV_SET(&kev[1], 0, EVFILT_TIMER,      /**/
+		    EV_ADD | EV_ONESHOT | EV_RECEIPT, /**/
 		    0, millis, 0);
 		kev_is_set = true;
 	}
 
 	assert(kev_is_set);
 
-#if !defined(__FreeBSD__)
-	{
-		/*
-		 * On some BSD's, EVFILT_TIMER ignores timer resets using
-		 * EV_ADD, so we have to do it manually.
-		 */
-
-		struct kevent kev_delete;
-		EV_SET(&kev_delete, 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-
-		int oe = errno;
-		(void)kevent(timerfd->kq, &kev_delete, 1, NULL, 0, NULL);
-		errno = oe;
-	}
-#endif
-
 #ifdef QUIRK_EVFILT_TIMER_DISALLOWS_ONESHOT_TIMEOUT_ZERO
-	if (kev[0].data == 0) {
-		kev[0].data = 1;
+	if (kev[1].data == 0) {
+		kev[1].data = 1;
 	}
 #endif
 
-	if (kevent(timerfd->kq, kev, nitems(kev), NULL, 0, NULL) < 0) {
+	/*
+	 * On some BSD's, EVFILT_TIMER ignores timer resets using
+	 * EV_ADD, so we have to do it manually.
+	 * Do it unconditionally on every OS because the cost should be cheap.
+	 */
+	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE | EV_RECEIPT, 0, 0, 0);
+
+	int n;
+	if ((n = kevent(timerfd->kq, /**/
+		 kev, nitems(kev), kev, nitems(kev), NULL)) < 0) {
 		return errno;
 	}
+	assert(n == nitems(kev));
+	assert((kev[0].flags & EV_ERROR) != 0);
+	assert((kev[1].flags & EV_ERROR) != 0);
 
-	return 0;
+	return (errno_t)kev[1].data;
 }
 
 errno_t
