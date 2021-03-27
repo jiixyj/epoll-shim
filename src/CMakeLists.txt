@@ -36,6 +36,26 @@ check_symbol_exists(sigorset "signal.h" HAVE_SIGORSET)
 check_symbol_exists(sigisemptyset "signal.h" HAVE_SIGISEMPTYSET)
 add_compat_target(
   sigops "NOT;HAVE_SIGANDSET;AND;NOT;HAVE_SIGORSET;AND;NOT;HAVE_SIGISEMPTYSET")
+include(CheckCSourceRuns)
+check_c_source_runs(
+  [=[
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
+int main() {
+  struct kevent kev;
+  EV_SET(&kev, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, 0, 0);
+  int kq;
+  return ((kq = kqueue()) >= 0 && kevent(kq, &kev, 1, NULL, 0, NULL) == 0) ? 0 : 1;
+}
+]=]
+  ALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO)
+add_library(evfilt_timer_quirks INTERFACE)
+if(NOT ALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO)
+  target_compile_definitions(
+    evfilt_timer_quirks
+    INTERFACE QUIRK_EVFILT_TIMER_DISALLOWS_ONESHOT_TIMEOUT_ZERO)
+endif()
 
 add_library(
   epoll-shim
@@ -57,7 +77,7 @@ target_link_libraries(
   epoll-shim
   PRIVATE Threads::Threads #
           queue-macros::queue-macros tree-macros::tree-macros #
-          compat_enable_kqueue1 compat_enable_sigops)
+          evfilt_timer_quirks compat_enable_kqueue1 compat_enable_sigops)
 target_include_directories(
   epoll-shim
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>

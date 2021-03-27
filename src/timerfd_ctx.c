@@ -189,65 +189,60 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 		return 0;
 	}
 
-	/* There are EVFILT_TIMER implementations that return EINVAL on a
-	 * timeout value of 0, for example NetBSD. */
-	bool handle_einval_on_zero_value = false;
+	bool kev_is_set = false;
 
 #ifdef NOTE_USECONDS
-	int64_t micros = (int64_t)diff_time.tv_sec * 1000000 +
-	    diff_time.tv_nsec / 1000;
+	if (!kev_is_set) {
+		int64_t micros = (int64_t)diff_time.tv_sec * 1000000 +
+		    diff_time.tv_nsec / 1000;
 
-	if ((diff_time.tv_nsec % 1000) != 0) {
-		++micros;
+		if ((diff_time.tv_nsec % 1000) != 0) {
+			++micros;
+		}
+
+		/* If there is NOTE_USECONDS support we assume timeout values of
+		 * 0 are valid. For FreeBSD this is the case. */
+
+		/* The data field is only 32 bit wide on FreeBSD 11 i386. If
+		 * this would overflow, try again with milliseconds. */
+		if (!__builtin_add_overflow(micros, 0, &kev[0].data)) {
+			EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT,
+			    NOTE_USECONDS, micros, 0);
+			kev_is_set = true;
+		}
 	}
-
-	/* If there is NOTE_USECONDS support we assume timeout values of 0 are
-	 * valid. For FreeBSD this is the case. */
-
-	/* The data field is only 32 bit wide on FreeBSD 11 i386. If this
-	 * would overflow, try again with milliseconds. */
-	if (__builtin_add_overflow(micros, 0, &kev[0].data)) {
-		goto try_with_millis;
-	}
-	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
-	    NOTE_USECONDS, micros, 0);
-
-	goto set_timer;
-
-try_with_millis:;
 #endif
+
+	if (!kev_is_set) {
+#ifdef QUIRKY_EVFILT_TIMER
+		/* Let's hope 49 days are enough. */
+		if (diff_time.tv_sec >= 4233600) {
+			return 0;
+		}
+#endif
+
+		int64_t millis = (int64_t)diff_time.tv_sec * 1000 +
+		    diff_time.tv_nsec / 1000000;
+
+		if ((diff_time.tv_nsec % 1000000) != 0) {
+			++millis;
+		}
 
 #ifdef QUIRKY_EVFILT_TIMER
-	/* Let's hope 49 days are enough. */
-	if (diff_time.tv_sec >= 4233600) {
-		return 0;
-	}
+		if (millis != 0 && !round_up_millis(millis, &millis)) {
+			return 0;
+		}
 #endif
 
-	int64_t millis = (int64_t)diff_time.tv_sec * 1000 +
-	    diff_time.tv_nsec / 1000000;
-
-	if ((diff_time.tv_nsec % 1000000) != 0) {
-		++millis;
+		if (__builtin_add_overflow(millis, 0, &kev[0].data)) {
+			return 0;
+		}
+		EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
+		    0, millis, 0);
+		kev_is_set = true;
 	}
 
-#ifdef QUIRKY_EVFILT_TIMER
-	if (millis != 0 && !round_up_millis(millis, &millis)) {
-		return 0;
-	}
-#endif
-
-	if (millis == 0) {
-		handle_einval_on_zero_value = true;
-	}
-
-	if (__builtin_add_overflow(millis, 0, &kev[0].data)) {
-		return 0;
-	}
-	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, /**/
-	    0, millis, 0);
-
-set_timer:;
+	assert(kev_is_set);
 
 #if !defined(__FreeBSD__)
 	{
@@ -265,18 +260,13 @@ set_timer:;
 	}
 #endif
 
-reset_timer:;
+#ifdef QUIRK_EVFILT_TIMER_DISALLOWS_ONESHOT_TIMEOUT_ZERO
+	if (kev[0].data == 0) {
+		kev[0].data = 1;
+	}
+#endif
 
-	int oe = errno;
-	if (kevent(timerfd->kq, kev, nitems(kev), /**/
-		NULL, 0, NULL) < 0) {
-		if (handle_einval_on_zero_value && errno == EINVAL) {
-			kev[0].data = 1;
-			handle_einval_on_zero_value = false;
-			errno = oe;
-			goto reset_timer;
-		}
-
+	if (kevent(timerfd->kq, kev, nitems(kev), NULL, 0, NULL) < 0) {
 		return errno;
 	}
 
