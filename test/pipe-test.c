@@ -476,7 +476,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[1], EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, 0);
+	EV_SET(&kev[0], (unsigned int)p[1], EVFILT_WRITE, /**/
+	    EV_ADD | EV_CLEAR, 0, 0, 0);
 
 	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
 
@@ -622,9 +623,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[1], EVFILT_WRITE, /**/
+	EV_SET(&kev[0], (unsigned int)p[1], EVFILT_WRITE, /**/
 	    EV_ADD | EV_CLEAR | EV_RECEIPT, 0, 0, 0);
-	EV_SET(&kev[1], p[1], EVFILT_READ, /**/
+	EV_SET(&kev[1], (unsigned int)p[1], EVFILT_READ, /**/
 	    EV_ADD | EV_CLEAR | EV_RECEIPT, 0, 0, 0);
 
 	ATF_REQUIRE(kevent(kq, kev, 2, kev, 2, NULL) == 2);
@@ -841,9 +842,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[1], EVFILT_WRITE, /**/
+	EV_SET(&kev[0], (unsigned int)p[1], EVFILT_WRITE, /**/
 	    EV_ADD | EV_CLEAR | EV_RECEIPT, 0, 0, 0);
-	EV_SET(&kev[1], p[1], EVFILT_READ, /**/
+	EV_SET(&kev[1], (unsigned int)p[1], EVFILT_READ, /**/
 	    EV_ADD | EV_CLEAR | EV_RECEIPT, 0, 0, 0);
 
 	ATF_REQUIRE(kevent(kq, kev, 2, kev, 2, NULL) == 2);
@@ -986,7 +987,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_reads, tc)
 
 	struct kevent kev[32];
 
-	EV_SET(&kev[0], p[0], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
+	EV_SET(&kev[0], (unsigned int)p[0], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR, 0, 0, 0);
 
 	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
 
@@ -1054,7 +1056,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 
 	struct kevent kev[32];
 
-	EV_SET(&kev[0], p[0], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
+	EV_SET(&kev[0], (unsigned int)p[0], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR, 0, 0, 0);
 	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
@@ -1134,7 +1137,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 
 	struct kevent kev[32];
 
-	EV_SET(&kev[0], p[0], EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, 0);
+	EV_SET(&kev[0], (unsigned int)p[0], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR, 0, 0, 0);
 	ATF_REQUIRE(kevent(kq, kev, 1, NULL, 0, NULL) == 0);
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
@@ -1233,11 +1237,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[1], EVFILT_READ,  /**/
-	    EV_ADD | EV_CLEAR | EV_RECEIPT, /**/
+	EV_SET(&kev[0], (unsigned int)p[1], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT,		 /**/
 	    0, 0, 0);
-	EV_SET(&kev[1], p[1], EVFILT_WRITE, /**/
-	    EV_ADD | EV_CLEAR | EV_RECEIPT, /**/
+	EV_SET(&kev[1], (unsigned int)p[1], EVFILT_WRITE, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT,		  /**/
 	    0, 0, 0);
 
 	ATF_REQUIRE(kevent(kq, kev, 2, kev, 2, NULL) == 2);
@@ -1459,11 +1463,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end_register_before_close, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[1], EVFILT_READ,  /**/
-	    EV_ADD | EV_CLEAR | EV_RECEIPT, /**/
+	EV_SET(&kev[0], (unsigned int)p[1], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT,		 /**/
 	    0, 0, 0);
-	EV_SET(&kev[1], p[1], EVFILT_WRITE, /**/
-	    EV_ADD | EV_CLEAR | EV_RECEIPT, /**/
+	EV_SET(&kev[1], (unsigned int)p[1], EVFILT_WRITE, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT,		  /**/
 	    0, 0, 0);
 
 	ATF_REQUIRE(kevent(kq, kev, 2, kev, 2, NULL) == 2);
@@ -1552,11 +1556,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[0], EVFILT_READ,  /**/
-	    EV_ADD | EV_CLEAR | EV_RECEIPT, /**/
+	EV_SET(&kev[0], (unsigned int)p[0], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT,		 /**/
 	    0, 0, 0);
-	EV_SET(&kev[1], p[0], EVFILT_WRITE, /**/
-	    EV_ADD | EV_CLEAR | EV_RECEIPT, /**/
+	EV_SET(&kev[1], (unsigned int)p[0], EVFILT_WRITE, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT,		  /**/
 	    0, 0, 0);
 
 	ATF_REQUIRE(kevent(kq, kev, 2, kev, 2, NULL) == 2);
@@ -1660,11 +1664,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 	ATF_REQUIRE(kq >= 0);
 
 	struct kevent kev[32];
-	EV_SET(&kev[0], p[0], EVFILT_READ,  /**/
-	    EV_ADD | EV_CLEAR | EV_RECEIPT, /**/
+	EV_SET(&kev[0], (unsigned int)p[0], EVFILT_READ, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT,		 /**/
 	    0, 0, 0);
-	EV_SET(&kev[1], p[0], EVFILT_WRITE, /**/
-	    EV_ADD | EV_CLEAR | EV_RECEIPT, /**/
+	EV_SET(&kev[1], (unsigned int)p[0], EVFILT_WRITE, /**/
+	    EV_ADD | EV_CLEAR | EV_RECEIPT,		  /**/
 	    0, 0, 0);
 
 	ATF_REQUIRE(kevent(kq, kev, 2, kev, 2, NULL) == 2);

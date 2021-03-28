@@ -356,7 +356,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_read, tc)
 		}
 
 		ATF_REQUIRE(close(efd) == 0);
-		ATF_REQUIRE(read_counter == 2 * counter_val);
+		ATF_REQUIRE(read_counter == 2 * (int)counter_val);
 	}
 }
 
@@ -487,7 +487,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_blocking, tc)
 		td[i].efd = efd;
 		td[i].ev_count = count[i];
 		td[i].loop = LOOP;
-		total += (count[i] * LOOP);
+		total += (count[i] * (uint64_t)LOOP);
 	}
 
 	for (i = 0; i < THREADS; i++) {

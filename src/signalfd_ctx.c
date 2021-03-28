@@ -70,7 +70,8 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 
 	for (int i = 1; i <= _SIG_MAXSIG; ++i) {
 		if (sigismember(&signalfd->sigs, i)) {
-			EV_SET(&kevs[n++], i, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+			EV_SET(&kevs[n++], (unsigned int)i, EVFILT_SIGNAL,
+			    EV_ADD, 0, 0, 0);
 
 			/*
 			 * On Linux, signals with disposition SIG_DFL and a

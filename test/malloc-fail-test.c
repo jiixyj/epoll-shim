@@ -116,6 +116,7 @@ kevent(int kq, const struct kevent *changelist, int nchanges,
 }
 #endif
 
+void *malloc(size_t size);
 void *
 malloc(size_t size)
 {
@@ -134,6 +135,7 @@ malloc(size_t size)
 	return real_malloc(size);
 }
 
+void *calloc(size_t number, size_t size);
 void *
 calloc(size_t number, size_t size)
 {
@@ -159,6 +161,7 @@ calloc(size_t number, size_t size)
 	return real_calloc(number, size);
 }
 
+void *realloc(void *ptr, size_t size);
 void *
 realloc(void *ptr, size_t size)
 {

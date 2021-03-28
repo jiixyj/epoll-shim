@@ -241,7 +241,7 @@ registered_fds_node_add_self_trigger(RegisteredFDsNode *fd2_node,
 		assert(fd2_node->self_pipe[1] >= 0);
 	}
 
-	EV_SET(&kevs[0], fd2_node->self_pipe[0], EVFILT_READ, /**/
+	EV_SET(&kevs[0], (unsigned int)fd2_node->self_pipe[0], EVFILT_READ, /**/
 	    EV_ADD | EV_CLEAR, 0, 0, fd2_node);
 #endif
 
@@ -318,9 +318,9 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, EpollFDCtx *epollfd,
 		assert(needed_filters.evfilt_write);
 
 		struct kevent nkev[1];
-		EV_SET(&nkev[0], fd2_node->fd, EVFILT_WRITE,
-		    EV_ADD | (needed_filters.evfilt_write & EV_CLEAR) |
-			EV_RECEIPT,
+		EV_SET(&nkev[0], (unsigned int)fd2_node->fd, EVFILT_WRITE,
+		    (unsigned short)(EV_ADD |
+			(needed_filters.evfilt_write & EV_CLEAR) | EV_RECEIPT),
 		    0, 0, fd2_node);
 
 		if (kevent(epollfd->kq, nkev, 1, nkev, 1, NULL) != 1 ||
@@ -519,16 +519,16 @@ registered_fds_node_register_for_completion(int *kq,
 	int n = 0;
 
 	if (fd2_node->has_evfilt_read && !fd2_node->got_evfilt_read) {
-		EV_SET(&kev[n++], fd2_node->fd, EVFILT_READ,
+		EV_SET(&kev[n++], (unsigned int)fd2_node->fd, EVFILT_READ,
 		    EV_ADD | EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
 	}
 	if (fd2_node->has_evfilt_write && !fd2_node->got_evfilt_write) {
-		EV_SET(&kev[n++], fd2_node->fd, EVFILT_WRITE,
+		EV_SET(&kev[n++], (unsigned int)fd2_node->fd, EVFILT_WRITE,
 		    EV_ADD | EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
 	}
 	if (fd2_node->has_evfilt_except && !fd2_node->got_evfilt_except) {
 #ifdef EVFILT_EXCEPT
-		EV_SET(&kev[n++], fd2_node->fd, EVFILT_EXCEPT,
+		EV_SET(&kev[n++], (unsigned int)fd2_node->fd, EVFILT_EXCEPT,
 		    EV_ADD | EV_ONESHOT | EV_RECEIPT, NOTE_OOB, 0, fd2_node);
 #else
 		assert(0);
@@ -714,7 +714,7 @@ epollfd_ctx__add_self_trigger(EpollFDCtx *epollfd)
 		assert(epollfd->self_pipe[1] >= 0);
 	}
 
-	EV_SET(&kevs[0], epollfd->self_pipe[0], EVFILT_READ, /**/
+	EV_SET(&kevs[0], (unsigned int)epollfd->self_pipe[0], EVFILT_READ, /**/
 	    EV_ADD | EV_CLEAR, 0, 0, 0);
 #endif
 
@@ -783,8 +783,8 @@ epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
 
 	if (fd2_node->self_pipe[0] >= 0) {
 		struct kevent kevs[1];
-		EV_SET(&kevs[0], fd2_node->self_pipe[0], EVFILT_READ, /**/
-		    EV_DELETE, 0, 0, 0);
+		EV_SET(&kevs[0], (unsigned int)fd2_node->self_pipe[0],
+		    EVFILT_READ, EV_DELETE, 0, 0, 0);
 		(void)kevent(epollfd->kq, kevs, 1, NULL, 0, NULL);
 
 		char c[32];
@@ -803,9 +803,9 @@ epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
 		struct kevent kevs[3];
 		int fd2 = fd2_node->fd;
 
-		EV_SET(&kevs[0], fd2, EVFILT_READ, /**/
+		EV_SET(&kevs[0], (unsigned int)fd2, EVFILT_READ, /**/
 		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
-		EV_SET(&kevs[1], fd2, EVFILT_WRITE, /**/
+		EV_SET(&kevs[1], (unsigned int)fd2, EVFILT_WRITE, /**/
 		    EV_DELETE | EV_RECEIPT, 0, 0, 0);
 #ifdef EVFILT_USER
 		EV_SET(&kevs[2], (uintptr_t)fd2_node, EVFILT_USER, /**/
@@ -826,8 +826,10 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 
 	/* Only sockets support EPOLLRDHUP and EPOLLPRI. */
 	if (fd2_node->node_type != NODE_TYPE_SOCKET) {
-		fd2_node->events &= ~(uint32_t)EPOLLRDHUP;
-		fd2_node->events &= ~(uint32_t)EPOLLPRI;
+		fd2_node->events = (uint16_t)(/**/
+		    fd2_node->events & ~(uint16_t)EPOLLRDHUP);
+		fd2_node->events = (uint16_t)(/**/
+		    fd2_node->events & ~(uint16_t)EPOLLPRI);
 	}
 
 	int const fd2 = fd2_node->fd;
@@ -859,15 +861,17 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 		if (needed_filters.evfilt_read) {
 			fd2_node->has_evfilt_read = true;
 			evfilt_read_index = n;
-			EV_SET(&kev[n++], fd2, EVFILT_READ,
-			    EV_ADD | (needed_filters.evfilt_read & EV_CLEAR), //
+			EV_SET(&kev[n++], (unsigned int)fd2, EVFILT_READ,
+			    (unsigned short)(EV_ADD |
+				(needed_filters.evfilt_read & EV_CLEAR)),
 			    0, 0, fd2_node);
 		}
 		if (needed_filters.evfilt_write) {
 			fd2_node->has_evfilt_write = true;
 			evfilt_write_index = n;
-			EV_SET(&kev[n++], fd2, EVFILT_WRITE,
-			    EV_ADD | (needed_filters.evfilt_write & EV_CLEAR),
+			EV_SET(&kev[n++], (unsigned int)fd2, EVFILT_WRITE,
+			    (unsigned short)(EV_ADD |
+				(needed_filters.evfilt_write & EV_CLEAR)),
 			    0, 0, fd2_node);
 		}
 
@@ -876,7 +880,7 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node)
 		if (needed_filters.evfilt_except) {
 #ifdef EVFILT_EXCEPT
 			fd2_node->has_evfilt_except = true;
-			EV_SET(&kev[n++], fd2, EVFILT_EXCEPT,
+			EV_SET(&kev[n++], (unsigned int)fd2, EVFILT_EXCEPT,
 			    EV_ADD | (needed_filters.evfilt_except & EV_CLEAR),
 			    NOTE_OOB, 0, fd2_node);
 #else

@@ -89,6 +89,8 @@ void atf_tc_skip(const char *reason, ...);
 
 /**/
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 
@@ -109,6 +111,7 @@ void atf_tc_skip(const char *reason, ...);
 	} while (0)
 
 #pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
 #define ATF_REQUIRE(expression) \
 	ATF_REQUIRE_MSG((expression), "%s not met", #expression)
