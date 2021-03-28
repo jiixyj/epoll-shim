@@ -29,14 +29,13 @@ fd_context_map_node_init(FDContextMapNode *node, int kq)
 static errno_t
 fd_context_map_node_create(FDContextMapNode **node_out, int kq)
 {
-	FDContextMapNode *node;
-
-	node = malloc(sizeof(FDContextMapNode));
+	FDContextMapNode *node = malloc(sizeof(FDContextMapNode));
 	if (!node) {
 		return errno;
 	}
 
 	fd_context_map_node_init(node, kq);
+
 	*node_out = node;
 	return 0;
 }
@@ -128,6 +127,8 @@ static errno_t
 epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
     FDContextMapNode **node_out)
 {
+	errno_t ec;
+
 	FDContextMapNode *node;
 	{
 		FDContextMapNode find;
@@ -149,7 +150,7 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 		(void)fd_context_map_node_terminate(node, false);
 		fd_context_map_node_init(node, kq);
 	} else {
-		errno_t ec = fd_context_map_node_create(&node, kq);
+		ec = fd_context_map_node_create(&node, kq);
 		if (ec != 0) {
 			return ec;
 		}
@@ -244,19 +245,23 @@ EPOLL_SHIM_EXPORT
 int
 epoll_shim_close(int fd)
 {
-	FDContextMapNode *node;
+	errno_t ec;
+	int oe = errno;
 
-	node = epoll_shim_ctx_remove_node(&epoll_shim_ctx, fd);
+	FDContextMapNode *node =
+	    epoll_shim_ctx_remove_node(&epoll_shim_ctx, fd);
 	if (!node) {
+		errno = oe;
 		return close(fd);
 	}
 
-	errno_t ec = fd_context_map_node_destroy(node);
+	ec = fd_context_map_node_destroy(node);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return 0;
 }
 
@@ -264,10 +269,12 @@ EPOLL_SHIM_EXPORT
 ssize_t
 epoll_shim_read(int fd, void *buf, size_t nbytes)
 {
-	FDContextMapNode *node;
+	errno_t ec;
+	int oe = errno;
 
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
+		errno = oe;
 		return read(fd, buf, nbytes);
 	}
 
@@ -277,13 +284,13 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	}
 
 	size_t bytes_transferred;
-	errno_t ec = node->vtable->read_fun(node, /**/
-	    buf, nbytes, &bytes_transferred);
+	ec = node->vtable->read_fun(node, buf, nbytes, &bytes_transferred);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return (ssize_t)bytes_transferred;
 }
 
@@ -291,10 +298,12 @@ EPOLL_SHIM_EXPORT
 ssize_t
 epoll_shim_write(int fd, void const *buf, size_t nbytes)
 {
-	FDContextMapNode *node;
+	errno_t ec;
+	int oe = errno;
 
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
+		errno = oe;
 		return write(fd, buf, nbytes);
 	}
 
@@ -304,13 +313,13 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	}
 
 	size_t bytes_transferred;
-	errno_t ec = node->vtable->write_fun(node, /**/
-	    buf, nbytes, &bytes_transferred);
+	ec = node->vtable->write_fun(node, buf, nbytes, &bytes_transferred);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return (ssize_t)bytes_transferred;
 }
 
@@ -442,11 +451,16 @@ int
 epoll_shim_ppoll(struct pollfd *fds, nfds_t nfds, struct timespec const *tmo_p,
     sigset_t const *sigmask)
 {
+	errno_t ec;
+	int oe = errno;
+
 	int n;
-	errno_t ec = epoll_shim_ppoll_impl(fds, nfds, tmo_p, sigmask, &n);
+	ec = epoll_shim_ppoll_impl(fds, nfds, tmo_p, sigmask, &n);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
+
+	errno = oe;
 	return n;
 }

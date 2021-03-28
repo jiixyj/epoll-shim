@@ -891,6 +891,43 @@ check:
 	ATF_REQUIRE(close(timerfd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(timerfd__unmodified_errno);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__unmodified_errno, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+	ATF_REQUIRE(timerfd >= 0);
+	ATF_REQUIRE(errno == 0);
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0,
+			&(struct itimerspec) {
+			    .it_value.tv_sec = 0,
+			    .it_value.tv_nsec = 100000000,
+			},
+			NULL) == 0);
+	(void)wait_for_timerfd(timerfd);
+	ATF_REQUIRE(errno == 0);
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0,
+			&(struct itimerspec) {
+			    .it_value.tv_sec = 0,
+			    .it_value.tv_nsec = 0,
+			},
+			NULL) == 0);
+	ATF_REQUIRE(errno == 0);
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0,
+			&(struct itimerspec) {
+			    .it_value.tv_sec = 0,
+			    .it_value.tv_nsec = 0,
+			},
+			NULL) == 0);
+	ATF_REQUIRE(errno == 0);
+
+	ATF_REQUIRE(close(timerfd) == 0);
+	ATF_REQUIRE(errno == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -910,6 +947,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__periodic_timer_performance);
 	ATF_TP_ADD_TC(tp, timerfd__argument_overflow);
 	ATF_TP_ADD_TC(tp, timerfd__short_evfilt_timer_timeout);
+	ATF_TP_ADD_TC(tp, timerfd__unmodified_errno);
 
 	return atf_no_error();
 }

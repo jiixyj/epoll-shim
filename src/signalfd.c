@@ -27,10 +27,12 @@ static errno_t
 signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx,
     SignalFDCtxSiginfo *siginfo, bool nonblock)
 {
+	errno_t ec;
+
 	for (;;) {
-		errno_t ec = signalfd_ctx_read(signalfd_ctx, siginfo);
+		ec = signalfd_ctx_read(signalfd_ctx, siginfo);
 		if (nonblock || (ec != EAGAIN && ec != EWOULDBLOCK)) {
-			return (ec);
+			return ec;
 		}
 
 		struct pollfd pfd = {
@@ -38,7 +40,7 @@ signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx,
 			.events = POLLIN,
 		};
 		if (poll(&pfd, 1, -1) < 0) {
-			return (errno);
+			return errno;
 		}
 	}
 }
@@ -147,14 +149,16 @@ EPOLL_SHIM_EXPORT
 int
 signalfd(int fd, const sigset_t *sigs, int flags)
 {
-	FDContextMapNode *node;
 	errno_t ec;
+	int oe = errno;
 
+	FDContextMapNode *node;
 	ec = signalfd_impl(&node, fd, sigs, flags);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return node->fd;
 }

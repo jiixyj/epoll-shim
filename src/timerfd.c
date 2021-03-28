@@ -22,10 +22,12 @@
 static errno_t
 timerfd_ctx_read_or_block(TimerFDCtx *timerfd, uint64_t *value, bool nonblock)
 {
+	errno_t ec;
+
 	for (;;) {
-		errno_t ec = timerfd_ctx_read(timerfd, value);
+		ec = timerfd_ctx_read(timerfd, value);
 		if (nonblock || ec != EAGAIN) {
-			return (ec);
+			return ec;
 		}
 
 		struct pollfd pfd = {
@@ -33,7 +35,7 @@ timerfd_ctx_read_or_block(TimerFDCtx *timerfd, uint64_t *value, bool nonblock)
 			.events = POLLIN,
 		};
 		if (poll(&pfd, 1, -1) < 0) {
-			return (errno);
+			return errno;
 		}
 	}
 }
@@ -42,11 +44,12 @@ static errno_t
 timerfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
+	errno_t ec;
+
 	if (nbytes < sizeof(uint64_t)) {
 		return EINVAL;
 	}
 
-	errno_t ec;
 	uint64_t nr_expired;
 	if ((ec = timerfd_ctx_read_or_block(&node->ctx.timerfd, &nr_expired,
 		 node->flags & TFD_NONBLOCK)) != 0) {
@@ -112,15 +115,17 @@ EPOLL_SHIM_EXPORT
 int
 timerfd_create(int clockid, int flags)
 {
-	FDContextMapNode *node;
 	errno_t ec;
+	int oe = errno;
 
+	FDContextMapNode *node;
 	ec = timerfd_create_impl(&node, clockid, flags);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return node->fd;
 }
 
@@ -129,7 +134,6 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
     struct itimerspec *old)
 {
 	errno_t ec;
-	FDContextMapNode *node;
 
 	if (!new) {
 		return EFAULT;
@@ -139,7 +143,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		return EINVAL;
 	}
 
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &timerfd_vtable) {
 		struct stat sb;
 		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
@@ -159,21 +163,23 @@ int
 timerfd_settime(int fd, int flags, const struct itimerspec *new,
     struct itimerspec *old)
 {
-	errno_t ec = timerfd_settime_impl(fd, flags, new, old);
+	errno_t ec;
+	int oe = errno;
+
+	ec = timerfd_settime_impl(fd, flags, new, old);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return 0;
 }
 
 static int
 timerfd_gettime_impl(int fd, struct itimerspec *cur)
 {
-	FDContextMapNode *node;
-
-	node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &timerfd_vtable) {
 		struct stat sb;
 		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
@@ -186,11 +192,15 @@ EPOLL_SHIM_EXPORT
 int
 timerfd_gettime(int fd, struct itimerspec *cur)
 {
-	errno_t ec = timerfd_gettime_impl(fd, cur);
+	errno_t ec;
+	int oe = errno;
+
+	ec = timerfd_gettime_impl(fd, cur);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return 0;
 }

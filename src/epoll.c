@@ -62,15 +62,17 @@ fail:
 static int
 epoll_create_common(bool cloexec)
 {
-	FDContextMapNode *node;
 	errno_t ec;
+	int oe = errno;
 
+	FDContextMapNode *node;
 	ec = epoll_create_impl(&node, cloexec);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return node->fd;
 }
 
@@ -124,12 +126,16 @@ EPOLL_SHIM_EXPORT
 int
 epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
-	errno_t ec = epoll_ctl_impl(fd, op, fd2, ev);
+	errno_t ec;
+	int oe = errno;
+
+	ec = epoll_ctl_impl(fd, op, fd2, ev);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return 0;
 }
 
@@ -251,6 +257,8 @@ static errno_t
 epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
     sigset_t const *sigs, int *actual_cnt)
 {
+	errno_t ec;
+
 	if (cnt < 1 || cnt > (int)(INT_MAX / sizeof(struct epoll_event))) {
 		return EINVAL;
 	}
@@ -263,7 +271,6 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 
 	struct timespec deadline;
 	struct timespec timeout;
-	errno_t ec;
 	if (to >= 0 &&
 	    (ec = timeout_to_deadline(&deadline, &timeout, to)) != 0) {
 		return ec;
@@ -281,14 +288,17 @@ int
 epoll_pwait(int fd, struct epoll_event *ev, int cnt, int to,
     sigset_t const *sigs)
 {
-	int actual_cnt;
+	errno_t ec;
+	int oe = errno;
 
-	errno_t ec = epoll_pwait_impl(fd, ev, cnt, to, sigs, &actual_cnt);
+	int actual_cnt;
+	ec = epoll_pwait_impl(fd, ev, cnt, to, sigs, &actual_cnt);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
+	errno = oe;
 	return actual_cnt;
 }
 
