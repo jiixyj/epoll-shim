@@ -5,9 +5,8 @@
 extern "C" {
 #endif
 
-#include <time.h>
-
 #include <fcntl.h>
+#include <time.h>
 
 #define TFD_NONBLOCK O_NONBLOCK
 #define TFD_CLOEXEC O_CLOEXEC

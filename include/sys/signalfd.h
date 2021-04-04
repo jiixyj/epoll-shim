@@ -7,11 +7,11 @@ extern "C" {
 
 #include <sys/types.h> /* IWYU pragma: keep */
 
-#include <fcntl.h>
-#include <signal.h>
+#include <stddef.h>
 #include <stdint.h>
 
-#include <stddef.h>
+#include <fcntl.h>
+#include <signal.h>
 
 #define SFD_CLOEXEC O_CLOEXEC
 #define SFD_NONBLOCK O_NONBLOCK

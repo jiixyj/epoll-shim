@@ -5,17 +5,12 @@
 extern "C" {
 #endif
 
-#include <stdint.h>
-
 #include <sys/types.h>
 
-#include <fcntl.h>
+#include <stdint.h>
 
-#if defined(__NetBSD__)
-#include <sys/sigtypes.h>
-#elif defined(__OpenBSD__) || defined(__DragonFly__) || defined(__FreeBSD__)
-#include <sys/signal.h>
-#endif
+#include <fcntl.h>
+#include <signal.h>
 
 #define EPOLL_CLOEXEC O_CLOEXEC
 
