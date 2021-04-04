@@ -46,32 +46,9 @@ struct signalfd_siginfo {
 };
 
 
-#ifndef SHIM_SYS_SHIM_HELPERS
-#define SHIM_SYS_SHIM_HELPERS
-#include <unistd.h> /* IWYU pragma: keep */
-
-extern int epoll_shim_close(int);
-#define close epoll_shim_close
-#endif
-
-#ifndef SHIM_SYS_SHIM_HELPERS_READ
-#define SHIM_SYS_SHIM_HELPERS_READ
-#include <unistd.h> /* IWYU pragma: keep */
-
-extern ssize_t epoll_shim_read(int, void *, size_t);
-#define read epoll_shim_read
-#endif
-
-#ifndef SHIM_SYS_SHIM_HELPERS_POLL
-#define SHIM_SYS_SHIM_HELPERS_POLL
-#include <poll.h> /* IWYU pragma: keep */
-
-extern int epoll_shim_poll(struct pollfd *, nfds_t, int);
-extern int epoll_shim_ppoll(struct pollfd *, nfds_t,
-    struct timespec const *, sigset_t const *);
-#define poll epoll_shim_poll
-#define ppoll epoll_shim_ppoll
-#endif
+#include <epoll-shim/detail/common.h>
+#include <epoll-shim/detail/read.h>
+#include <epoll-shim/detail/poll.h>
 
 
 #ifdef __cplusplus

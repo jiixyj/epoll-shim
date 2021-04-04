@@ -29,6 +29,8 @@ macro(add_compat_target _name _condition)
 endmacro()
 
 include(CheckSymbolExists)
+# FreeBSD 13 supports native eventfd descriptors. Prefer them if available.
+check_symbol_exists(eventfd "sys/eventfd.h" HAVE_EVENTFD)
 check_symbol_exists(kqueue1 "sys/event.h" HAVE_KQUEUE1)
 add_compat_target(kqueue1 "NOT;HAVE_KQUEUE1")
 check_symbol_exists(sigandset "signal.h" HAVE_SIGANDSET)
@@ -81,10 +83,17 @@ target_link_libraries(
 target_include_directories(
   epoll-shim
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-  PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
-if(NOT HAVE_EVENTFD)
-  target_include_directories(
-    epoll-shim PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/eventfd>)
+  PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/install-include>)
+
+if(NOT EXISTS "${PROJECT_BINARY_DIR}/install-include")
+  unset(_exclude)
+  if(HAVE_EVENTFD)
+    set(_exclude PATTERN "sys/eventfd.h" EXCLUDE)
+  endif()
+  file(
+    COPY "${PROJECT_SOURCE_DIR}/include/"
+    DESTINATION "${PROJECT_BINARY_DIR}/install-include"
+    ${_exclude})
 endif()
 
 set_target_properties(epoll-shim PROPERTIES SOVERSION 0)
