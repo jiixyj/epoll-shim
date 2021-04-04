@@ -85,15 +85,20 @@ target_include_directories(
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/install-include>)
 
-if(NOT EXISTS "${PROJECT_BINARY_DIR}/install-include")
-  unset(_exclude)
-  if(HAVE_EVENTFD)
-    set(_exclude PATTERN "sys/eventfd.h" EXCLUDE)
-  endif()
-  file(
-    COPY "${PROJECT_SOURCE_DIR}/include/"
-    DESTINATION "${PROJECT_BINARY_DIR}/install-include"
-    ${_exclude})
+set(_headers
+    "epoll-shim/detail/common.h"
+    "epoll-shim/detail/poll.h"
+    "epoll-shim/detail/read.h"
+    "epoll-shim/detail/write.h"
+    "sys/epoll.h"
+    "sys/signalfd.h"
+    "sys/timerfd.h")
+if(NOT HAVE_EVENTFD)
+  list(APPEND _headers "sys/eventfd.h")
 endif()
+foreach(_header IN LISTS _headers)
+  configure_file("${PROJECT_SOURCE_DIR}/include/${_header}"
+                 "${PROJECT_BINARY_DIR}/install-include/${_header}" COPYONLY)
+endforeach()
 
 set_target_properties(epoll-shim PROPERTIES SOVERSION 0)
