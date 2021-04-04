@@ -30,10 +30,6 @@ eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 		.counter_ = counter,
 	};
 
-	if ((ec = pthread_mutex_init(&eventfd->mutex_, NULL)) != 0) {
-		return ec;
-	}
-
 	struct kevent kevs[2];
 	int kevs_length = 0;
 
@@ -47,13 +43,12 @@ eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 		goto out;
 	}
 
-	return (0);
+	return 0;
 
 out:
 	(void)kqueue_event_terminate(&eventfd->kqueue_event_);
 out2:
-	pthread_mutex_destroy(&eventfd->mutex_);
-	return (ec);
+	return ec;
 }
 
 errno_t
@@ -64,36 +59,8 @@ eventfd_ctx_terminate(EventFDCtx *eventfd)
 
 	ec_local = kqueue_event_terminate(&eventfd->kqueue_event_);
 	ec = ec != 0 ? ec : ec_local;
-	ec_local = pthread_mutex_destroy(&eventfd->mutex_);
-	ec = ec != 0 ? ec : ec_local;
 
 	return (ec);
-}
-
-static errno_t
-eventfd_ctx_write_impl(EventFDCtx *eventfd, uint64_t value)
-{
-	if (value == UINT64_MAX) {
-		return (EINVAL);
-	}
-
-	uint_least64_t current_value = eventfd->counter_;
-
-	uint_least64_t new_value;
-	if (__builtin_add_overflow(current_value, value, &new_value) ||
-	    new_value > UINT64_MAX - 1) {
-		return (EAGAIN);
-	}
-
-	eventfd->counter_ = new_value;
-
-	errno_t ec = kqueue_event_trigger(&eventfd->kqueue_event_,
-	    eventfd->kq_);
-	if (ec != 0) {
-		return (ec);
-	}
-
-	return (0);
 }
 
 errno_t
@@ -101,21 +68,36 @@ eventfd_ctx_write(EventFDCtx *eventfd, uint64_t value)
 {
 	errno_t ec;
 
-	(void)pthread_mutex_lock(&eventfd->mutex_);
-	ec = eventfd_ctx_write_impl(eventfd, value);
-	(void)pthread_mutex_unlock(&eventfd->mutex_);
+	if (value == UINT64_MAX) {
+		return EINVAL;
+	}
 
-	return ec;
+	uint_least64_t current_value = eventfd->counter_;
+
+	uint_least64_t new_value;
+	if (__builtin_add_overflow(current_value, value, &new_value) ||
+	    new_value > UINT64_MAX - 1) {
+		return EAGAIN;
+	}
+
+	eventfd->counter_ = new_value;
+
+	ec = kqueue_event_trigger(&eventfd->kqueue_event_, eventfd->kq_);
+	if (ec != 0) {
+		return ec;
+	}
+
+	return 0;
 }
 
-static errno_t
-eventfd_ctx_read_impl(EventFDCtx *eventfd, uint64_t *value)
+errno_t
+eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 {
 	uint_least64_t current_value;
 
 	current_value = eventfd->counter_;
 	if (current_value == 0) {
-		return (EAGAIN);
+		return EAGAIN;
 	}
 
 	uint_least64_t new_value =			     /**/
@@ -134,17 +116,5 @@ eventfd_ctx_read_impl(EventFDCtx *eventfd, uint64_t *value)
 	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? /**/
 		  1 :
 		  current_value;
-	return (0);
-}
-
-errno_t
-eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
-{
-	errno_t ec;
-
-	(void)pthread_mutex_lock(&eventfd->mutex_);
-	ec = eventfd_ctx_read_impl(eventfd, value);
-	(void)pthread_mutex_unlock(&eventfd->mutex_);
-
-	return ec;
+	return 0;
 }

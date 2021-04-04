@@ -77,7 +77,6 @@ typedef RB_HEAD(registered_fds_set_, registered_fds_node_) RegisteredFDsSet;
 
 typedef struct {
 	int kq; // non owning
-	pthread_mutex_t mutex;
 
 	PollFDList poll_fds;
 	size_t poll_fds_size;

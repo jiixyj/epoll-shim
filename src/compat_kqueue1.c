@@ -16,7 +16,7 @@ compat_kqueue1_impl(int *fd_out, int flags)
 {
 	errno_t ec;
 
-	if (flags & ~(O_CLOEXEC)) {
+	if (flags & ~(O_CLOEXEC | O_NONBLOCK)) {
 		return EINVAL;
 	}
 
@@ -29,8 +29,21 @@ compat_kqueue1_impl(int *fd_out, int flags)
 		int r;
 
 		if (flags & O_CLOEXEC) {
-			if ((r = fcntl(fd, F_GETFD, 0)) < 0 ||
+			if ((r = fcntl(fd, F_GETFD)) < 0 ||
 			    fcntl(fd, F_SETFD, r | FD_CLOEXEC) < 0) {
+				ec = errno;
+				goto out;
+			}
+		}
+
+		if (flags & O_NONBLOCK) {
+			if ((r = fcntl(fd, F_GETFL)) < 0) {
+				ec = errno;
+				goto out;
+			}
+
+			if (fcntl(fd, F_SETFL, r | O_NONBLOCK) < 0 &&
+			    errno != ENOTTY) {
 				ec = errno;
 				goto out;
 			}
@@ -48,11 +61,16 @@ out:
 int
 compat_kqueue1(int flags)
 {
+	errno_t ec;
+	int oe = errno;
+
 	int fd;
-	errno_t ec = compat_kqueue1_impl(&fd, flags);
+	ec = compat_kqueue1_impl(&fd, flags);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
+
+	errno = oe;
 	return fd;
 }

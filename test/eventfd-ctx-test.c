@@ -564,6 +564,23 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__epoll, tc)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(eventfd__toggle_nonblock);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__toggle_nonblock, tc)
+{
+	int efd = eventfd(0, EFD_CLOEXEC);
+	ATF_REQUIRE(efd >= 0);
+
+	int r = fcntl(efd, F_GETFL);
+	ATF_REQUIRE(r >= 0);
+	r = fcntl(efd, F_SETFL, r | O_NONBLOCK);
+	ATF_REQUIRE(r >= 0);
+
+	uint64_t value;
+	ATF_REQUIRE_ERRNO(EAGAIN, read(efd, &value, sizeof(value)) < 0);
+
+	ATF_REQUIRE(close(efd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, eventfd__constants);
@@ -625,6 +642,7 @@ for the licenses and copyright statements of these projects.
 #endif
 	ATF_TP_ADD_TC(tp, eventfd__threads_blocking);
 	ATF_TP_ADD_TC(tp, eventfd__epoll);
+	ATF_TP_ADD_TC(tp, eventfd__toggle_nonblock);
 
 	return atf_no_error();
 }

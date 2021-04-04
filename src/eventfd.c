@@ -21,13 +21,19 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
-    bool nonblock)
+eventfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
 {
+	errno_t ec;
+	EventFDCtx *eventfd_ctx = &node->ctx.eventfd;
+
 	for (;;) {
-		errno_t ec = eventfd_ctx_read(eventfd_ctx, value);
+		(void)pthread_mutex_lock(&node->mutex);
+		ec = eventfd_ctx_read(eventfd_ctx, value);
+		bool nonblock = (node->flags & O_NONBLOCK) != 0;
+		(void)pthread_mutex_unlock(&node->mutex);
+
 		if (nonblock || ec != EAGAIN) {
-			return (ec);
+			return ec;
 		}
 
 		struct pollfd pfd = {
@@ -35,7 +41,7 @@ eventfd_ctx_read_or_block(EventFDCtx *eventfd_ctx, uint64_t *value,
 			.events = POLLIN,
 		};
 		if (poll(&pfd, 1, -1) < 0) {
-			return (errno);
+			return errno;
 		}
 	}
 }
@@ -44,14 +50,14 @@ static errno_t
 eventfd_helper_read(FDContextMapNode *node, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
+	errno_t ec;
+
 	if (nbytes != sizeof(uint64_t)) {
 		return EINVAL;
 	}
 
 	uint64_t value;
-	errno_t ec;
-	if ((ec = eventfd_ctx_read_or_block(&node->ctx.eventfd, &value,
-		 node->flags & EFD_NONBLOCK)) != 0) {
+	if ((ec = eventfd_ctx_read_or_block(node, &value)) != 0) {
 		return ec;
 	}
 
@@ -64,6 +70,8 @@ static errno_t
 eventfd_helper_write(FDContextMapNode *node, void const *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
+	errno_t ec;
+
 	if (nbytes != sizeof(uint64_t)) {
 		return EINVAL;
 	}
@@ -71,8 +79,10 @@ eventfd_helper_write(FDContextMapNode *node, void const *buf, size_t nbytes,
 	uint64_t value;
 	memcpy(&value, buf, sizeof(uint64_t));
 
-	errno_t ec;
-	if ((ec = eventfd_ctx_write(&node->ctx.eventfd, value)) != 0) {
+	(void)pthread_mutex_lock(&node->mutex);
+	ec = eventfd_ctx_write(&node->ctx.eventfd, value);
+	(void)pthread_mutex_unlock(&node->mutex);
+	if (ec != 0) {
 		return ec;
 	}
 
@@ -101,14 +111,17 @@ eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
 		return EINVAL;
 	}
 
+	_Static_assert(EFD_CLOEXEC == O_CLOEXEC, "");
+	_Static_assert(EFD_NONBLOCK == O_NONBLOCK, "");
+
 	FDContextMapNode *node;
 	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
-	    (flags & EFD_CLOEXEC) != 0, &node);
+	    flags & (O_CLOEXEC | O_NONBLOCK), &node);
 	if (ec != 0) {
 		return ec;
 	}
 
-	node->flags = flags;
+	node->flags = flags & O_NONBLOCK;
 
 	int ctx_flags = 0;
 	if (flags & EFD_SEMAPHORE) {

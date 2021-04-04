@@ -52,10 +52,6 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 
 	*signalfd = (SignalFDCtx) { .kq = kq, .sigs = *sigs };
 
-	if ((ec = pthread_mutex_init(&signalfd->mutex, NULL)) != 0) {
-		return ec;
-	}
-
 #ifndef _SIG_MAXSIG
 #define _SIG_MAXSIG (8 * sizeof(sigset_t))
 #endif
@@ -133,7 +129,6 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
 out:
 	(void)kqueue_event_terminate(&signalfd->kqueue_event);
 out2:
-	pthread_mutex_destroy(&signalfd->mutex);
 	return ec;
 }
 
@@ -144,8 +139,6 @@ signalfd_ctx_terminate(SignalFDCtx *signalfd)
 	errno_t ec_local;
 
 	ec_local = kqueue_event_terminate(&signalfd->kqueue_event);
-	ec = ec != 0 ? ec : ec_local;
-	ec_local = pthread_mutex_destroy(&signalfd->mutex);
 	ec = ec != 0 ? ec : ec_local;
 
 	return ec;
@@ -319,12 +312,10 @@ signalfd_ctx_read(SignalFDCtx *signalfd, SignalFDCtxSiginfo *siginfo)
 {
 	errno_t ec;
 
-	(void)pthread_mutex_lock(&signalfd->mutex);
 	ec = signalfd_ctx_read_impl(signalfd, siginfo);
 	if (ec == 0 || ec == EAGAIN || ec == EWOULDBLOCK) {
 		(void)signalfd_ctx_clear_signal(signalfd, false);
 	}
-	(void)pthread_mutex_unlock(&signalfd->mutex);
 
 	return ec;
 }
@@ -332,12 +323,8 @@ signalfd_ctx_read(SignalFDCtx *signalfd, SignalFDCtxSiginfo *siginfo)
 void
 signalfd_ctx_poll(SignalFDCtx *signalfd, uint32_t *revents)
 {
-	(void)pthread_mutex_lock(&signalfd->mutex);
-
 	bool pending = signalfd_ctx_clear_signal(signalfd, revents != NULL);
 	if (revents) {
 		*revents = pending ? POLLIN : 0;
 	}
-
-	(void)pthread_mutex_unlock(&signalfd->mutex);
 }

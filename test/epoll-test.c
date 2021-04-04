@@ -1904,6 +1904,47 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__cloexec, tcptr)
 	CLOEXEC_TEST(eventfd, ==, 0, 0);
 }
 
+ATF_TC_WITHOUT_HEAD(epoll__fcntl_fl);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__fcntl_fl, tcptr)
+{
+	int fd;
+	int r;
+
+#define FCNTL_FL_TEST(fun, expected, ...)                    \
+	do {                                                 \
+		fd = fun(__VA_ARGS__);                       \
+		ATF_REQUIRE(fd >= 0);                        \
+		r = fcntl(fd, F_GETFL, 0);                   \
+		ATF_REQUIRE_MSG(r == (expected), "%04x", r); \
+		ATF_REQUIRE(close(fd) == 0);                 \
+	} while (0)
+
+	FCNTL_FL_TEST(epoll_create1, O_RDWR, 0);
+	{
+		fd = epoll_create1(0);
+		ATF_REQUIRE(fd >= 0);
+
+		r = fcntl(fd, F_GETFL, 0);
+		ATF_REQUIRE(r >= 0);
+		r = fcntl(fd, F_SETFL, r | O_NONBLOCK);
+		ATF_REQUIRE_MSG(r >= 0, "%s", strerror(errno));
+
+		r = fcntl(fd, F_GETFL, 0);
+		ATF_REQUIRE(r == (O_RDWR | O_NONBLOCK));
+		ATF_REQUIRE(close(fd) == 0);
+	}
+	FCNTL_FL_TEST(timerfd_create, O_RDWR, CLOCK_MONOTONIC, 0);
+	FCNTL_FL_TEST(timerfd_create, O_RDWR | O_NONBLOCK, CLOCK_MONOTONIC,
+	    TFD_NONBLOCK);
+	sigset_t mask;
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	FCNTL_FL_TEST(signalfd, O_RDWR, -1, &mask, 0);
+	FCNTL_FL_TEST(signalfd, O_RDWR | O_NONBLOCK, -1, &mask, SFD_NONBLOCK);
+	FCNTL_FL_TEST(eventfd, O_RDWR, 0, 0);
+	FCNTL_FL_TEST(eventfd, O_RDWR | O_NONBLOCK, 0, EFD_NONBLOCK);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, epoll__simple);
@@ -1945,6 +1986,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__using_real_close);
 	ATF_TP_ADD_TC(tp, epoll__epoll_pwait);
 	ATF_TP_ADD_TC(tp, epoll__cloexec);
+	ATF_TP_ADD_TC(tp, epoll__fcntl_fl);
 
 	return atf_no_error();
 }

@@ -1,12 +1,14 @@
-#ifndef	SHIM_SYS_EPOLL_H
-#define	SHIM_SYS_EPOLL_H
+#ifndef SHIM_SYS_EPOLL_H
+#define SHIM_SYS_EPOLL_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include <stdint.h>
+
 #include <sys/types.h>
+
 #include <fcntl.h>
 
 #if defined(__NetBSD__)
@@ -16,7 +18,6 @@ extern "C" {
 #endif
 
 #define EPOLL_CLOEXEC O_CLOEXEC
-#define EPOLL_NONBLOCK O_NONBLOCK
 
 enum EPOLL_EVENTS { __EPOLL_DUMMY };
 #define EPOLLIN 0x001
@@ -31,10 +32,10 @@ enum EPOLL_EVENTS { __EPOLL_DUMMY };
 #define EPOLLERR 0x008
 #define EPOLLHUP 0x010
 #define EPOLLRDHUP 0x2000
-#define EPOLLEXCLUSIVE (1U<<28)
-#define EPOLLWAKEUP (1U<<29)
-#define EPOLLONESHOT (1U<<30)
-#define EPOLLET (1U<<31)
+#define EPOLLEXCLUSIVE (1U << 28)
+#define EPOLLWAKEUP (1U << 29)
+#define EPOLLONESHOT (1U << 30)
+#define EPOLLET (1U << 31)
 
 #define EPOLL_CTL_ADD 1
 #define EPOLL_CTL_DEL 2
@@ -52,7 +53,7 @@ struct epoll_event {
 	epoll_data_t data;
 }
 #ifdef __x86_64__
-__attribute__ ((__packed__))
+__attribute__((__packed__))
 #endif
 ;
 
@@ -66,10 +67,22 @@ int epoll_pwait(int, struct epoll_event *, int, int, const sigset_t *);
 
 #ifndef SHIM_SYS_SHIM_HELPERS
 #define SHIM_SYS_SHIM_HELPERS
+#include <fcntl.h>  /* IWYU pragma: keep */
 #include <unistd.h> /* IWYU pragma: keep */
 
 extern int epoll_shim_close(int);
 #define close epoll_shim_close
+
+extern int epoll_shim_fcntl(int, int, ...);
+#define SHIM_SYS_SHIM_HELPERS_SELECT(PREFIX, _2, _1, SUFFIX, ...) \
+	PREFIX##_##SUFFIX
+#define SHIM_SYS_SHIM_FCNTL_1(fd, cmd) fcntl((fd), (cmd))
+#define SHIM_SYS_SHIM_FCNTL_N(fd, cmd, ...)                                \
+	(((cmd) == F_SETFL) ? epoll_shim_fcntl((fd), (cmd), __VA_ARGS__) : \
+				    fcntl((fd), (cmd), __VA_ARGS__))
+#define fcntl(fd, ...)                                                       \
+	SHIM_SYS_SHIM_HELPERS_SELECT(SHIM_SYS_SHIM_FCNTL, __VA_ARGS__, N, 1) \
+	(fd, __VA_ARGS__)
 #endif
 
 

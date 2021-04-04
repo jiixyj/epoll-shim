@@ -11,7 +11,6 @@
 
 typedef struct {
 	int kq; // non owning
-	pthread_mutex_t mutex;
 
 	sigset_t sigs;
 	KQueueEvent kqueue_event;

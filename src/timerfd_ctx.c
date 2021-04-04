@@ -274,15 +274,9 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 errno_t
 timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 {
-	errno_t ec;
-
 	assert(clockid == CLOCK_MONOTONIC || clockid == CLOCK_REALTIME);
 
 	*timerfd = (TimerFDCtx) { .kq = kq, .clockid = (clockid_t)clockid };
-
-	if ((ec = pthread_mutex_init(&timerfd->mutex, NULL)) != 0) {
-		return ec;
-	}
 
 	return 0;
 }
@@ -290,7 +284,9 @@ timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 errno_t
 timerfd_ctx_terminate(TimerFDCtx *timerfd)
 {
-	return pthread_mutex_destroy(&timerfd->mutex);
+	(void)timerfd;
+
+	return 0;
 }
 
 static void
@@ -305,8 +301,8 @@ timerfd_ctx_gettime_impl(TimerFDCtx *timerfd, struct itimerspec *cur,
 	}
 }
 
-static errno_t
-timerfd_ctx_settime_impl(TimerFDCtx *timerfd, bool is_abstime,
+errno_t
+timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
     struct itimerspec const *new, struct itimerspec *old)
 {
 	errno_t ec;
@@ -363,19 +359,6 @@ success:
 }
 
 errno_t
-timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
-    struct itimerspec const *new, struct itimerspec *old)
-{
-	errno_t ec;
-
-	(void)pthread_mutex_lock(&timerfd->mutex);
-	ec = timerfd_ctx_settime_impl(timerfd, is_abstime, new, old);
-	(void)pthread_mutex_unlock(&timerfd->mutex);
-
-	return ec;
-}
-
-errno_t
 timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur)
 {
 	struct timespec current_time;
@@ -383,15 +366,13 @@ timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur)
 		return errno;
 	}
 
-	(void)pthread_mutex_lock(&timerfd->mutex);
 	timerfd_ctx_gettime_impl(timerfd, cur, &current_time);
-	(void)pthread_mutex_unlock(&timerfd->mutex);
 
 	return 0;
 }
 
-static errno_t
-timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
+errno_t
+timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 {
 	for (;;) {
 		struct kevent kev;
@@ -433,16 +414,4 @@ timerfd_ctx_read_impl(TimerFDCtx *timerfd, uint64_t *value)
 		*value = nr_expirations;
 		return 0;
 	}
-}
-
-errno_t
-timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
-{
-	errno_t ec;
-
-	(void)pthread_mutex_lock(&timerfd->mutex);
-	ec = timerfd_ctx_read_impl(timerfd, value);
-	(void)pthread_mutex_unlock(&timerfd->mutex);
-
-	return ec;
 }

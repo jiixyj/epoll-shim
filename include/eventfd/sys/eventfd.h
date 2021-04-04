@@ -29,12 +29,16 @@ extern int epoll_shim_close(int);
 
 #ifndef SHIM_SYS_SHIM_HELPERS_READ
 #define SHIM_SYS_SHIM_HELPERS_READ
+#include <unistd.h> /* IWYU pragma: keep */
+
 extern ssize_t epoll_shim_read(int, void *, size_t);
 #define read epoll_shim_read
 #endif
 
 #ifndef SHIM_SYS_SHIM_HELPERS_WRITE
 #define SHIM_SYS_SHIM_HELPERS_WRITE
+#include <unistd.h> /* IWYU pragma: keep */
+
 extern ssize_t epoll_shim_write(int, void const*, size_t);
 #define write epoll_shim_write
 #endif

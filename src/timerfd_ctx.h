@@ -13,7 +13,6 @@
 typedef struct {
 	int kq; // non owning
 	int flags;
-	pthread_mutex_t mutex;
 
 	clockid_t clockid;
 	/*

@@ -2,15 +2,22 @@
 
 #include <sys/event.h>
 
+/* For FIONBIO. */
+#include <sys/filio.h>
+#include <sys/ioctl.h>
+
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "epoll_shim_export.h"
 #include "timespec_util.h"
@@ -20,32 +27,59 @@
 #endif
 
 static void
-fd_context_map_node_init(FDContextMapNode *node, int kq)
+fd_context_map_node_install_kq(FDContextMapNode *node, int kq)
 {
 	node->fd = kq;
 	node->vtable = NULL;
 }
 
 static errno_t
+fd_context_map_node_init(FDContextMapNode *node, int kq)
+{
+	errno_t ec;
+
+	if ((ec = pthread_mutex_init(&node->mutex, NULL)) != 0) {
+		return ec;
+	}
+	fd_context_map_node_install_kq(node, kq);
+
+	return 0;
+}
+
+static errno_t
 fd_context_map_node_create(FDContextMapNode **node_out, int kq)
 {
+	errno_t ec;
+
 	FDContextMapNode *node = malloc(sizeof(FDContextMapNode));
 	if (!node) {
 		return errno;
 	}
 
-	fd_context_map_node_init(node, kq);
+	if ((ec = fd_context_map_node_init(node, kq)) != 0) {
+		free(node);
+		return ec;
+	}
 
 	*node_out = node;
 	return 0;
 }
 
 static errno_t
-fd_context_map_node_terminate(FDContextMapNode *node, bool close_fd)
+fd_context_map_node_close_ctx(FDContextMapNode *node)
 {
-	errno_t ec = node->vtable ? node->vtable->close_fun(node) : 0;
+	return node->vtable ? node->vtable->close_fun(node) : 0;
+}
 
-	if (close_fd && close(node->fd) < 0) {
+static errno_t
+fd_context_map_node_terminate(FDContextMapNode *node)
+{
+	errno_t ec = fd_context_map_node_close_ctx(node);
+
+	errno_t ec_local = pthread_mutex_destroy(&node->mutex);
+	ec = ec != 0 ? ec : ec_local;
+
+	if (close(node->fd) < 0) {
 		ec = ec ? ec : errno;
 	}
 
@@ -74,7 +108,7 @@ fd_context_map_node_as_pollable_node(FDContextMapNode *node)
 errno_t
 fd_context_map_node_destroy(FDContextMapNode *node)
 {
-	errno_t ec = fd_context_map_node_terminate(node, true);
+	errno_t ec = fd_context_map_node_terminate(node);
 	free(node);
 	return ec;
 }
@@ -147,8 +181,8 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 		 * must not close it, but we must clean up the old context
 		 * object!
 		 */
-		(void)fd_context_map_node_terminate(node, false);
-		fd_context_map_node_init(node, kq);
+		(void)fd_context_map_node_close_ctx(node);
+		fd_context_map_node_install_kq(node, kq);
 	} else {
 		ec = fd_context_map_node_create(&node, kq);
 		if (ec != 0) {
@@ -166,12 +200,12 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 }
 
 errno_t
-epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, bool cloexec,
+epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
     FDContextMapNode **node)
 {
 	errno_t ec;
 
-	int kq = kqueue1(cloexec ? O_CLOEXEC : 0);
+	int kq = kqueue1(flags);
 	if (kq < 0) {
 		return errno;
 	}
@@ -248,7 +282,7 @@ epoll_shim_close(int fd)
 	errno_t ec;
 	int oe = errno;
 
-	FDContextMapNode *node =
+	FDContextMapNode *node = /**/
 	    epoll_shim_ctx_remove_node(&epoll_shim_ctx, fd);
 	if (!node) {
 		errno = oe;
@@ -463,4 +497,47 @@ epoll_shim_ppoll(struct pollfd *fds, nfds_t nfds, struct timespec const *tmo_p,
 
 	errno = oe;
 	return n;
+}
+
+EPOLL_SHIM_EXPORT
+int
+epoll_shim_fcntl(int fd, int cmd, ...)
+{
+	errno_t ec;
+	int oe = errno;
+
+	assert(cmd == F_SETFL);
+
+	int arg;
+
+	va_list ap;
+	va_start(ap, cmd);
+	arg = va_arg(ap, int);
+	va_end(ap);
+
+	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	if (!node) {
+		errno = oe;
+		return fcntl(fd, F_SETFL, arg);
+	}
+
+	(void)pthread_mutex_lock(&node->mutex);
+	{
+		int opt = (arg & O_NONBLOCK) ? 1 : 0;
+		ec = ioctl(fd, FIONBIO, &opt) < 0 ? errno : 0;
+		ec = (ec == ENOTTY) ? 0 : ec;
+
+		if (ec == 0) {
+			node->flags = arg & O_NONBLOCK;
+		}
+	}
+	(void)pthread_mutex_unlock(&node->mutex);
+
+	if (ec != 0) {
+		errno = ec;
+		return -1;
+	}
+
+	errno = oe;
+	return 0;
 }

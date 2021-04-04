@@ -594,20 +594,14 @@ epollfd_ctx_init(EpollFDCtx *epollfd, int kq)
 
 	TAILQ_INIT(&epollfd->poll_fds);
 
-	if ((ec = pthread_mutex_init(&epollfd->mutex, NULL)) != 0) {
-		return ec;
-	}
-
 	if ((ec = pthread_mutex_init(&epollfd->nr_polling_threads_mutex,
 		 NULL)) != 0) {
-		pthread_mutex_destroy(&epollfd->mutex);
 		return ec;
 	}
 
 	if ((ec = pthread_cond_init(&epollfd->nr_polling_threads_cond, /**/
 		 NULL)) != 0) {
 		pthread_mutex_destroy(&epollfd->nr_polling_threads_mutex);
-		pthread_mutex_destroy(&epollfd->mutex);
 		return ec;
 	}
 
@@ -623,8 +617,6 @@ epollfd_ctx_terminate(EpollFDCtx *epollfd)
 	ec_local = pthread_cond_destroy(&epollfd->nr_polling_threads_cond);
 	ec = ec ? ec : ec_local;
 	ec_local = pthread_mutex_destroy(&epollfd->nr_polling_threads_mutex);
-	ec = ec ? ec : ec_local;
-	ec_local = pthread_mutex_destroy(&epollfd->mutex);
 	ec = ec ? ec : ec_local;
 
 	RegisteredFDsNode *np;
@@ -1064,7 +1056,7 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2,
 		} else {
 			fd2_node->node_type = NODE_TYPE_FIFO;
 
-			int fl = fcntl(fd2, F_GETFL, 0);
+			int fl = fcntl(fd2, F_GETFL);
 			if (fl < 0) {
 				errno_t ec = errno;
 				registered_fds_node_destroy(fd2_node);
@@ -1132,8 +1124,25 @@ epollfd_ctx_modify_node(EpollFDCtx *epollfd, RegisteredFDsNode *fd2_node,
 	return 0;
 }
 
-static errno_t
-epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
+void
+epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, struct pollfd *pfds)
+{
+	pfds[0] = (struct pollfd) { .fd = epollfd->kq, .events = POLLIN };
+
+	RegisteredFDsNode *poll_node;
+	size_t i = 1;
+	TAILQ_FOREACH (poll_node, &epollfd->poll_fds, pollfd_list_entry) {
+		pfds[i++] = (struct pollfd) {
+			.fd = poll_node->fd,
+			.events = poll_node->node_type == NODE_TYPE_POLL ?
+				  (short)poll_node->events :
+				  POLLPRI,
+		};
+	}
+}
+
+errno_t
+epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2,
     PollableNode fd2_pollable_node, struct epoll_event *ev)
 {
 	assert(op == EPOLL_CTL_DEL || ev != NULL);
@@ -1196,38 +1205,8 @@ epollfd_ctx_ctl_impl(EpollFDCtx *epollfd, int op, int fd2,
 	return ec;
 }
 
-void
-epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, struct pollfd *pfds)
-{
-	pfds[0] = (struct pollfd) { .fd = epollfd->kq, .events = POLLIN };
-
-	RegisteredFDsNode *poll_node;
-	size_t i = 1;
-	TAILQ_FOREACH (poll_node, &epollfd->poll_fds, pollfd_list_entry) {
-		pfds[i++] = (struct pollfd) {
-			.fd = poll_node->fd,
-			.events = poll_node->node_type == NODE_TYPE_POLL ?
-				  (short)poll_node->events :
-				  POLLPRI,
-		};
-	}
-}
-
 errno_t
-epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2,
-    PollableNode fd2_pollable_node, struct epoll_event *ev)
-{
-	errno_t ec;
-
-	(void)pthread_mutex_lock(&epollfd->mutex);
-	ec = epollfd_ctx_ctl_impl(epollfd, op, fd2, fd2_pollable_node, ev);
-	(void)pthread_mutex_unlock(&epollfd->mutex);
-
-	return ec;
-}
-
-static errno_t
-epollfd_ctx_wait_impl(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
+epollfd_ctx_wait(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
     int *actual_cnt)
 {
 	errno_t ec;
@@ -1385,17 +1364,4 @@ again:;
 
 	*actual_cnt = j;
 	return 0;
-}
-
-errno_t
-epollfd_ctx_wait(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
-    int *actual_cnt)
-{
-	errno_t ec;
-
-	(void)pthread_mutex_lock(&epollfd->mutex);
-	ec = epollfd_ctx_wait_impl(epollfd, ev, cnt, actual_cnt);
-	(void)pthread_mutex_unlock(&epollfd->mutex);
-
-	return ec;
 }

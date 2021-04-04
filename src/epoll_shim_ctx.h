@@ -37,7 +37,8 @@ errno_t fd_context_default_write(FDContextMapNode *node, /**/
 struct fd_context_map_node_ {
 	RB_ENTRY(fd_context_map_node_) entry;
 	int fd;
-	int flags;
+	pthread_mutex_t mutex;
+	int flags; /* Only for O_NONBLOCK right now. */
 	union {
 		EpollFDCtx epollfd;
 		EventFDCtx eventfd;
@@ -61,7 +62,7 @@ typedef struct {
 
 extern EpollShimCtx epoll_shim_ctx;
 
-errno_t epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, bool cloexec,
+errno_t epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
     FDContextMapNode **node);
 FDContextMapNode *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx,
     int fd);
@@ -79,5 +80,7 @@ ssize_t epoll_shim_write(int fd, void const *buf, size_t nbytes);
 int epoll_shim_poll(struct pollfd *, nfds_t, int);
 int epoll_shim_ppoll(struct pollfd *, nfds_t, struct timespec const *,
     sigset_t const *);
+
+int epoll_shim_fcntl(int fd, int cmd, ...);
 
 #endif

@@ -24,13 +24,18 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-signalfd_ctx_read_or_block(SignalFDCtx *signalfd_ctx,
-    SignalFDCtxSiginfo *siginfo, bool nonblock)
+signalfd_ctx_read_or_block(FDContextMapNode *node, SignalFDCtxSiginfo *siginfo,
+    bool force_nonblock)
 {
 	errno_t ec;
+	SignalFDCtx *signalfd_ctx = &node->ctx.signalfd;
 
 	for (;;) {
+		(void)pthread_mutex_lock(&node->mutex);
 		ec = signalfd_ctx_read(signalfd_ctx, siginfo);
+		bool nonblock = force_nonblock ||
+		    (node->flags & O_NONBLOCK) != 0;
+		(void)pthread_mutex_unlock(&node->mutex);
 		if (nonblock || (ec != EAGAIN && ec != EWOULDBLOCK)) {
 			return ec;
 		}
@@ -55,7 +60,7 @@ signalfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
 		return EINVAL;
 	}
 
-	bool nonblock = (node->flags & SFD_NONBLOCK);
+	bool force_nonblock = false;
 	size_t bytes_transferred_local = 0;
 
 	while (nbytes >= sizeof(struct signalfd_siginfo)) {
@@ -66,15 +71,15 @@ signalfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
 		SignalFDCtxSiginfo siginfo;
 		memset(&siginfo, 0, sizeof(siginfo));
 
-		if ((ec = signalfd_ctx_read_or_block(&node->ctx.signalfd,
-			 &siginfo, nonblock)) != 0) {
+		if ((ec = signalfd_ctx_read_or_block(node, &siginfo,
+			 force_nonblock)) != 0) {
 			break;
 		}
 
 		memcpy(buf, &siginfo, sizeof(siginfo));
 		bytes_transferred_local += sizeof(siginfo);
 
-		nonblock = true;
+		force_nonblock = true;
 		nbytes -= sizeof(siginfo);
 		buf = ((unsigned char *)buf) + sizeof(siginfo);
 	}
@@ -96,7 +101,9 @@ signalfd_close(FDContextMapNode *node)
 static void
 signalfd_poll(FDContextMapNode *node, uint32_t *revents)
 {
+	(void)pthread_mutex_lock(&node->mutex);
 	signalfd_ctx_poll(&node->ctx.signalfd, revents);
+	(void)pthread_mutex_unlock(&node->mutex);
 }
 
 static FDContextVTable const signalfd_vtable = {
@@ -121,14 +128,17 @@ signalfd_impl(FDContextMapNode **node_out, int fd, const sigset_t *sigs,
 		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 	}
 
+	_Static_assert(SFD_CLOEXEC == O_CLOEXEC, "");
+	_Static_assert(SFD_NONBLOCK == O_NONBLOCK, "");
+
 	FDContextMapNode *node;
 	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
-	    (flags & SFD_CLOEXEC) != 0, &node);
+	    flags & (O_CLOEXEC | O_NONBLOCK), &node);
 	if (ec != 0) {
 		return ec;
 	}
 
-	node->flags = flags;
+	node->flags = flags & O_NONBLOCK;
 
 	if ((ec = signalfd_ctx_init(&node->ctx.signalfd, /**/
 		 node->fd, sigs)) != 0) {

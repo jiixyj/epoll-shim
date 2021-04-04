@@ -14,7 +14,6 @@
 typedef struct {
 	int kq_; // non owning
 	int flags_;
-	pthread_mutex_t mutex_;
 
 	KQueueEvent kqueue_event_;
 	uint_least64_t counter_;

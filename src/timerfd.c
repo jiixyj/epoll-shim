@@ -20,12 +20,16 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-timerfd_ctx_read_or_block(TimerFDCtx *timerfd, uint64_t *value, bool nonblock)
+timerfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
 {
 	errno_t ec;
+	TimerFDCtx *timerfd = &node->ctx.timerfd;
 
 	for (;;) {
+		(void)pthread_mutex_lock(&node->mutex);
 		ec = timerfd_ctx_read(timerfd, value);
+		bool nonblock = (node->flags & O_NONBLOCK) != 0;
+		(void)pthread_mutex_unlock(&node->mutex);
 		if (nonblock || ec != EAGAIN) {
 			return ec;
 		}
@@ -51,8 +55,7 @@ timerfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
 	}
 
 	uint64_t nr_expired;
-	if ((ec = timerfd_ctx_read_or_block(&node->ctx.timerfd, &nr_expired,
-		 node->flags & TFD_NONBLOCK)) != 0) {
+	if ((ec = timerfd_ctx_read_or_block(node, &nr_expired)) != 0) {
 		return ec;
 	}
 
@@ -87,9 +90,12 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 		return EINVAL;
 	}
 
+	_Static_assert(TFD_CLOEXEC == O_CLOEXEC, "");
+	_Static_assert(TFD_NONBLOCK == O_NONBLOCK, "");
+
 	FDContextMapNode *node;
 	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
-	    (flags & TFD_CLOEXEC) != 0, &node);
+	    flags & (O_CLOEXEC | O_NONBLOCK), &node);
 	if (ec != 0) {
 		return ec;
 	}
@@ -149,9 +155,11 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
 	}
 
-	if ((ec = timerfd_ctx_settime(&node->ctx.timerfd,
-		 !!(flags & TFD_TIMER_ABSTIME), /**/
-		 new, old)) != 0) {
+	(void)pthread_mutex_lock(&node->mutex);
+	ec = timerfd_ctx_settime(&node->ctx.timerfd,
+	    !!(flags & TFD_TIMER_ABSTIME), new, old);
+	(void)pthread_mutex_unlock(&node->mutex);
+	if (ec != 0) {
 		return ec;
 	}
 
@@ -176,16 +184,21 @@ timerfd_settime(int fd, int flags, const struct itimerspec *new,
 	return 0;
 }
 
-static int
+static errno_t
 timerfd_gettime_impl(int fd, struct itimerspec *cur)
 {
+	errno_t ec;
+
 	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &timerfd_vtable) {
 		struct stat sb;
 		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
 	}
 
-	return timerfd_ctx_gettime(&node->ctx.timerfd, cur);
+	(void)pthread_mutex_lock(&node->mutex);
+	ec = timerfd_ctx_gettime(&node->ctx.timerfd, cur);
+	(void)pthread_mutex_unlock(&node->mutex);
+	return ec;
 }
 
 EPOLL_SHIM_EXPORT

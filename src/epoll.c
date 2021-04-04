@@ -33,17 +33,18 @@ static FDContextVTable const epollfd_vtable = {
 };
 
 static errno_t
-epoll_create_impl(FDContextMapNode **node_out, bool cloexec)
+epoll_create_impl(FDContextMapNode **node_out, int flags)
 {
 	errno_t ec;
 
 	FDContextMapNode *node;
-	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx, cloexec, &node);
+	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
+	    flags & (O_NONBLOCK | O_CLOEXEC), &node);
 	if (ec != 0) {
 		return ec;
 	}
 
-	node->flags = 0;
+	node->flags = flags & O_NONBLOCK;
 
 	if ((ec = epollfd_ctx_init(&node->ctx.epollfd, node->fd)) != 0) {
 		goto fail;
@@ -60,13 +61,13 @@ fail:
 }
 
 static int
-epoll_create_common(bool cloexec)
+epoll_create_common(int flags)
 {
 	errno_t ec;
 	int oe = errno;
 
 	FDContextMapNode *node;
-	ec = epoll_create_impl(&node, cloexec);
+	ec = epoll_create_impl(&node, flags);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
@@ -85,7 +86,7 @@ epoll_create(int size)
 		return -1;
 	}
 
-	return epoll_create_common(false);
+	return epoll_create_common(0);
 }
 
 EPOLL_SHIM_EXPORT
@@ -97,12 +98,16 @@ epoll_create1(int flags)
 		return -1;
 	}
 
-	return epoll_create_common((flags & EPOLL_CLOEXEC) != 0);
+	_Static_assert(EPOLL_CLOEXEC == O_CLOEXEC, "");
+
+	return epoll_create_common(flags);
 }
 
 static errno_t
 epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 {
+	errno_t ec;
+
 	if (!ev && op != EPOLL_CTL_DEL) {
 		return EFAULT;
 	}
@@ -118,8 +123,12 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 		fd2_node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd2);
 	}
 
-	return epollfd_ctx_ctl(&node->ctx.epollfd, op, fd2,
+	(void)pthread_mutex_lock(&node->mutex);
+	ec = epollfd_ctx_ctl(&node->ctx.epollfd, op, fd2,
 	    fd_context_map_node_as_pollable_node(fd2_node), ev);
+	(void)pthread_mutex_unlock(&node->mutex);
+
+	return ec;
 }
 
 EPOLL_SHIM_EXPORT
@@ -140,15 +149,20 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 }
 
 static errno_t
-epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
-    int *actual_cnt, struct timespec const *deadline, struct timespec *timeout,
+epollfd_ctx_wait_or_block(FDContextMapNode *node, /**/
+    struct epoll_event *ev, int cnt, int *actual_cnt,
+    struct timespec const *deadline, struct timespec *timeout,
     sigset_t const *sigs)
 {
 	errno_t ec;
 
+	EpollFDCtx *epollfd = &node->ctx.epollfd;
+
 	for (;;) {
-		if ((ec = epollfd_ctx_wait(epollfd, /**/
-			 ev, cnt, actual_cnt)) != 0) {
+		(void)pthread_mutex_lock(&node->mutex);
+		ec = epollfd_ctx_wait(epollfd, ev, cnt, actual_cnt);
+		(void)pthread_mutex_unlock(&node->mutex);
+		if (ec != 0) {
 			return ec;
 		}
 
@@ -158,7 +172,7 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 			return 0;
 		}
 
-		(void)pthread_mutex_lock(&epollfd->mutex);
+		(void)pthread_mutex_lock(&node->mutex);
 
 		nfds_t nfds = (nfds_t)(1 + epollfd->poll_fds_size);
 
@@ -166,14 +180,14 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		if (__builtin_mul_overflow(nfds, sizeof(struct pollfd),
 			&size)) {
 			ec = ENOMEM;
-			(void)pthread_mutex_unlock(&epollfd->mutex);
+			(void)pthread_mutex_unlock(&node->mutex);
 			return ec;
 		}
 
 		struct pollfd *pfds = malloc(size);
 		if (!pfds) {
 			ec = errno;
-			(void)pthread_mutex_unlock(&epollfd->mutex);
+			(void)pthread_mutex_unlock(&node->mutex);
 			return ec;
 		}
 
@@ -183,7 +197,7 @@ epollfd_ctx_wait_or_block(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 		++epollfd->nr_polling_threads;
 		(void)pthread_mutex_unlock(&epollfd->nr_polling_threads_mutex);
 
-		(void)pthread_mutex_unlock(&epollfd->mutex);
+		(void)pthread_mutex_unlock(&node->mutex);
 
 		/*
 		 * This surfaced a race condition when
@@ -276,10 +290,9 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 		return ec;
 	}
 
-	return epollfd_ctx_wait_or_block(&node->ctx.epollfd, ev, cnt,
-	    actual_cnt,			  /**/
-	    (to >= 0) ? &deadline : NULL, /**/
-	    (to >= 0) ? &timeout : NULL,  /**/
+	return epollfd_ctx_wait_or_block(node, ev, cnt, actual_cnt, /**/
+	    (to >= 0) ? &deadline : NULL,			    /**/
+	    (to >= 0) ? &timeout : NULL,			    /**/
 	    sigs);
 }
 
