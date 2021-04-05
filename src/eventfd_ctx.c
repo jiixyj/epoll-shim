@@ -11,10 +11,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#ifndef nitems
-#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
-#endif
-
 _Static_assert(sizeof(unsigned int) < sizeof(uint64_t), "");
 
 errno_t

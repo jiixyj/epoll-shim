@@ -12,10 +12,6 @@
 
 #include "timespec_util.h"
 
-#ifndef nitems
-#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
-#endif
-
 static bool
 timerfd_ctx_is_disarmed(TimerFDCtx const *timerfd)
 {
@@ -260,11 +256,10 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE | EV_RECEIPT, 0, 0, 0);
 
 	int n;
-	if ((n = kevent(timerfd->kq, /**/
-		 kev, nitems(kev), kev, nitems(kev), NULL)) < 0) {
+	if ((n = kevent(timerfd->kq, kev, 2, kev, 2, NULL)) < 0) {
 		return errno;
 	}
-	assert(n == nitems(kev));
+	assert(n == 2);
 	assert((kev[0].flags & EV_ERROR) != 0);
 	assert((kev[1].flags & EV_ERROR) != 0);
 
@@ -324,7 +319,7 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
 		struct kevent kev[1];
 
 		EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-		(void)kevent(timerfd->kq, kev, nitems(kev), NULL, 0, NULL);
+		(void)kevent(timerfd->kq, kev, 1, NULL, 0, NULL);
 
 		timerfd_ctx_disarm(timerfd);
 		goto success;

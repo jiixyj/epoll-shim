@@ -8,10 +8,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#ifndef nitems
-#define nitems(x) (sizeof((x)) / sizeof((x)[0]))
-#endif
-
 errno_t
 kqueue_event_init(KQueueEvent *kqueue_event, struct kevent *kevs,
     int *kevs_length, bool should_trigger)
@@ -88,7 +84,7 @@ kqueue_event_trigger(KQueueEvent *kqueue_event, int kq)
 	struct kevent kevs[1];
 	EV_SET(&kevs[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
 
-	if (kevent(kq, kevs, nitems(kevs), NULL, 0, NULL) < 0) {
+	if (kevent(kq, kevs, 1, NULL, 0, NULL) < 0) {
 		return errno;
 	}
 #else
@@ -116,7 +112,7 @@ kqueue_event_clear(KQueueEvent *kqueue_event, int kq)
 	struct kevent kevs[32];
 	int n;
 
-	while ((n = kevent(kq, NULL, 0, kevs, nitems(kevs),
+	while ((n = kevent(kq, NULL, 0, kevs, 32,
 		    &(struct timespec) { 0, 0 })) > 0) {
 	}
 
