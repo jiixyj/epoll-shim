@@ -78,10 +78,19 @@ timerfd_close(FDContextMapNode *node)
 	return timerfd_ctx_terminate(&node->ctx.timerfd);
 }
 
+static void
+timerfd_poll(FDContextMapNode *node, uint32_t *revents)
+{
+	(void)pthread_mutex_lock(&node->mutex);
+	timerfd_ctx_poll(&node->ctx.timerfd, revents);
+	(void)pthread_mutex_unlock(&node->mutex);
+}
+
 static FDContextVTable const timerfd_vtable = {
 	.read_fun = timerfd_read,
 	.write_fun = fd_context_default_write,
 	.close_fun = timerfd_close,
+	.poll_fun = timerfd_poll,
 };
 
 static errno_t
@@ -152,7 +161,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		return EFAULT;
 	}
 
-	if (flags & ~(TFD_TIMER_ABSTIME)) {
+	if (flags & ~(TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET)) {
 		return EINVAL;
 	}
 
@@ -164,7 +173,9 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 
 	(void)pthread_mutex_lock(&node->mutex);
 	ec = timerfd_ctx_settime(&node->ctx.timerfd,
-	    (flags & TFD_TIMER_ABSTIME) != 0, new, old);
+	    (flags & TFD_TIMER_ABSTIME) != 0,	    /**/
+	    (flags & TFD_TIMER_CANCEL_ON_SET) != 0, /**/
+	    new, old);
 	(void)pthread_mutex_unlock(&node->mutex);
 	if (ec != 0) {
 		return ec;

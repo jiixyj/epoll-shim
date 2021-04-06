@@ -31,7 +31,21 @@ reset_time(void)
 	(void)clock_settime(CLOCK_REALTIME, &current_time);
 }
 
-ATF_TC_WITHOUT_HEAD(timerfd_root__zero_read_on_abs_realtime);
+static void
+clock_settime_or_skip_test(clockid_t clockid, struct timespec const *ts)
+{
+	int r = clock_settime(clockid, ts);
+	if (r < 0 && errno == EPERM) {
+		atf_tc_skip("root required");
+	}
+	ATF_REQUIRE(r == 0);
+}
+
+ATF_TC(timerfd_root__zero_read_on_abs_realtime);
+ATF_TC_HEAD(timerfd_root__zero_read_on_abs_realtime, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__zero_read_on_abs_realtime, tc)
 {
 	int tfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
@@ -51,17 +65,11 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__zero_read_on_abs_realtime, tc)
 	ATF_REQUIRE(
 	    poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1, -1) == 1);
 
-	{
-		int r = clock_settime(CLOCK_REALTIME,
-		    &(struct timespec) {
-			.tv_sec = current_time.tv_sec - 1,
-			.tv_nsec = current_time.tv_nsec,
-		    });
-		if (r < 0 && errno == EPERM) {
-			atf_tc_skip("root required");
-		}
-		ATF_REQUIRE(r == 0);
-	}
+	clock_settime_or_skip_test(CLOCK_REALTIME,
+	    &(struct timespec) {
+		.tv_sec = current_time.tv_sec - 1,
+		.tv_nsec = current_time.tv_nsec,
+	    });
 
 	uint64_t exp;
 	ssize_t r = read(tfd, &exp, sizeof(exp));
@@ -87,7 +95,11 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__zero_read_on_abs_realtime, tc)
 	ATF_REQUIRE(close(tfd) == 0);
 }
 
-ATF_TC_WITHOUT_HEAD(timerfd_root__read_on_abs_realtime_no_interval);
+ATF_TC(timerfd_root__read_on_abs_realtime_no_interval);
+ATF_TC_HEAD(timerfd_root__read_on_abs_realtime_no_interval, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__read_on_abs_realtime_no_interval, tc)
 {
 	int tfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
@@ -107,17 +119,11 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__read_on_abs_realtime_no_interval, tc)
 	ATF_REQUIRE(
 	    poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1, -1) == 1);
 
-	{
-		int r = clock_settime(CLOCK_REALTIME,
-		    &(struct timespec) {
-			.tv_sec = current_time.tv_sec - 1,
-			.tv_nsec = current_time.tv_nsec,
-		    });
-		if (r < 0 && errno == EPERM) {
-			atf_tc_skip("root required");
-		}
-		ATF_REQUIRE(r == 0);
-	}
+	clock_settime_or_skip_test(CLOCK_REALTIME,
+	    &(struct timespec) {
+		.tv_sec = current_time.tv_sec - 1,
+		.tv_nsec = current_time.tv_nsec,
+	    });
 
 	uint64_t exp;
 	ssize_t r = read(tfd, &exp, sizeof(exp));
@@ -127,10 +133,106 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__read_on_abs_realtime_no_interval, tc)
 	ATF_REQUIRE(close(tfd) == 0);
 }
 
+ATF_TC(timerfd_root__cancel_on_set);
+ATF_TC_HEAD(timerfd_root__cancel_on_set, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
+ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set, tc)
+{
+	int tfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+	ATF_REQUIRE(tfd >= 0);
+
+	ATF_REQUIRE(clock_gettime(CLOCK_REALTIME, &current_time) == 0);
+	ATF_REQUIRE(atexit(reset_time) == 0);
+
+	ATF_REQUIRE(
+	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		&(struct itimerspec) {
+		    .it_value.tv_sec = current_time.tv_sec + 10,
+		    .it_value.tv_nsec = current_time.tv_nsec,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 0,
+		},
+		NULL) == 0);
+
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+
+	ATF_REQUIRE(
+	    poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1, -1) == 1);
+
+	ATF_REQUIRE_ERRNO(ECANCELED,
+	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		&(struct itimerspec) {
+		    .it_value.tv_sec = current_time.tv_sec,
+		    .it_value.tv_nsec = current_time.tv_nsec,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 0,
+		},
+		NULL) < 0);
+
+	ATF_REQUIRE(poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1,
+			800) == 1);
+
+	uint64_t exp;
+	ssize_t r;
+
+	r = read(tfd, &exp, sizeof(exp));
+	ATF_REQUIRE(r == (ssize_t)sizeof(exp));
+	ATF_REQUIRE(exp == 1);
+
+	ATF_REQUIRE(
+	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		&(struct itimerspec) {
+		    .it_value.tv_sec = current_time.tv_sec + 1,
+		    .it_value.tv_nsec = current_time.tv_nsec,
+		    .it_interval.tv_sec = 1,
+		    .it_interval.tv_nsec = 0,
+		},
+		NULL) == 0);
+
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+
+	ATF_REQUIRE(
+	    poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1, -1) == 1);
+
+	r = read(tfd, &exp, sizeof(exp));
+	ATF_REQUIRE_ERRNO(ECANCELED, r < 0);
+
+	current_time.tv_sec += 1;
+	r = read(tfd, &exp, sizeof(exp));
+	ATF_REQUIRE_MSG(r == (ssize_t)sizeof(exp), "%d %d", (int)r, errno);
+	ATF_REQUIRE(exp == 1);
+
+	ATF_REQUIRE(
+	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		&(struct itimerspec) {
+		    .it_value.tv_sec = current_time.tv_sec + 1,
+		    .it_value.tv_nsec = current_time.tv_nsec,
+		    .it_interval.tv_sec = 1,
+		    .it_interval.tv_nsec = 0,
+		},
+		NULL) == 0);
+
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+	current_time.tv_sec += 2;
+	ATF_REQUIRE(nanosleep(&(struct timespec) { .tv_sec = 2 }, NULL) == 0);
+
+	r = read(tfd, &exp, sizeof(exp));
+	ATF_REQUIRE_ERRNO(ECANCELED, r < 0);
+
+	current_time.tv_sec += 3;
+	ATF_REQUIRE(poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1,
+			3000) == 0);
+
+	ATF_REQUIRE(close(tfd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd_root__zero_read_on_abs_realtime);
 	ATF_TP_ADD_TC(tp, timerfd_root__read_on_abs_realtime_no_interval);
+	ATF_TP_ADD_TC(tp, timerfd_root__cancel_on_set);
 
 	return atf_no_error();
 }

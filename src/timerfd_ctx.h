@@ -21,6 +21,9 @@ typedef struct {
 
 	clockid_t clockid;
 	TimerType timer_type;
+	bool is_cancel_on_set;
+	bool force_cancel;
+	struct timespec monotonic_offset;
 	/*
 	 * Next expiration time, absolute (clock given by clockid).
 	 * If it_interval is != 0, it is a periodic timer.
@@ -33,10 +36,12 @@ typedef struct {
 errno_t timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid);
 errno_t timerfd_ctx_terminate(TimerFDCtx *timerfd);
 
-errno_t timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
+errno_t timerfd_ctx_settime(TimerFDCtx *timerfd, /**/
+    bool is_abstime, bool is_cancel_on_set,	 /**/
     struct itimerspec const *new, struct itimerspec *old);
 errno_t timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur);
 
 errno_t timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value);
+void timerfd_ctx_poll(TimerFDCtx *timerfd, uint32_t *revents);
 
 #endif

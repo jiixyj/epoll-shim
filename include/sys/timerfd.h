@@ -22,6 +22,7 @@ int timerfd_gettime(int, struct itimerspec *);
 
 
 #include <epoll-shim/detail/common.h>
+#include <epoll-shim/detail/poll.h>
 #include <epoll-shim/detail/read.h>
 
 

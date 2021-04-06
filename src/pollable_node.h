@@ -2,6 +2,7 @@
 #define POLLABLE_NODE_H
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <poll.h>
