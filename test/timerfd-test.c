@@ -87,7 +87,7 @@ wait_for_timerfd(int timerfd)
 	uint64_t timeouts;
 	ssize_t r = read(timerfd, &timeouts, sizeof(timeouts));
 
-	ATF_REQUIRE(r == (ssize_t)sizeof(timeouts));
+	ATF_REQUIRE_MSG(r == (ssize_t)sizeof(timeouts), "%d %d", (int)r, errno);
 	ATF_REQUIRE(timeouts > 0);
 	return timeouts;
 }
@@ -928,6 +928,40 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__unmodified_errno, tc)
 	ATF_REQUIRE(errno == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(timerfd__reset_to_very_long);
+ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_to_very_long, tc)
+{
+	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
+	    TFD_CLOEXEC | TFD_NONBLOCK);
+	ATF_REQUIRE(timerfd >= 0);
+	ATF_REQUIRE(errno == 0);
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0,
+			&(struct itimerspec) {
+			    .it_value.tv_sec = 0,
+			    .it_value.tv_nsec = 100000000,
+			},
+			NULL) == 0);
+	ATF_REQUIRE(errno == 0);
+
+	ATF_REQUIRE(timerfd_settime(timerfd, 0,
+			&(struct itimerspec) {
+			    .it_value.tv_sec = 630720000,
+			    .it_value.tv_nsec = 0,
+			},
+			NULL) == 0);
+	ATF_REQUIRE(errno == 0);
+
+	struct pollfd pfd = { .fd = timerfd, .events = POLLIN };
+	ATF_REQUIRE(poll(&pfd, 1, 500) == 0);
+	uint64_t timeouts;
+	ssize_t r = read(timerfd, &timeouts, sizeof(timeouts));
+	ATF_REQUIRE_ERRNO(EAGAIN, r < 0);
+
+	ATF_REQUIRE(close(timerfd) == 0);
+	ATF_REQUIRE(errno == EAGAIN);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd__many_timers);
@@ -948,6 +982,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, timerfd__argument_overflow);
 	ATF_TP_ADD_TC(tp, timerfd__short_evfilt_timer_timeout);
 	ATF_TP_ADD_TC(tp, timerfd__unmodified_errno);
+	ATF_TP_ADD_TC(tp, timerfd__reset_to_very_long);
 
 	return atf_no_error();
 }

@@ -169,23 +169,22 @@ static errno_t
 timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
     struct timespec const *current_time)
 {
-	struct kevent kev[2];
-	struct timespec diff_time;
-
 	assert(new->tv_sec != 0 || new->tv_nsec != 0);
 
+	struct timespec diff_time;
 	if (!timespecsub_safe(new, current_time, &diff_time) ||
 	    diff_time.tv_sec < 0) {
 		diff_time.tv_sec = 0;
 		diff_time.tv_nsec = 0;
 	}
 
+	struct kevent kev[2];
+	bool kev_is_set = false;
+
 	/* Let's hope nobody needs timeouts larger than 10 years. */
 	if (diff_time.tv_sec >= 315360000) {
-		return 0;
+		goto out;
 	}
-
-	bool kev_is_set = false;
 
 #ifdef NOTE_USECONDS
 	if (!kev_is_set) {
@@ -214,7 +213,7 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 #ifdef QUIRKY_EVFILT_TIMER
 		/* Let's hope 49 days are enough. */
 		if (diff_time.tv_sec >= 4233600) {
-			return 0;
+			goto out;
 		}
 #endif
 
@@ -227,12 +226,12 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 
 #ifdef QUIRKY_EVFILT_TIMER
 		if (millis != 0 && !round_up_millis(millis, &millis)) {
-			return 0;
+			goto out;
 		}
 #endif
 
 		if (__builtin_add_overflow(millis, 0, &kev[1].data)) {
-			return 0;
+			goto out;
 		}
 		EV_SET(&kev[1], 0, EVFILT_TIMER,      /**/
 		    EV_ADD | EV_ONESHOT | EV_RECEIPT, /**/
@@ -248,6 +247,7 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 	}
 #endif
 
+out:
 	/*
 	 * On some BSD's, EVFILT_TIMER ignores timer resets using
 	 * EV_ADD, so we have to do it manually.
@@ -255,14 +255,18 @@ timerfd_ctx_register_event(TimerFDCtx *timerfd, struct timespec const *new,
 	 */
 	EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE | EV_RECEIPT, 0, 0, 0);
 
+	int kev_size = kev_is_set ? 2 : 1;
 	int n;
-	if ((n = kevent(timerfd->kq, kev, 2, kev, 2, NULL)) < 0) {
+	if ((n = kevent(timerfd->kq, kev, kev_size, kev, kev_size, NULL)) < 0) {
 		return errno;
 	}
-	assert(n == 2);
+	assert(n == kev_size);
 	assert((kev[0].flags & EV_ERROR) != 0);
-	assert((kev[1].flags & EV_ERROR) != 0);
+	if (!kev_is_set) {
+		return 0;
+	}
 
+	assert((kev[1].flags & EV_ERROR) != 0);
 	return (errno_t)kev[1].data;
 }
 
@@ -301,6 +305,8 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
     struct itimerspec const *new, struct itimerspec *old)
 {
 	errno_t ec;
+
+	assert(new != NULL);
 
 	if (!itimerspec_is_valid(new)) {
 		return EINVAL;
