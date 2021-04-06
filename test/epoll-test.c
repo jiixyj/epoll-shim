@@ -744,23 +744,20 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__write_to_pipe_until_full, tcptr)
 ATF_TC_WITHOUT_HEAD(epoll__realtime_timer);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__realtime_timer, tcptr)
 {
-	struct itimerspec new_value;
 	struct timespec now;
-	uint64_t exp, tot_exp;
-	ssize_t s;
-
 	ATF_REQUIRE(clock_gettime(CLOCK_REALTIME, &now) == 0);
-
-	new_value.it_value.tv_sec = now.tv_sec + 1;
-	new_value.it_value.tv_nsec = now.tv_nsec;
-	new_value.it_interval.tv_sec = 0;
-	new_value.it_interval.tv_nsec = 100000000;
 
 	int fd = timerfd_create(CLOCK_REALTIME, 0);
 	ATF_REQUIRE(fd >= 0);
 
-	ATF_REQUIRE(timerfd_settime(fd, /**/
-			TFD_TIMER_ABSTIME, &new_value, NULL) == 0);
+	ATF_REQUIRE(timerfd_settime(fd, TFD_TIMER_ABSTIME,
+			&(struct itimerspec) {
+			    .it_value.tv_sec = now.tv_sec + 1,
+			    .it_value.tv_nsec = now.tv_nsec,
+			    .it_interval.tv_sec = 0,
+			    .it_interval.tv_nsec = 100000000,
+			},
+			NULL) == 0);
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);
@@ -773,13 +770,14 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__realtime_timer, tcptr)
 
 	struct epoll_event event_result;
 
-	for (tot_exp = 0; tot_exp < 3;) {
+	for (uint64_t tot_exp = 0; tot_exp < 3;) {
 		ATF_REQUIRE(epoll_wait(ep, &event_result, 1, -1) == 1);
 
 		ATF_REQUIRE(event_result.events == EPOLLIN);
 		ATF_REQUIRE(event_result.data.fd == fd);
 
-		s = read(fd, &exp, sizeof(uint64_t));
+		uint64_t exp;
+		ssize_t s = read(fd, &exp, sizeof(uint64_t));
 		ATF_REQUIRE(s == sizeof(uint64_t));
 
 		tot_exp += exp;
