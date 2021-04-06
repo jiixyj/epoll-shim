@@ -10,11 +10,17 @@
 #include <pthread.h>
 #include <time.h>
 
+typedef enum {
+	TIMER_TYPE_UNSPECIFIED,
+	TIMER_TYPE_RELATIVE,
+	TIMER_TYPE_ABSOLUTE,
+} TimerType;
+
 typedef struct {
 	int kq; // non owning
-	int flags;
 
 	clockid_t clockid;
+	TimerType timer_type;
 	/*
 	 * Next expiration time, absolute (clock given by clockid).
 	 * If it_interval is != 0, it is a periodic timer.

@@ -33,6 +33,7 @@ timerfd_ctx_disarm(TimerFDCtx *timerfd)
 {
 	timerfd->current_itimerspec.it_value.tv_sec = 0;
 	timerfd->current_itimerspec.it_value.tv_nsec = 0;
+	timerfd->timer_type = TIMER_TYPE_UNSPECIFIED;
 }
 
 static errno_t
@@ -56,6 +57,30 @@ nanos_to_ts(int64_t ts_nanos)
 		.tv_sec = ts_nanos / 1000000000,
 		.tv_nsec = ts_nanos % 1000000000,
 	};
+}
+
+static bool
+timerfd_ctx_can_jump(TimerFDCtx const *timerfd)
+{
+	return timerfd->clockid == CLOCK_REALTIME &&
+	    timerfd->timer_type == TIMER_TYPE_ABSOLUTE;
+}
+
+static errno_t
+timerfd_ctx_get_clocktime(clockid_t clockid, TimerType timer_type,
+    struct timespec *current_time)
+{
+	assert(timer_type != TIMER_TYPE_UNSPECIFIED);
+
+	if (clockid == CLOCK_REALTIME && timer_type == TIMER_TYPE_RELATIVE) {
+		clockid = CLOCK_MONOTONIC;
+	}
+
+	if (clock_gettime(clockid, current_time) < 0) {
+		return errno;
+	}
+
+	return 0;
 }
 
 static void
@@ -292,16 +317,20 @@ static void
 timerfd_ctx_gettime_impl(TimerFDCtx *timerfd, struct itimerspec *cur,
     struct timespec const *current_time)
 {
-	timerfd_ctx_update_to_current_time(timerfd, current_time);
+	if (current_time != NULL) {
+		timerfd_ctx_update_to_current_time(timerfd, current_time);
+	}
+
 	*cur = timerfd->current_itimerspec;
-	if (!timerfd_ctx_is_disarmed(timerfd)) {
+
+	if (current_time != NULL && !timerfd_ctx_is_disarmed(timerfd)) {
 		assert(timespeccmp(current_time, &cur->it_value, <));
 		timespecsub(&cur->it_value, current_time, &cur->it_value);
 	}
 }
 
 errno_t
-timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
+timerfd_ctx_settime(TimerFDCtx *timerfd, bool const is_abstime,
     struct itimerspec const *new, struct itimerspec *old)
 {
 	errno_t ec;
@@ -312,49 +341,69 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, bool is_abstime,
 		return EINVAL;
 	}
 
+	bool has_current_time = false;
 	struct timespec current_time;
-	if (clock_gettime(timerfd->clockid, &current_time) < 0) {
-		return errno;
-	}
 
 	if (old) {
-		timerfd_ctx_gettime_impl(timerfd, old, &current_time);
+		if (timerfd->timer_type != TIMER_TYPE_UNSPECIFIED) {
+			if ((ec = timerfd_ctx_get_clocktime(timerfd->clockid,
+				 timerfd->timer_type, &current_time)) != 0) {
+				return ec;
+			}
+			has_current_time = true;
+		}
+
+		timerfd_ctx_gettime_impl(timerfd, old,
+		    timerfd->timer_type == TIMER_TYPE_UNSPECIFIED ?
+			      NULL :
+			      &current_time);
 	}
 
 	if (new->it_value.tv_sec == 0 && new->it_value.tv_nsec == 0) {
-		struct kevent kev[1];
+		struct kevent kev;
 
-		EV_SET(&kev[0], 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-		(void)kevent(timerfd->kq, kev, 1, NULL, 0, NULL);
+		EV_SET(&kev, 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
+		(void)kevent(timerfd->kq, &kev, 1, NULL, 0, NULL);
 
 		timerfd_ctx_disarm(timerfd);
-		goto success;
-	}
-
-	struct itimerspec new_absolute;
-	if (is_abstime) {
-		new_absolute = *new;
 	} else {
-		new_absolute = (struct itimerspec) {
-			.it_interval = new->it_interval,
-			.it_value = current_time,
-		};
+		TimerType new_timer_type = is_abstime ? /**/
+			  TIMER_TYPE_ABSOLUTE :
+			  TIMER_TYPE_RELATIVE;
 
-		if (!timespecadd_safe(&new_absolute.it_value, &new->it_value,
-			&new_absolute.it_value)) {
-			ec = EINVAL;
+		if (!has_current_time ||
+		    timerfd->timer_type != new_timer_type) {
+			if ((ec = timerfd_ctx_get_clocktime(timerfd->clockid,
+				 new_timer_type, &current_time)) != 0) {
+				return ec;
+			}
+			has_current_time = true;
+		}
+
+		struct itimerspec new_absolute;
+		if (is_abstime) {
+			new_absolute = *new;
+		} else {
+			new_absolute = (struct itimerspec) {
+				.it_interval = new->it_interval,
+				.it_value = current_time,
+			};
+
+			if (!timespecadd_safe(&new_absolute.it_value,
+				&new->it_value, &new_absolute.it_value)) {
+				return EINVAL;
+			}
+		}
+
+		if ((ec = timerfd_ctx_register_event(timerfd,
+			 &new_absolute.it_value, &current_time)) != 0) {
 			return ec;
 		}
+
+		timerfd->current_itimerspec = new_absolute;
+		timerfd->timer_type = new_timer_type;
 	}
 
-	if ((ec = timerfd_ctx_register_event(timerfd, &new_absolute.it_value,
-		 &current_time)) != 0) {
-		return ec;
-	}
-
-	timerfd->current_itimerspec = new_absolute;
-
-success:
 	timerfd->nr_expirations = 0;
 	return 0;
 }
@@ -362,12 +411,20 @@ success:
 errno_t
 timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur)
 {
+	errno_t ec;
+
 	struct timespec current_time;
-	if (clock_gettime(timerfd->clockid, &current_time) < 0) {
-		return errno;
+	if (timerfd->timer_type != TIMER_TYPE_UNSPECIFIED) {
+		if ((ec = timerfd_ctx_get_clocktime(timerfd->clockid,
+			 timerfd->timer_type, &current_time)) != 0) {
+			return ec;
+		}
 	}
 
-	timerfd_ctx_gettime_impl(timerfd, cur, &current_time);
+	timerfd_ctx_gettime_impl(timerfd, cur,
+	    timerfd->timer_type == TIMER_TYPE_UNSPECIFIED ? /**/
+		      NULL :
+		      &current_time);
 
 	return 0;
 }
@@ -375,44 +432,71 @@ timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur)
 errno_t
 timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 {
-	for (;;) {
-		struct kevent kev;
+	errno_t ec;
 
+	if (timerfd->timer_type == TIMER_TYPE_UNSPECIFIED) {
+		return EAGAIN;
+	}
+
+	bool got_kevent;
+	{
+		struct kevent kev;
 		int n = kevent(timerfd->kq, NULL, 0, &kev, 1,
 		    &(struct timespec) { 0, 0 });
 		if (n < 0) {
 			return errno;
 		}
 
-		if (n == 0) {
-			return EAGAIN;
+		got_kevent = (n != 0);
+
+		if (got_kevent) {
+			assert(kev.filter == EVFILT_TIMER);
 		}
-
-		assert(kev.filter == EVFILT_TIMER);
-
-		struct timespec current_time;
-		if (clock_gettime(timerfd->clockid, &current_time) < 0) {
-			return errno;
-		}
-
-		timerfd_ctx_update_to_current_time(timerfd, &current_time);
-
-		uint64_t nr_expirations = timerfd->nr_expirations;
-		timerfd->nr_expirations = 0;
-
-		if (!timerfd_ctx_is_disarmed(timerfd)) {
-			if (timerfd_ctx_register_event(timerfd,
-				&timerfd->current_itimerspec.it_value,
-				&current_time) != 0) {
-				timerfd_ctx_disarm(timerfd);
-			}
-		}
-
-		if (nr_expirations == 0) {
-			return EAGAIN;
-		}
-
-		*value = nr_expirations;
-		return 0;
 	}
+
+	struct timespec current_time;
+	if ((ec = timerfd_ctx_get_clocktime(timerfd->clockid,
+		 timerfd->timer_type, &current_time)) != 0) {
+		return ec;
+	}
+
+	timerfd_ctx_update_to_current_time(timerfd, &current_time);
+
+	uint64_t nr_expirations = timerfd->nr_expirations;
+	timerfd->nr_expirations = 0;
+
+	if (nr_expirations == 0) {
+		if (!got_kevent) {
+			return EAGAIN;
+		}
+
+		assert(timerfd_ctx_can_jump(timerfd));
+
+		if (!timerfd_ctx_is_interval_timer(timerfd)) {
+			timerfd_ctx_disarm(timerfd);
+			nr_expirations = 1;
+		}
+	}
+
+	assert(nr_expirations > 0 ||
+	    (timerfd_ctx_can_jump(timerfd) &&
+		timerfd_ctx_is_interval_timer(timerfd)));
+
+	if (!timerfd_ctx_is_disarmed(timerfd)) {
+		if (timerfd_ctx_register_event(timerfd,
+			&timerfd->current_itimerspec.it_value,
+			&current_time) != 0) {
+			timerfd_ctx_disarm(timerfd);
+		}
+	} else {
+		if (!got_kevent) {
+			struct kevent kev;
+
+			EV_SET(&kev, 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
+			(void)kevent(timerfd->kq, &kev, 1, NULL, 0, NULL);
+		}
+	}
+
+	*value = nr_expirations;
+	return 0;
 }

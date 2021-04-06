@@ -30,6 +30,9 @@ timerfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
 		ec = timerfd_ctx_read(timerfd, value);
 		bool nonblock = (node->flags & O_NONBLOCK) != 0;
 		(void)pthread_mutex_unlock(&node->mutex);
+		if (nonblock && ec == 0 && *value == 0) {
+			ec = EAGAIN;
+		}
 		if (nonblock || ec != EAGAIN) {
 			return ec;
 		}
@@ -59,9 +62,13 @@ timerfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
 		return ec;
 	}
 
-	memcpy(buf, &nr_expired, sizeof(uint64_t));
+	if (nr_expired == 0) {
+		*bytes_transferred = 0;
+	} else {
+		memcpy(buf, &nr_expired, sizeof(uint64_t));
+		*bytes_transferred = sizeof(uint64_t);
+	}
 
-	*bytes_transferred = sizeof(uint64_t);
 	return 0;
 }
 
@@ -157,7 +164,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 
 	(void)pthread_mutex_lock(&node->mutex);
 	ec = timerfd_ctx_settime(&node->ctx.timerfd,
-	    !!(flags & TFD_TIMER_ABSTIME), new, old);
+	    (flags & TFD_TIMER_ABSTIME) != 0, new, old);
 	(void)pthread_mutex_unlock(&node->mutex);
 	if (ec != 0) {
 		return ec;
