@@ -22,6 +22,8 @@
 #include "epoll_shim_export.h"
 #include "timespec_util.h"
 
+#include <epoll-shim/runtime.h>
+
 #ifdef __NetBSD__
 #define ppoll pollts
 #endif
@@ -271,6 +273,91 @@ epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
 	RB_REMOVE(fd_context_map_, /**/
 	    &epoll_shim_ctx->fd_context_map, node);
 	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
+}
+
+static void
+epoll_shim_ctx_for_each(EpollShimCtx *epoll_shim_ctx,
+    void (*fun)(FDContextMapNode *node))
+{
+	FDContextMapNode *node;
+
+	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
+	RB_FOREACH (node, fd_context_map_, &epoll_shim_ctx->fd_context_map) {
+		fun(node);
+	}
+	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
+}
+
+static void
+trigger_realtime_change_notification(FDContextMapNode *node)
+{
+	if (node->vtable->realtime_change_fun != NULL) {
+		node->vtable->realtime_change_fun(node);
+	}
+}
+
+static void *
+realtime_step_detection(void *arg)
+{
+	EpollShimCtx *epoll_shim_ctx = arg;
+
+	for (;;) {
+		(void)nanosleep(&(struct timespec) { .tv_sec = 1 }, NULL);
+
+		struct timespec new_monotonic_offset;
+		if (timerfd_ctx_get_monotonic_offset(/**/
+			&new_monotonic_offset) != 0) {
+			continue;
+		}
+
+		if (new_monotonic_offset.tv_sec !=
+			epoll_shim_ctx->monotonic_offset.tv_sec ||
+		    new_monotonic_offset.tv_nsec !=
+			epoll_shim_ctx->monotonic_offset.tv_nsec) {
+			epoll_shim_ctx->monotonic_offset = new_monotonic_offset;
+			epoll_shim_ctx_for_each(epoll_shim_ctx,
+			    trigger_realtime_change_notification);
+		}
+	}
+
+	/* UNREACHABLE */
+}
+
+static errno_t
+epoll_shim_ctx_start_realtime_step_detection(EpollShimCtx *epoll_shim_ctx)
+{
+	errno_t ec;
+
+	if (epoll_shim_ctx->has_realtime_step_detector) {
+		return 0;
+	}
+
+	if ((ec = timerfd_ctx_get_monotonic_offset(
+		 &epoll_shim_ctx->monotonic_offset)) != 0) {
+		return ec;
+	}
+
+	sigset_t set;
+	if (sigfillset(&set) < 0) {
+		return errno;
+	}
+
+	sigset_t oldset;
+	if ((ec = pthread_sigmask(SIG_BLOCK, &set, &oldset)) != 0) {
+		return ec;
+	}
+
+	if ((ec = pthread_create(&epoll_shim_ctx->realtime_step_detector, NULL,
+		 realtime_step_detection, epoll_shim_ctx)) != 0) {
+		goto out;
+	}
+
+	(void)pthread_detach(epoll_shim_ctx->realtime_step_detector);
+	epoll_shim_ctx->has_realtime_step_detector = true;
+
+out:
+	(void)pthread_sigmask(SIG_SETMASK, &oldset, NULL);
+	return ec;
 }
 
 /**/
@@ -540,4 +627,19 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 
 	errno = oe;
 	return 0;
+}
+
+EPOLL_SHIM_EXPORT
+int
+epoll_shim__start_realtime_step_detection(void)
+{
+	errno_t ec;
+
+	int oe = errno;
+	(void)pthread_mutex_lock(&epoll_shim_ctx.mutex);
+	ec = epoll_shim_ctx_start_realtime_step_detection(&epoll_shim_ctx);
+	(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
+	errno = oe;
+
+	return ec;
 }

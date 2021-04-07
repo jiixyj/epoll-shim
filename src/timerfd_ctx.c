@@ -85,7 +85,7 @@ timerfd_ctx_get_clocktime(clockid_t clockid, TimerType timer_type,
 	return 0;
 }
 
-static errno_t
+errno_t
 timerfd_ctx_get_monotonic_offset(struct timespec *monotonic_offset)
 {
 	struct timeval boottime;
@@ -101,6 +101,74 @@ timerfd_ctx_get_monotonic_offset(struct timespec *monotonic_offset)
 	return 0;
 }
 
+static void timerfd_ctx_rearm_kevent(TimerFDCtx *timerfd,
+    struct timespec const *current_time,
+    bool need_kevent_delete_on_disarmed_timer);
+
+void
+timerfd_ctx_realtime_change(TimerFDCtx *timerfd)
+{
+	if (!timerfd_ctx_can_jump(timerfd)) {
+		return;
+	}
+
+	struct timespec monotonic_offset;
+	if (timerfd_ctx_get_monotonic_offset(&monotonic_offset) != 0) {
+		return;
+	}
+
+	if (timerfd->monotonic_offset.tv_sec == monotonic_offset.tv_sec &&
+	    timerfd->monotonic_offset.tv_nsec == monotonic_offset.tv_nsec) {
+		return;
+	}
+	timerfd->monotonic_offset = monotonic_offset;
+
+	if (!timerfd->is_cancel_on_set) {
+		struct pollfd pfd = { .fd = timerfd->kq, .events = POLLIN };
+		if (poll(&pfd, 1, 0) != 0) {
+			return;
+		}
+
+		struct timespec current_time;
+		if (timerfd_ctx_get_clocktime(timerfd->clockid,
+			timerfd->timer_type, &current_time) != 0) {
+			return;
+		}
+
+		/*
+		 * Slightly racy. The timer might have fired in the time
+		 * between our check with "poll" and the rearming below.
+		 *
+		 * To mitigate those kinds of races, TFD_TIMER_CANCEL_ON_SET
+		 * should be used anyway.
+		 */
+
+		timerfd_ctx_rearm_kevent(timerfd, &current_time, true);
+	} else {
+		timerfd->force_cancel = true;
+
+		struct kevent kev[2];
+
+		EV_SET(&kev[0], 1, EVFILT_TIMER, /**/
+		    EV_DELETE | EV_RECEIPT,	 /**/
+		    0, 0, 0);
+#ifdef NOTE_USECONDS
+		EV_SET(&kev[1], 1, EVFILT_TIMER,
+		    EV_ADD | EV_ONESHOT | EV_RECEIPT, /**/
+		    NOTE_USECONDS, 0, 0);
+#else
+		EV_SET(&kev[1], 1, EVFILT_TIMER,
+		    EV_ADD | EV_ONESHOT | EV_RECEIPT, /**/
+		    0, 0, 0);
+#ifdef QUIRK_EVFILT_TIMER_DISALLOWS_ONESHOT_TIMEOUT_ZERO
+		kev[1].data = 1;
+#endif
+#endif
+
+		(void)kevent(timerfd->kq, kev, 2, kev, 2, NULL);
+	}
+}
+
 static void
 timerfd_ctx_clear_force_cancel(TimerFDCtx *timerfd)
 {
@@ -114,33 +182,35 @@ timerfd_ctx_clear_force_cancel(TimerFDCtx *timerfd)
 	timerfd->force_cancel = false;
 }
 
-static errno_t
+static bool
 timerfd_ctx_check_for_cancel(TimerFDCtx *timerfd)
 {
-	errno_t ec;
-
-	if (!timerfd->is_cancel_on_set) {
-		timerfd_ctx_clear_force_cancel(timerfd);
-		return 0;
+	if (timerfd->clockid != CLOCK_REALTIME) {
+		return false;
 	}
 
-	struct timespec monotonic_offset;
-	if ((ec = timerfd_ctx_get_monotonic_offset(&monotonic_offset)) != 0) {
-		/*
-		 * If getting the offset fails here, assume
-		 * that it *hasn't* changed.
-		 */
-		monotonic_offset = timerfd->monotonic_offset;
-	}
+	bool is_stepped = false;
+	if (timerfd_ctx_can_jump(timerfd)) {
+		struct timespec monotonic_offset;
+		if (timerfd_ctx_get_monotonic_offset(&monotonic_offset) != 0) {
+			/*
+			 * If getting the offset fails here, assume
+			 * that it *hasn't* changed.
+			 */
+			monotonic_offset = timerfd->monotonic_offset;
+		}
 
-	bool is_cancelled = timerfd->force_cancel ||
-	    timerfd->monotonic_offset.tv_sec != monotonic_offset.tv_sec ||
-	    timerfd->monotonic_offset.tv_nsec != monotonic_offset.tv_nsec;
+		is_stepped = timerfd->force_cancel ||
+		    timerfd->monotonic_offset.tv_sec !=
+			monotonic_offset.tv_sec ||
+		    timerfd->monotonic_offset.tv_nsec !=
+			monotonic_offset.tv_nsec;
+		timerfd->monotonic_offset = monotonic_offset;
+	}
 
 	timerfd_ctx_clear_force_cancel(timerfd);
-	timerfd->monotonic_offset = monotonic_offset;
 
-	return is_cancelled ? ECANCELED : 0;
+	return is_stepped && timerfd->is_cancel_on_set;
 }
 
 static void
@@ -358,16 +428,12 @@ out:
 errno_t
 timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid)
 {
-	errno_t ec;
-
 	assert(clockid == CLOCK_MONOTONIC || clockid == CLOCK_REALTIME);
 
-	*timerfd = (TimerFDCtx) { .kq = kq, .clockid = (clockid_t)clockid };
-
-	if ((ec = timerfd_ctx_get_monotonic_offset(
-		 &timerfd->monotonic_offset)) != 0) {
-		return ec;
-	}
+	*timerfd = (TimerFDCtx) {
+		.kq = kq,
+		.clockid = (clockid_t)clockid,
+	};
 
 	return 0;
 }
@@ -408,6 +474,8 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, /**/
 	if (!itimerspec_is_valid(new)) {
 		return EINVAL;
 	}
+
+	bool const old_is_cancel_on_set = timerfd->is_cancel_on_set;
 
 	bool has_current_time = false;
 	struct timespec current_time;
@@ -477,7 +545,9 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, /**/
 	}
 
 	timerfd->nr_expirations = 0;
-	return timerfd_ctx_check_for_cancel(timerfd);
+	return (timerfd_ctx_check_for_cancel(timerfd) && old_is_cancel_on_set) ?
+		  ECANCELED :
+		  0;
 }
 
 errno_t
@@ -499,6 +569,27 @@ timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur)
 		      &current_time);
 
 	return 0;
+}
+
+static void
+timerfd_ctx_rearm_kevent(TimerFDCtx *timerfd,
+    struct timespec const *current_time,
+    bool need_kevent_delete_on_disarmed_timer)
+{
+	if (!timerfd_ctx_is_disarmed(timerfd)) {
+		if (timerfd_ctx_register_event(timerfd,
+			&timerfd->current_itimerspec.it_value,
+			current_time) != 0) {
+			timerfd_ctx_disarm(timerfd);
+		}
+	} else {
+		if (need_kevent_delete_on_disarmed_timer) {
+			struct kevent kev;
+
+			EV_SET(&kev, 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
+			(void)kevent(timerfd->kq, &kev, 1, NULL, 0, NULL);
+		}
+	}
 }
 
 errno_t
@@ -528,18 +619,21 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 		}
 	}
 
-	errno_t cancel_ec = 0;
-	if ((ec = timerfd_ctx_check_for_cancel(timerfd)) != 0) {
+	bool const is_cancelled = timerfd_ctx_check_for_cancel(timerfd);
+	if (is_cancelled) {
 		if (got_kevent && event_ident == 0) {
-			return ec;
+			return ECANCELED;
 		}
 
 		/*
 		 * Since we didn't get the "true" timer event (ident 0) in the
 		 * kevent call above, we need to fix it up because the
 		 * CLOCK_REALTIME was stepped.
+		 *
+		 * It's still a bit racy -- it is possible to observe a POLLIN
+		 * on the kq but a subsequent read could block, if a clock
+		 * change occured after the poll, but before the read.
 		 */
-		cancel_ec = ec;
 	}
 
 	/*
@@ -550,11 +644,11 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 	struct timespec current_time;
 	if ((ec = timerfd_ctx_get_clocktime(timerfd->clockid,
 		 timerfd->timer_type, &current_time)) != 0) {
-		return cancel_ec != 0 ? cancel_ec : ec;
+		return is_cancelled ? ECANCELED : ec;
 	}
 
 	uint64_t nr_expirations;
-	if (cancel_ec == 0) {
+	if (!is_cancelled) {
 		timerfd_ctx_update_to_current_time(timerfd, &current_time);
 
 		nr_expirations = timerfd->nr_expirations;
@@ -573,6 +667,7 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 			 * TFD_TIMER_CANCEL_ON_SET).
 			 */
 			if (timerfd->is_cancel_on_set) {
+				timerfd_ctx_disarm(timerfd);
 				return ECANCELED;
 			}
 
@@ -583,28 +678,16 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 		}
 	}
 
-	assert(cancel_ec != 0 || nr_expirations > 0 ||
+	assert(is_cancelled || nr_expirations > 0 ||
 	    (timerfd_ctx_can_jump(timerfd) &&
 		timerfd_ctx_is_interval_timer(timerfd) &&
 		!timerfd->is_cancel_on_set));
 
-	if (!timerfd_ctx_is_disarmed(timerfd)) {
-		if (timerfd_ctx_register_event(timerfd,
-			&timerfd->current_itimerspec.it_value,
-			&current_time) != 0) {
-			timerfd_ctx_disarm(timerfd);
-		}
-	} else {
-		if (!got_kevent) {
-			struct kevent kev;
+	timerfd_ctx_rearm_kevent(timerfd, &current_time,
+	    (!got_kevent || event_ident != 0));
 
-			EV_SET(&kev, 0, EVFILT_TIMER, EV_DELETE, 0, 0, 0);
-			(void)kevent(timerfd->kq, &kev, 1, NULL, 0, NULL);
-		}
-	}
-
-	if (cancel_ec != 0) {
-		return cancel_ec;
+	if (is_cancelled) {
+		return ECANCELED;
 	}
 
 	*value = nr_expirations;
@@ -619,37 +702,5 @@ timerfd_ctx_poll(TimerFDCtx *timerfd, uint32_t *revents)
 		return;
 	}
 
-	if (!timerfd->is_cancel_on_set) {
-		return;
-	}
-
-	struct timespec monotonic_offset;
-	if (timerfd_ctx_get_monotonic_offset(&monotonic_offset) != 0) {
-		return;
-	}
-
-	if (timerfd->monotonic_offset.tv_sec != monotonic_offset.tv_sec ||
-	    timerfd->monotonic_offset.tv_nsec != monotonic_offset.tv_nsec) {
-		timerfd->force_cancel = true;
-
-		struct kevent kev[2];
-
-		EV_SET(&kev[0], 1, EVFILT_TIMER, /**/
-		    EV_DELETE | EV_RECEIPT,	 /**/
-		    0, 0, 0);
-#ifdef NOTE_USECONDS
-		EV_SET(&kev[1], 1, EVFILT_TIMER,
-		    EV_ADD | EV_ONESHOT | EV_RECEIPT, /**/
-		    NOTE_USECONDS, 0, 0);
-#else
-		EV_SET(&kev[1], 1, EVFILT_TIMER,
-		    EV_ADD | EV_ONESHOT | EV_RECEIPT, /**/
-		    0, 0, 0);
-#ifdef QUIRK_EVFILT_TIMER_DISALLOWS_ONESHOT_TIMEOUT_ZERO
-		kev[1].data = 1;
-#endif
-#endif
-
-		(void)kevent(timerfd->kq, kev, 2, kev, 2, NULL);
-	}
+	timerfd_ctx_realtime_change(timerfd);
 }

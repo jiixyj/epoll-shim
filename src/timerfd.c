@@ -86,11 +86,20 @@ timerfd_poll(FDContextMapNode *node, uint32_t *revents)
 	(void)pthread_mutex_unlock(&node->mutex);
 }
 
+static void
+timerfd_realtime_change(FDContextMapNode *node)
+{
+	(void)pthread_mutex_lock(&node->mutex);
+	timerfd_ctx_realtime_change(&node->ctx.timerfd);
+	(void)pthread_mutex_unlock(&node->mutex);
+}
+
 static FDContextVTable const timerfd_vtable = {
 	.read_fun = timerfd_read,
 	.write_fun = fd_context_default_write,
 	.close_fun = timerfd_close,
 	.poll_fun = timerfd_poll,
+	.realtime_change_fun = timerfd_realtime_change,
 };
 
 static errno_t

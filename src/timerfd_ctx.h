@@ -44,4 +44,7 @@ errno_t timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur);
 errno_t timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value);
 void timerfd_ctx_poll(TimerFDCtx *timerfd, uint32_t *revents);
 
+errno_t timerfd_ctx_get_monotonic_offset(struct timespec *monotonic_offset);
+void timerfd_ctx_realtime_change(TimerFDCtx *timerfd);
+
 #endif

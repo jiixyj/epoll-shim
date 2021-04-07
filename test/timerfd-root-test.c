@@ -17,10 +17,15 @@
 
 #include <err.h>
 #include <poll.h>
+#include <pthread.h>
 #include <time.h>
 #include <unistd.h>
 
 #include <sys/timerfd.h>
+
+#ifndef __linux__
+#include <epoll-shim/runtime.h>
+#endif
 
 #include "atf-c-leakcheck.h"
 
@@ -228,11 +233,160 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set, tc)
 	ATF_REQUIRE(close(tfd) == 0);
 }
 
+ATF_TC(timerfd_root__cancel_on_set_init);
+ATF_TC_HEAD(timerfd_root__cancel_on_set_init, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
+ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set_init, tc)
+{
+	int tfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+	ATF_REQUIRE(tfd >= 0);
+
+	ATF_REQUIRE(clock_gettime(CLOCK_REALTIME, &current_time) == 0);
+	ATF_REQUIRE(atexit(reset_time) == 0);
+
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+
+	ATF_REQUIRE(
+	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		&(struct itimerspec) {
+		    .it_value.tv_sec = current_time.tv_sec + 10,
+		    .it_value.tv_nsec = current_time.tv_nsec,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 0,
+		},
+		NULL) == 0);
+
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+
+	ATF_REQUIRE_ERRNO(ECANCELED,
+	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		&(struct itimerspec) {
+		    .it_value.tv_sec = current_time.tv_sec + 10,
+		    .it_value.tv_nsec = current_time.tv_nsec,
+		    .it_interval.tv_sec = 0,
+		    .it_interval.tv_nsec = 0,
+		},
+		NULL) < 0);
+	ATF_REQUIRE(close(tfd) == 0);
+}
+
+static void *
+clock_change_thread(void *arg)
+{
+	(void)arg;
+
+	fprintf(stderr, "clock change\n");
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+
+	current_time.tv_sec += 2;
+	ATF_REQUIRE(nanosleep(&(struct timespec) { .tv_sec = 2 }, NULL) == 0);
+
+	fprintf(stderr, "clock change\n");
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+
+	return NULL;
+}
+
+ATF_TC(timerfd_root__clock_change_notification);
+ATF_TC_HEAD(timerfd_root__clock_change_notification, tc)
+{
+	atf_tc_set_md_var(tc, "timeout", "10");
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
+ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__clock_change_notification, tc)
+{
+	ATF_REQUIRE(clock_gettime(CLOCK_REALTIME, &current_time) == 0);
+	ATF_REQUIRE(atexit(reset_time) == 0);
+
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+
+#define TIME_T_MAX (time_t)((UINTMAX_C(1) << ((sizeof(time_t) << 3) - 1)) - 1)
+	struct itimerspec its = {
+		.it_value.tv_sec = TIME_T_MAX,
+	};
+#undef TIME_T_MAX
+
+	int tfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+	ATF_REQUIRE(tfd >= 0);
+
+	ATF_REQUIRE(
+	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		&its, NULL) == 0);
+
+#ifndef __linux__
+	ATF_REQUIRE(epoll_shim__start_realtime_step_detection() == 0);
+#endif
+
+	pthread_t clock_changer;
+	ATF_REQUIRE(pthread_create(&clock_changer, NULL, /**/
+			clock_change_thread, NULL) == 0);
+
+	uint64_t exp;
+	ssize_t r;
+
+	r = read(tfd, &exp, sizeof(exp));
+	ATF_REQUIRE_ERRNO(ECANCELED, r < 0);
+	fprintf(stderr, "clock change detected\n");
+
+	r = read(tfd, &exp, sizeof(exp));
+	ATF_REQUIRE_ERRNO(ECANCELED, r < 0);
+	fprintf(stderr, "clock change detected\n");
+
+	ATF_REQUIRE(pthread_join(clock_changer, NULL) == 0);
+
+	ATF_REQUIRE(close(tfd) == 0);
+}
+
+ATF_TC(timerfd_root__advance_time_no_cancel);
+ATF_TC_HEAD(timerfd_root__advance_time_no_cancel, tc)
+{
+	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+}
+ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__advance_time_no_cancel, tc)
+{
+	int tfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+	ATF_REQUIRE(tfd >= 0);
+
+	ATF_REQUIRE(clock_gettime(CLOCK_REALTIME, &current_time) == 0);
+	ATF_REQUIRE(atexit(reset_time) == 0);
+
+	ATF_REQUIRE(timerfd_settime(tfd, TFD_TIMER_ABSTIME,
+			&(struct itimerspec) {
+			    .it_value.tv_sec = current_time.tv_sec + 10,
+			    .it_value.tv_nsec = current_time.tv_nsec,
+			    .it_interval.tv_sec = 0,
+			    .it_interval.tv_nsec = 0,
+			},
+			NULL) == 0);
+
+	current_time.tv_sec += 9;
+	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
+	current_time.tv_sec -= 8;
+
+	ATF_REQUIRE(poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1,
+			1800) == 1);
+
+	uint64_t exp;
+	ssize_t r;
+
+	r = read(tfd, &exp, sizeof(exp));
+	ATF_REQUIRE(r == (ssize_t)sizeof(exp));
+	ATF_REQUIRE(exp == 1);
+
+	ATF_REQUIRE(close(tfd) == 0);
+}
+
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, timerfd_root__zero_read_on_abs_realtime);
 	ATF_TP_ADD_TC(tp, timerfd_root__read_on_abs_realtime_no_interval);
 	ATF_TP_ADD_TC(tp, timerfd_root__cancel_on_set);
+	ATF_TP_ADD_TC(tp, timerfd_root__cancel_on_set_init);
+	ATF_TP_ADD_TC(tp, timerfd_root__clock_change_notification);
+	ATF_TP_ADD_TC(tp, timerfd_root__advance_time_no_cancel);
 
 	return atf_no_error();
 }

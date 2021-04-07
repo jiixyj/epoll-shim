@@ -21,12 +21,14 @@ typedef errno_t (*fd_context_write_fun)(FDContextMapNode *node, /**/
 typedef errno_t (*fd_context_close_fun)(FDContextMapNode *node);
 typedef void (*fd_context_poll_fun)(FDContextMapNode *node, /**/
     uint32_t *revents);
+typedef void (*fd_context_realtime_change_fun)(FDContextMapNode *node);
 
 typedef struct {
 	fd_context_read_fun read_fun;
 	fd_context_write_fun write_fun;
 	fd_context_close_fun close_fun;
 	fd_context_poll_fun poll_fun;
+	fd_context_realtime_change_fun realtime_change_fun;
 } FDContextVTable;
 
 errno_t fd_context_default_read(FDContextMapNode *node, /**/
@@ -58,6 +60,11 @@ typedef RB_HEAD(fd_context_map_, fd_context_map_node_) FDContextMap;
 typedef struct {
 	FDContextMap fd_context_map;
 	pthread_mutex_t mutex;
+
+	/* members for realtime timer change detection */
+	bool has_realtime_step_detector;
+	pthread_t realtime_step_detector;
+	struct timespec monotonic_offset;
 } EpollShimCtx;
 
 extern EpollShimCtx epoll_shim_ctx;
