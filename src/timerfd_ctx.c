@@ -619,7 +619,7 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 		}
 	}
 
-	bool const is_cancelled = timerfd_ctx_check_for_cancel(timerfd);
+	bool is_cancelled = timerfd_ctx_check_for_cancel(timerfd);
 	if (is_cancelled) {
 		if (got_kevent && event_ident == 0) {
 			return ECANCELED;
@@ -635,6 +635,14 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 		 * change occured after the poll, but before the read.
 		 */
 	}
+
+	assert(/* Either everything is normal */
+	    !is_cancelled ||
+	    /* ...or we got a cancellation without kevent
+	     * (we just noticed a different boottime) */
+	    !got_kevent ||
+	    /* ...or we got a kevent (ident 1) cancellation */
+	    (got_kevent && event_ident != 0));
 
 	/*
 	 * clock_settime(CLOCK_REALTIME) could be called right here
@@ -667,13 +675,12 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 			 * TFD_TIMER_CANCEL_ON_SET).
 			 */
 			if (timerfd->is_cancel_on_set) {
-				timerfd_ctx_disarm(timerfd);
-				return ECANCELED;
-			}
-
-			if (!timerfd_ctx_is_interval_timer(timerfd)) {
-				timerfd_ctx_disarm(timerfd);
-				nr_expirations = 1;
+				is_cancelled = true;
+			} else {
+				if (!timerfd_ctx_is_interval_timer(timerfd)) {
+					timerfd_ctx_disarm(timerfd);
+					nr_expirations = 1;
+				}
 			}
 		}
 	}
