@@ -134,7 +134,7 @@ eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
 	}
 
 	node->vtable = &eventfd_vtable;
-	(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
+	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
 
 	*node_out = node;
 	return 0;

@@ -223,6 +223,16 @@ epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
 	return ec;
 }
 
+void
+epoll_shim_ctx_realize_node(EpollShimCtx *epoll_shim_ctx,
+    FDContextMapNode *node)
+{
+	(void)node;
+
+	assert(pthread_mutex_trylock(&epoll_shim_ctx->mutex) == EBUSY);
+	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
+}
+
 static FDContextMapNode *
 epoll_shim_ctx_find_node_impl(EpollShimCtx *epoll_shim_ctx, int fd)
 {

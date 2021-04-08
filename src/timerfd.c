@@ -133,7 +133,7 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 	}
 
 	node->vtable = &timerfd_vtable;
-	(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
+	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
 
 	*node_out = node;
 	return 0;
