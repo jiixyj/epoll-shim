@@ -62,9 +62,8 @@ typedef struct {
 	pthread_mutex_t mutex;
 
 	/* members for realtime timer change detection */
-	bool has_realtime_step_detector;
-	pthread_t realtime_step_detector;
-	struct timespec monotonic_offset;
+	uint64_t nr_fds_for_realtime_step_detector;
+	uint64_t realtime_step_detector_generation;
 } EpollShimCtx;
 
 extern EpollShimCtx epoll_shim_ctx;
@@ -79,6 +78,9 @@ FDContextMapNode *epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx,
     int fd);
 void epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
     FDContextMapNode *node);
+void
+epoll_shim_ctx_update_realtime_change_monitoring(EpollShimCtx *epoll_shim_ctx,
+    int change);
 
 /**/
 

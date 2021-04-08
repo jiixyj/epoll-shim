@@ -503,6 +503,7 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, /**/
 
 		timerfd_ctx_disarm(timerfd);
 		timerfd->is_cancel_on_set = false;
+		timerfd->is_abstime = false;
 	} else {
 		TimerType new_timer_type = is_abstime ? /**/
 			  TIMER_TYPE_ABSOLUTE :
@@ -541,6 +542,8 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, /**/
 		timerfd->timer_type = new_timer_type;
 		timerfd->is_cancel_on_set = is_cancel_on_set &&
 		    timerfd->clockid == CLOCK_REALTIME &&
+		    timerfd->timer_type == TIMER_TYPE_ABSOLUTE;
+		timerfd->is_abstime = /**/
 		    timerfd->timer_type == TIMER_TYPE_ABSOLUTE;
 	}
 
@@ -601,21 +604,27 @@ timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value)
 		return EAGAIN;
 	}
 
-	bool got_kevent;
+	bool got_kevent = false;
 	unsigned long event_ident;
 	{
-		struct kevent kev;
-		int n = kevent(timerfd->kq, NULL, 0, &kev, 1,
+		struct kevent kevs[3];
+		int n = kevent(timerfd->kq, NULL, 0, kevs, 3,
 		    &(struct timespec) { 0, 0 });
 		if (n < 0) {
 			return errno;
 		}
 
-		got_kevent = (n != 0);
+		for (int i = 0; i < n; ++i) {
+			assert(kevs[i].filter == EVFILT_TIMER);
 
-		if (got_kevent) {
-			event_ident = kev.ident;
-			assert(kev.filter == EVFILT_TIMER);
+			if (!got_kevent) {
+				event_ident = kevs[i].ident;
+			} else {
+				if (kevs[i].ident == 0) {
+					event_ident = 0;
+				}
+			}
+			got_kevent = true;
 		}
 	}
 

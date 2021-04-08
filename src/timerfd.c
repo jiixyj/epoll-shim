@@ -75,6 +75,11 @@ timerfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
 static errno_t
 timerfd_close(FDContextMapNode *node)
 {
+	int const old_can_jump = /**/
+	    node->ctx.timerfd.clockid == CLOCK_REALTIME &&
+	    node->ctx.timerfd.is_abstime;
+	epoll_shim_ctx_update_realtime_change_monitoring(&epoll_shim_ctx,
+	    -old_can_jump);
 	return timerfd_ctx_terminate(&node->ctx.timerfd);
 }
 
@@ -183,10 +188,25 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 	}
 
 	(void)pthread_mutex_lock(&node->mutex);
-	ec = timerfd_ctx_settime(&node->ctx.timerfd,
-	    (flags & TFD_TIMER_ABSTIME) != 0,	    /**/
-	    (flags & TFD_TIMER_CANCEL_ON_SET) != 0, /**/
-	    new, old);
+	{
+		int const old_can_jump = /**/
+		    node->ctx.timerfd.clockid == CLOCK_REALTIME &&
+		    node->ctx.timerfd.is_abstime;
+
+		ec = timerfd_ctx_settime(&node->ctx.timerfd,
+		    (flags & TFD_TIMER_ABSTIME) != 0,	    /**/
+		    (flags & TFD_TIMER_CANCEL_ON_SET) != 0, /**/
+		    new, old);
+
+		if (ec == 0 || ec == ECANCELED) {
+			int const new_can_jump = /**/
+			    node->ctx.timerfd.clockid == CLOCK_REALTIME &&
+			    node->ctx.timerfd.is_abstime;
+
+			epoll_shim_ctx_update_realtime_change_monitoring(
+			    &epoll_shim_ctx, new_can_jump - old_can_jump);
+		}
+	}
 	(void)pthread_mutex_unlock(&node->mutex);
 	if (ec != 0) {
 		return ec;

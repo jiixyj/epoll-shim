@@ -22,8 +22,6 @@
 #include "epoll_shim_export.h"
 #include "timespec_util.h"
 
-#include <epoll-shim/runtime.h>
-
 #ifdef __NetBSD__
 #define ppoll pollts
 #endif
@@ -289,10 +287,9 @@ static void
 epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
     void (*fun)(FDContextMapNode *node))
 {
-	FDContextMapNode *node;
-
 	assert(pthread_mutex_trylock(&epoll_shim_ctx->mutex) == EBUSY);
 
+	FDContextMapNode *node;
 	RB_FOREACH (node, fd_context_map_, &epoll_shim_ctx->fd_context_map) {
 		fun(node);
 	}
@@ -306,10 +303,20 @@ trigger_realtime_change_notification(FDContextMapNode *node)
 	}
 }
 
+struct realtime_step_detection_args {
+	EpollShimCtx *epoll_shim_ctx;
+	uint64_t generation;
+	struct timespec monotonic_offset;
+};
+
 static void *
 realtime_step_detection(void *arg)
 {
-	EpollShimCtx *epoll_shim_ctx = arg;
+	struct realtime_step_detection_args *args = arg;
+	EpollShimCtx *const epoll_shim_ctx = args->epoll_shim_ctx;
+	uint64_t const generation = args->generation;
+	struct timespec monotonic_offset = args->monotonic_offset;
+	free(args);
 
 	for (;;) {
 		(void)nanosleep(&(struct timespec) { .tv_sec = 1 }, NULL);
@@ -317,22 +324,29 @@ realtime_step_detection(void *arg)
 		struct timespec new_monotonic_offset;
 		if (timerfd_ctx_get_monotonic_offset(/**/
 			&new_monotonic_offset) != 0) {
-			continue;
+			/*
+			 * realtime timer step detection is best effort,
+			 * so bail out.
+			 */
+			break;
 		}
 
 		(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
-		if (new_monotonic_offset.tv_sec !=
-			epoll_shim_ctx->monotonic_offset.tv_sec ||
-		    new_monotonic_offset.tv_nsec !=
-			epoll_shim_ctx->monotonic_offset.tv_nsec) {
-			epoll_shim_ctx->monotonic_offset = new_monotonic_offset;
+		if (epoll_shim_ctx->realtime_step_detector_generation !=
+		    generation) {
+			(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
+			break;
+		}
+		if (new_monotonic_offset.tv_sec != monotonic_offset.tv_sec ||
+		    new_monotonic_offset.tv_nsec != monotonic_offset.tv_nsec) {
+			monotonic_offset = new_monotonic_offset;
 			epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
 			    trigger_realtime_change_notification);
 		}
 		(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 	}
 
-	/* UNREACHABLE */
+	return NULL;
 }
 
 static errno_t
@@ -340,12 +354,8 @@ epoll_shim_ctx_start_realtime_step_detection(EpollShimCtx *epoll_shim_ctx)
 {
 	errno_t ec;
 
-	if (epoll_shim_ctx->has_realtime_step_detector) {
-		return 0;
-	}
-
-	if ((ec = timerfd_ctx_get_monotonic_offset(
-		 &epoll_shim_ctx->monotonic_offset)) != 0) {
+	struct timespec monotonic_offset;
+	if ((ec = timerfd_ctx_get_monotonic_offset(&monotonic_offset)) != 0) {
 		return ec;
 	}
 
@@ -359,17 +369,61 @@ epoll_shim_ctx_start_realtime_step_detection(EpollShimCtx *epoll_shim_ctx)
 		return ec;
 	}
 
-	if ((ec = pthread_create(&epoll_shim_ctx->realtime_step_detector, NULL,
-		 realtime_step_detection, epoll_shim_ctx)) != 0) {
+	struct realtime_step_detection_args *args = malloc(
+	    sizeof(struct realtime_step_detection_args));
+	if (args == NULL) {
+		goto out;
+	}
+	*args = (struct realtime_step_detection_args) {
+		.epoll_shim_ctx = epoll_shim_ctx,
+		.generation = epoll_shim_ctx->realtime_step_detector_generation,
+		.monotonic_offset = monotonic_offset,
+	};
+
+	pthread_t realtime_step_detector;
+	if ((ec = pthread_create(&realtime_step_detector, NULL,
+		 realtime_step_detection, args)) != 0) {
+		free(args);
 		goto out;
 	}
 
-	(void)pthread_detach(epoll_shim_ctx->realtime_step_detector);
-	epoll_shim_ctx->has_realtime_step_detector = true;
+	(void)pthread_detach(realtime_step_detector);
 
 out:
 	(void)pthread_sigmask(SIG_SETMASK, &oldset, NULL);
 	return ec;
+}
+
+void
+epoll_shim_ctx_update_realtime_change_monitoring(EpollShimCtx *epoll_shim_ctx,
+    int change)
+{
+	if (change == 0) {
+		return;
+	}
+
+	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
+	uint64_t old_nr_fds = epoll_shim_ctx->nr_fds_for_realtime_step_detector;
+	if (change < 0) {
+		assert(old_nr_fds >= (uint64_t)-change);
+
+		epoll_shim_ctx->nr_fds_for_realtime_step_detector -=
+		    (uint64_t)-change;
+
+		if (epoll_shim_ctx->nr_fds_for_realtime_step_detector == 0) {
+			++epoll_shim_ctx->realtime_step_detector_generation;
+		}
+	} else {
+		epoll_shim_ctx->nr_fds_for_realtime_step_detector += /**/
+		    (uint64_t)change;
+
+		if (old_nr_fds == 0) {
+			/* best effort */
+			(void)epoll_shim_ctx_start_realtime_step_detection(
+			    epoll_shim_ctx);
+		}
+	}
+	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 }
 
 /**/
@@ -639,19 +693,4 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 
 	errno = oe;
 	return 0;
-}
-
-EPOLL_SHIM_EXPORT
-int
-epoll_shim__start_realtime_step_detection(void)
-{
-	errno_t ec;
-
-	int oe = errno;
-	(void)pthread_mutex_lock(&epoll_shim_ctx.mutex);
-	ec = epoll_shim_ctx_start_realtime_step_detection(&epoll_shim_ctx);
-	(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
-	errno = oe;
-
-	return ec;
 }

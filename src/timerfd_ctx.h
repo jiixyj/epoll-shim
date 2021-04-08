@@ -19,6 +19,8 @@ typedef enum {
 typedef struct {
 	int kq; // non owning
 
+	bool is_abstime;
+
 	clockid_t clockid;
 	TimerType timer_type;
 	bool is_cancel_on_set;

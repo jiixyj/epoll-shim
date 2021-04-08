@@ -23,10 +23,6 @@
 
 #include <sys/timerfd.h>
 
-#ifndef __linux__
-#include <epoll-shim/runtime.h>
-#endif
-
 #include "atf-c-leakcheck.h"
 
 static struct timespec current_time;
@@ -314,10 +310,6 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__clock_change_notification, tc)
 	ATF_REQUIRE(
 	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
 		&its, NULL) == 0);
-
-#ifndef __linux__
-	ATF_REQUIRE(epoll_shim__start_realtime_step_detection() == 0);
-#endif
 
 	pthread_t clock_changer;
 	ATF_REQUIRE(pthread_create(&clock_changer, NULL, /**/

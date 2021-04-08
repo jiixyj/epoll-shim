@@ -90,7 +90,6 @@ set(_headers
     "epoll-shim/detail/poll.h"
     "epoll-shim/detail/read.h"
     "epoll-shim/detail/write.h"
-    "epoll-shim/runtime.h"
     "sys/epoll.h"
     "sys/signalfd.h"
     "sys/timerfd.h")
