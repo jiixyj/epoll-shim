@@ -39,7 +39,7 @@ epoll_create_impl(FDContextMapNode **node_out, int flags)
 
 	FDContextMapNode *node;
 	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
-	    flags & (O_NONBLOCK | O_CLOEXEC), &node);
+	    flags & (O_CLOEXEC | O_NONBLOCK), &node);
 	if (ec != 0) {
 		return ec;
 	}
@@ -51,6 +51,8 @@ epoll_create_impl(FDContextMapNode **node_out, int flags)
 	}
 
 	node->vtable = &epollfd_vtable;
+	(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
+
 	*node_out = node;
 	return 0;
 

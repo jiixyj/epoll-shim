@@ -214,9 +214,9 @@ epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
 
 	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
 	ec = epoll_shim_ctx_create_node_impl(epoll_shim_ctx, kq, node);
-	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 
 	if (ec != 0) {
+		(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 		close(kq);
 	}
 
@@ -269,23 +269,23 @@ void
 epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
     FDContextMapNode *node)
 {
-	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
+	assert(pthread_mutex_trylock(&epoll_shim_ctx->mutex) == EBUSY);
 	RB_REMOVE(fd_context_map_, /**/
 	    &epoll_shim_ctx->fd_context_map, node);
 	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 }
 
 static void
-epoll_shim_ctx_for_each(EpollShimCtx *epoll_shim_ctx,
+epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
     void (*fun)(FDContextMapNode *node))
 {
 	FDContextMapNode *node;
 
-	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
+	assert(pthread_mutex_trylock(&epoll_shim_ctx->mutex) == EBUSY);
+
 	RB_FOREACH (node, fd_context_map_, &epoll_shim_ctx->fd_context_map) {
 		fun(node);
 	}
-	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 }
 
 static void
@@ -310,14 +310,16 @@ realtime_step_detection(void *arg)
 			continue;
 		}
 
+		(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
 		if (new_monotonic_offset.tv_sec !=
 			epoll_shim_ctx->monotonic_offset.tv_sec ||
 		    new_monotonic_offset.tv_nsec !=
 			epoll_shim_ctx->monotonic_offset.tv_nsec) {
 			epoll_shim_ctx->monotonic_offset = new_monotonic_offset;
-			epoll_shim_ctx_for_each(epoll_shim_ctx,
+			epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
 			    trigger_realtime_change_notification);
 		}
+		(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 	}
 
 	/* UNREACHABLE */

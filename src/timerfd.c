@@ -125,7 +125,7 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 		return ec;
 	}
 
-	node->flags = flags;
+	node->flags = flags & O_NONBLOCK;
 
 	if ((ec = timerfd_ctx_init(&node->ctx.timerfd, /**/
 		 node->fd, clockid)) != 0) {
@@ -133,6 +133,8 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 	}
 
 	node->vtable = &timerfd_vtable;
+	(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
+
 	*node_out = node;
 	return 0;
 
