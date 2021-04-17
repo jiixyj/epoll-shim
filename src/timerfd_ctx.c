@@ -88,6 +88,12 @@ timerfd_ctx_get_clocktime(clockid_t clockid, TimerType timer_type,
 errno_t
 timerfd_ctx_get_monotonic_offset(struct timespec *monotonic_offset)
 {
+#if defined(__DragonFly__)
+	if (sysctlbyname("kern.basetime", monotonic_offset,
+		&(size_t) { sizeof(*monotonic_offset) }, NULL, 0) < 0) {
+		return errno;
+	}
+#else
 	struct timeval boottime;
 	if (sysctl((int const[2]) { CTL_KERN, KERN_BOOTTIME }, 2, /**/
 		&boottime, &(size_t) { sizeof(boottime) }, NULL, 0) < 0) {
@@ -98,6 +104,7 @@ timerfd_ctx_get_monotonic_offset(struct timespec *monotonic_offset)
 		.tv_sec = boottime.tv_sec,
 		.tv_nsec = (long)boottime.tv_usec * 1000,
 	};
+#endif
 	return 0;
 }
 
