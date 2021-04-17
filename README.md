@@ -34,6 +34,13 @@ example:
   When the OS natively supports `eventfd`s (as is the case for FreeBSD >= 13)
   this library won't provide `eventfd` shims or the `sys/eventfd.h` header.
 
+- There is no proper notification mechanism for changes to the system
+  `CLOCK_REALTIME` clock on BSD systems. Also, `kevent` `EVFILT_TIMER`s use the
+  system monotonic clock as reference. Therefore, in order to implement
+  absolute (`TFD_TIMER_ABSTIME`) `CLOCK_REALTIME` `timerfd`s or cancellation
+  support (`TFD_TIMER_CANCEL_ON_SET`), a thread is spawned that periodically
+  polls the system boot time for changes to the realtime clock.
+
 The following operating systems are supported:
 
 - FreeBSD >= 11.4, >= 12.2, >= 13.0
@@ -63,6 +70,13 @@ To install (as root):
     cmake --build . --target install
 
 ## Changelog
+
+### 2021-04-17
+
+- Allow setting `O_NONBLOCK` flag with `fcntl` on created file descriptors.
+- Implement `TFD_TIMER_CANCEL_ON_SET` for `timerfd`.
+- Implement correction of absolute (`TFD_TIMER_ABSTIME`) `CLOCK_REALTIME`
+  `timerfd`s when the system time is stepped.
 
 ### 2021-03-22
 
