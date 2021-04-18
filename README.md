@@ -71,6 +71,10 @@ To install (as root):
 
 ## Changelog
 
+### 2021-04-18
+
+- Fix compiler warning when using shimmed `fcntl`.
+
 ### 2021-04-17
 
 - Allow setting `O_NONBLOCK` flag with `fcntl` on created file descriptors.
