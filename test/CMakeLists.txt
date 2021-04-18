@@ -44,6 +44,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 atf_test(tst-epoll)
 atf_test(tst-timerfd)
+
 add_executable(epoll-include-test epoll-include-test.c)
 target_link_libraries(epoll-include-test PRIVATE epoll-shim::epoll-shim)
 set_target_properties(
@@ -52,3 +53,10 @@ set_target_properties(
              C_STANDARD_REQUIRED YES #
              C_EXTENSIONS NO)
 add_test(NAME epoll-include-test COMMAND epoll-include-test)
+
+add_executable(fcntl-warning fcntl-warning.c)
+target_link_libraries(fcntl-warning PRIVATE epoll-shim::epoll-shim)
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+  target_compile_options(
+    fcntl-warning PRIVATE "-Werror" "-Wgnu-zero-variadic-macro-arguments")
+endif()
