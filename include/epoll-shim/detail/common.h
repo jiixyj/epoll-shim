@@ -5,7 +5,7 @@
 #include <unistd.h> /* IWYU pragma: keep */
 
 extern int epoll_shim_close(int);
-#define close epoll_shim_close
+#define close(fd) epoll_shim_close(fd)
 
 extern int epoll_shim_fcntl(int, int, ...);
 #define SHIM_SYS_SHIM_HELPERS_SEL(PREFIX, _2, _1, SUFFIX, ...) PREFIX##_##SUFFIX
