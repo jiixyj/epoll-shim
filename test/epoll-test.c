@@ -831,6 +831,57 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__simple_signalfd, tcptr)
 	ATF_REQUIRE(close(sfd) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(epoll__signalfd_poll_sigusr1);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__signalfd_poll_sigusr1, tcptr) {
+	/* This test is a simplified version of wayland's event_loop_signal() */
+	sigset_t mask;
+	int sfd;
+	struct signalfd_siginfo fdsi;
+	ssize_t s;
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGUSR1);
+	sfd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
+	ATF_REQUIRE(sfd >= 0);
+	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+
+	struct signal_event_source {
+	    int fd;
+	    int signum;
+	    void *data;
+	} event_data = {
+	    .fd = sfd,
+	    .signum = SIGUSR1,
+	    .data = (void *) (intptr_t) 0x12345678,
+	};
+
+	struct epoll_event event;
+	event.events = EPOLLIN;
+	event.data.ptr = &event_data;
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sfd, &event) == 0);
+
+	struct epoll_event event_results[32];
+	ATF_REQUIRE(epoll_wait(ep, event_results, 32, 0) == 0);
+
+	ATF_REQUIRE(kill(getpid(), SIGUSR1) == 0);
+
+	ATF_REQUIRE(epoll_wait(ep, event_results, 32, 0) == 1);
+	ATF_REQUIRE(event_results[0].events == EPOLLIN);
+	ATF_REQUIRE(event_results[0].data.ptr == &event_data);
+	ATF_REQUIRE(((struct signal_event_source *) event_results[0].data.ptr)->fd == sfd);
+
+	s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
+	ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
+
+	ATF_REQUIRE(fdsi.ssi_signo == SIGUSR1);
+
+	ATF_REQUIRE(close(ep) == 0);
+	ATF_REQUIRE(close(sfd) == 0);
+}
+
 static void *
 signalfd_thread(void *arg)
 {
@@ -1966,6 +2017,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__write_to_pipe_until_full);
 	ATF_TP_ADD_TC(tp, epoll__realtime_timer);
 	ATF_TP_ADD_TC(tp, epoll__simple_signalfd);
+	ATF_TP_ADD_TC(tp, epoll__signalfd_poll_sigusr1);
 	ATF_TP_ADD_TC(tp, epoll__signalfd_in_thread);
 	ATF_TP_ADD_TC(tp, epoll__socket_shutdown);
 	ATF_TP_ADD_TC(tp, epoll__epollhup_on_fresh_socket);
