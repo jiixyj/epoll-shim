@@ -832,7 +832,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__simple_signalfd, tcptr)
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__signalfd_poll_sigusr1);
-ATF_TC_BODY_FD_LEAKCHECK(epoll__signalfd_poll_sigusr1, tcptr) {
+ATF_TC_BODY_FD_LEAKCHECK(epoll__signalfd_poll_sigusr1, tcptr)
+{
 	/* This test is a simplified version of wayland's event_loop_signal() */
 	sigset_t mask;
 	int sfd;
@@ -849,13 +850,13 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__signalfd_poll_sigusr1, tcptr) {
 	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
 
 	struct signal_event_source {
-	    int fd;
-	    int signum;
-	    void *data;
+		int fd;
+		int signum;
+		void *data;
 	} event_data = {
-	    .fd = sfd,
-	    .signum = SIGUSR1,
-	    .data = (void *) (intptr_t) 0x12345678,
+		.fd = sfd,
+		.signum = SIGUSR1,
+		.data = (void *)(intptr_t)0x12345678,
 	};
 
 	struct epoll_event event;
@@ -864,19 +865,29 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__signalfd_poll_sigusr1, tcptr) {
 	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, sfd, &event) == 0);
 
 	struct epoll_event event_results[32];
-	ATF_REQUIRE(epoll_wait(ep, event_results, 32, 0) == 0);
 
-	ATF_REQUIRE(kill(getpid(), SIGUSR1) == 0);
+	for (int i = 0; i < 100; ++i) {
+		ATF_REQUIRE(epoll_wait(ep, event_results, 32, 0) == 0);
 
-	ATF_REQUIRE(epoll_wait(ep, event_results, 32, 0) == 1);
-	ATF_REQUIRE(event_results[0].events == EPOLLIN);
-	ATF_REQUIRE(event_results[0].data.ptr == &event_data);
-	ATF_REQUIRE(((struct signal_event_source *) event_results[0].data.ptr)->fd == sfd);
+		ATF_REQUIRE(kill(getpid(), SIGUSR1) == 0);
 
-	s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
-	ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
+		int r = epoll_wait(ep, event_results, 32, i == 0 ? -1 : 0);
+		if (i != 0 && r == 0) {
+			atf_tc_skip("EVFILT_SIGNAL might not immediately "
+				    "trigger after the kill(2)");
+		}
+		ATF_REQUIRE(r == 1);
+		ATF_REQUIRE(event_results[0].events == EPOLLIN);
+		ATF_REQUIRE(event_results[0].data.ptr == &event_data);
+		struct signal_event_source *event_data_ptr =
+		    event_results[0].data.ptr;
+		ATF_REQUIRE(event_data_ptr->fd == sfd);
 
-	ATF_REQUIRE(fdsi.ssi_signo == SIGUSR1);
+		s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
+		ATF_REQUIRE(s == sizeof(struct signalfd_siginfo));
+
+		ATF_REQUIRE(fdsi.ssi_signo == SIGUSR1);
+	}
 
 	ATF_REQUIRE(close(ep) == 0);
 	ATF_REQUIRE(close(sfd) == 0);
