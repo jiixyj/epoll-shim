@@ -41,12 +41,12 @@ example:
   support (`TFD_TIMER_CANCEL_ON_SET`), a thread is spawned that periodically
   polls the system boot time for changes to the realtime clock.
 
-The following operating systems are supported:
+The library is tested on the following operating systems:
 
-- FreeBSD >= 12.2, >= 13.0
-- NetBSD >= 9.1
-- OpenBSD >= 6.7
-- DragonFlyBSD >= 5.8.0
+- FreeBSD 12.2, 13.0
+- NetBSD 9.1
+- OpenBSD 6.7
+- DragonFlyBSD 5.8.0
 
 Be aware of some subtle kqueue bugs that may affect the emulated
 epoll behavior. I've marked tests that hit those behaviors as "skipped".
