@@ -656,7 +656,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	    "%x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 16384 ||
-		kev[0].data == 4096 /* On OpenBSD */ ||
+		kev[0].data == 4096 /* On OpenBSD < 7.0 */ ||
+		kev[0].data == 8192 /* On OpenBSD 7.0 */ ||
 		kev[0].data == 65536 /* On DragonFly */,
 	    "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
