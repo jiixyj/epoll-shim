@@ -12,6 +12,7 @@
 
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/param.h>
 #include <sys/signalfd.h>
 #include <sys/timerfd.h>
 
@@ -1813,9 +1814,15 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 		fd = signalfd(-1, &mask, 0);
 		ATF_REQUIRE(fd >= 0);
 		ATF_REQUIRE(write(fd, &dummy, 1) < 0);
-		/* FreeBSD's native write returns EOPNOTSUPP. write is not
-		 * shimmed when using native eventfds. */
-		ATF_REQUIRE(errno == EINVAL || errno == EOPNOTSUPP);
+		/*
+		 * FreeBSD's native write returns EOPNOTSUPP. write is not
+		 * shimmed when using native eventfds.
+		 *
+		 * NetBSD's native write return ENXIO.
+		 */
+		ATF_REQUIRE_MSG(errno == EINVAL || errno == EOPNOTSUPP ||
+			errno == ENXIO,
+		    "%d", errno);
 		ATF_REQUIRE(close(fd) == 0);
 	}
 
@@ -1823,10 +1830,15 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 		fd = timerfd_create(CLOCK_MONOTONIC, 0);
 		ATF_REQUIRE(fd >= 0);
 		ATF_REQUIRE(write(fd, &dummy, 1) < 0);
-		ATF_REQUIRE(errno == EINVAL || errno == EOPNOTSUPP);
+		/*
+		 * NetBSD's native write return EBADF.
+		 */
+		ATF_REQUIRE_MSG(errno == EINVAL || errno == EOPNOTSUPP ||
+			errno == EBADF,
+		    "%d", errno);
 #ifndef __linux__
-		ATF_REQUIRE_ERRNO(EINVAL,
-		    write(fd, &dummy, (size_t)SSIZE_MAX + 1) < 0);
+		ATF_REQUIRE(write(fd, &dummy, (size_t)SSIZE_MAX + 1) < 0);
+		ATF_REQUIRE_MSG(errno == EINVAL || errno == EBADF, "%d", errno);
 #endif
 		ATF_REQUIRE(close(fd) == 0);
 	}
@@ -1835,7 +1847,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_writes, tcptr)
 		fd = epoll_create1(EPOLL_CLOEXEC);
 		ATF_REQUIRE(fd >= 0);
 		ATF_REQUIRE(write(fd, &dummy, 1) < 0);
-		ATF_REQUIRE(errno == EINVAL || errno == EOPNOTSUPP);
+		ATF_REQUIRE_MSG(errno == EINVAL || errno == EOPNOTSUPP ||
+			errno == ENXIO /* NetBSD */,
+		    "%d", errno);
 		ATF_REQUIRE_ERRNO(EINVAL, read(fd, &dummy, 1) < 0);
 #ifndef __linux__
 		ATF_REQUIRE_ERRNO(EINVAL,
@@ -1993,9 +2007,6 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__fcntl_fl, tcptr)
 		ATF_REQUIRE(r == (O_RDWR | O_NONBLOCK));
 		ATF_REQUIRE(close(fd) == 0);
 	}
-	FCNTL_FL_TEST(timerfd_create, O_RDWR, CLOCK_MONOTONIC, 0);
-	FCNTL_FL_TEST(timerfd_create, O_RDWR | O_NONBLOCK, CLOCK_MONOTONIC,
-	    TFD_NONBLOCK);
 	sigset_t mask;
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
@@ -2003,6 +2014,15 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__fcntl_fl, tcptr)
 	FCNTL_FL_TEST(signalfd, O_RDWR | O_NONBLOCK, -1, &mask, SFD_NONBLOCK);
 	FCNTL_FL_TEST(eventfd, O_RDWR, 0, 0);
 	FCNTL_FL_TEST(eventfd, O_RDWR | O_NONBLOCK, 0, EFD_NONBLOCK);
+#if defined(__NetBSD__) && __NetBSD_Version__ >= 999009100
+	FCNTL_FL_TEST(timerfd_create, 0, CLOCK_MONOTONIC, 0);
+	FCNTL_FL_TEST(timerfd_create, 0 | O_NONBLOCK, CLOCK_MONOTONIC,
+	    TFD_NONBLOCK);
+#else
+	FCNTL_FL_TEST(timerfd_create, O_RDWR, CLOCK_MONOTONIC, 0);
+	FCNTL_FL_TEST(timerfd_create, O_RDWR | O_NONBLOCK, CLOCK_MONOTONIC,
+	    TFD_NONBLOCK);
+#endif
 }
 
 ATF_TP_ADD_TCS(tp)

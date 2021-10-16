@@ -295,6 +295,7 @@ epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
 	}
 }
 
+#ifndef HAVE_TIMERFD
 static void
 trigger_realtime_change_notification(FDContextMapNode *node)
 {
@@ -425,6 +426,7 @@ epoll_shim_ctx_update_realtime_change_monitoring(EpollShimCtx *epoll_shim_ctx,
 	}
 	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 }
+#endif
 
 /**/
 

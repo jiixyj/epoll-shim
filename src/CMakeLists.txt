@@ -29,8 +29,12 @@ macro(add_compat_target _name _condition)
 endmacro()
 
 include(CheckSymbolExists)
-# FreeBSD 13 supports native eventfd descriptors. Prefer them if available.
+# FreeBSD 13 and NetBSD 10 support native eventfd descriptors.
+# NetBSD 10 supports native timerfd descriptors.
+# Prefer them if available.
 check_symbol_exists(eventfd "sys/eventfd.h" HAVE_EVENTFD)
+check_symbol_exists(timerfd_create "sys/timerfd.h" HAVE_TIMERFD)
+
 check_symbol_exists(kqueue1 "sys/event.h" HAVE_KQUEUE1)
 add_compat_target(kqueue1 "NOT;HAVE_KQUEUE1")
 check_symbol_exists(sigandset "signal.h" HAVE_SIGANDSET)
@@ -65,13 +69,14 @@ add_library(
   epoll.c
   epollfd_ctx.c
   kqueue_event.c
-  timerfd.c
-  timerfd_ctx.c
   signalfd.c
   signalfd_ctx.c
   timespec_util.c)
 if(NOT HAVE_EVENTFD)
   target_sources(epoll-shim PRIVATE eventfd.c eventfd_ctx.c)
+endif()
+if(NOT HAVE_TIMERFD)
+  target_sources(epoll-shim PRIVATE timerfd.c timerfd_ctx.c)
 endif()
 include(GenerateExportHeader)
 generate_export_header(epoll-shim BASE_NAME epoll_shim)
@@ -80,21 +85,27 @@ target_link_libraries(
   PRIVATE Threads::Threads #
           queue-macros::queue-macros tree-macros::tree-macros #
           evfilt_timer_quirks compat_enable_kqueue1 compat_enable_sigops)
+if(HAVE_TIMERFD)
+  target_compile_definitions(epoll-shim PRIVATE HAVE_TIMERFD)
+endif()
 target_include_directories(
   epoll-shim
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/install-include>)
 
 set(_headers
-    "epoll-shim/detail/common.h"
-    "epoll-shim/detail/poll.h"
-    "epoll-shim/detail/read.h"
-    "epoll-shim/detail/write.h"
-    "sys/epoll.h"
-    "sys/signalfd.h"
-    "sys/timerfd.h")
+    "epoll-shim/detail/common.h" #
+    "epoll-shim/detail/poll.h" #
+    "epoll-shim/detail/read.h" #
+    "epoll-shim/detail/write.h" #
+    "sys/epoll.h" #
+    "sys/signalfd.h" #
+)
 if(NOT HAVE_EVENTFD)
   list(APPEND _headers "sys/eventfd.h")
+endif()
+if(NOT HAVE_TIMERFD)
+  list(APPEND _headers "sys/timerfd.h")
 endif()
 foreach(_header IN LISTS _headers)
   configure_file("${PROJECT_SOURCE_DIR}/include/${_header}"

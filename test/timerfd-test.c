@@ -436,8 +436,14 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_checks, tc)
 			.it_interval.tv_sec = 0,
 			.it_interval.tv_nsec = 100000000,
 		};
-		ATF_REQUIRE_ERRNO(EINVAL,
-		    timerfd_settime(timerfd, 0, &time, NULL) < 0);
+		int r = timerfd_settime(timerfd, 0, &time, NULL);
+#if defined(__NetBSD__)
+		if (r == 0) {
+			atf_tc_skip(
+			    "NetBSD timerfd_settime does not check time");
+		}
+#endif
+		ATF_REQUIRE_ERRNO(EINVAL, r < 0);
 	}
 	{
 		time = (struct itimerspec) {
@@ -802,7 +808,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__short_evfilt_timer_timeout, tc)
 
 	bool returns_early = false;
 
-#ifdef __NetBSD__
+#if defined(__NetBSD__) && __NetBSD_Version__ < 999009100
 	/*
 	 * Expect that NetBSD's EVFILT_TIMER returns early at some point. The
 	 * test should exceed the timeout and thus fail if/when this bug is
@@ -842,7 +848,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__short_evfilt_timer_timeout, tc)
 	}
 
 check:
-#ifdef __NetBSD__
+#if defined(__NetBSD__) && __NetBSD_Version__ < 999009100
 	ATF_REQUIRE(returns_early);
 #else
 	ATF_REQUIRE(!returns_early);

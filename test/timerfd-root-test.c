@@ -49,6 +49,8 @@ ATF_TC_HEAD(timerfd_root__zero_read_on_abs_realtime, tc)
 }
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__zero_read_on_abs_realtime, tc)
 {
+	bool netbsd_quirks = false;
+
 	int tfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
 	ATF_REQUIRE(tfd >= 0);
 
@@ -74,12 +76,29 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__zero_read_on_abs_realtime, tc)
 
 	uint64_t exp;
 	ssize_t r = read(tfd, &exp, sizeof(exp));
-	ATF_REQUIRE(r == 0);
+	if (
+#ifdef __NetBSD__
+	    r == sizeof(exp) && exp == 1
+#else
+	    false
+#endif
+	) {
+		netbsd_quirks = true;
+	} else {
+		ATF_REQUIRE_MSG(r == 0, "r: %d, errno: %d", (int)r, errno);
+	}
 
 	{
 		int r = fcntl(tfd, F_GETFL);
 		ATF_REQUIRE(r >= 0);
 		r = fcntl(tfd, F_SETFL, r | O_NONBLOCK);
+#ifdef __NetBSD__
+		/* EPASSTHROUGH in userspace, should not happen. */
+		if (r < 0 && errno == -4) {
+			atf_tc_skip(
+			    "NetBSD's native timerfd does not support F_SETFL.");
+		}
+#endif
 		ATF_REQUIRE(r >= 0);
 	}
 
@@ -94,6 +113,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__zero_read_on_abs_realtime, tc)
 	ATF_REQUIRE(exp == 1);
 
 	ATF_REQUIRE(close(tfd) == 0);
+
+	if (netbsd_quirks) {
+		atf_tc_skip("NetBSD has some timerfd quirks");
+	}
 }
 
 ATF_TC(timerfd_root__read_on_abs_realtime_no_interval);
@@ -141,6 +164,8 @@ ATF_TC_HEAD(timerfd_root__cancel_on_set, tc)
 }
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set, tc)
 {
+	bool netbsd_quirks = false;
+
 	int tfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
 	ATF_REQUIRE(tfd >= 0);
 
@@ -162,15 +187,28 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set, tc)
 	ATF_REQUIRE(
 	    poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1, -1) == 1);
 
-	ATF_REQUIRE_ERRNO(ECANCELED,
-	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
-		&(struct itimerspec) {
-		    .it_value.tv_sec = current_time.tv_sec,
-		    .it_value.tv_nsec = current_time.tv_nsec,
-		    .it_interval.tv_sec = 0,
-		    .it_interval.tv_nsec = 0,
-		},
-		NULL) < 0);
+	{
+		int r = timerfd_settime(tfd,
+		    TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		    &(struct itimerspec) {
+			.it_value.tv_sec = current_time.tv_sec,
+			.it_value.tv_nsec = current_time.tv_nsec,
+			.it_interval.tv_sec = 0,
+			.it_interval.tv_nsec = 0,
+		    },
+		    NULL);
+		if (
+#ifdef __NetBSD__
+		    r == 0
+#else
+		    false
+#endif
+		) {
+			netbsd_quirks = true;
+		} else {
+			ATF_REQUIRE_ERRNO(ECANCELED, r < 0);
+		}
+	}
 
 	ATF_REQUIRE(poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1,
 			800) == 1);
@@ -200,10 +238,21 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set, tc)
 	r = read(tfd, &exp, sizeof(exp));
 	ATF_REQUIRE_ERRNO(ECANCELED, r < 0);
 
-	current_time.tv_sec += 1;
 	r = read(tfd, &exp, sizeof(exp));
-	ATF_REQUIRE_MSG(r == (ssize_t)sizeof(exp), "%d %d", (int)r, errno);
-	ATF_REQUIRE(exp == 1);
+	if (
+#ifdef __NetBSD__
+	    r < 0 && errno == ECANCELED
+#else
+	    false
+#endif
+	) {
+		netbsd_quirks = true;
+	} else {
+		current_time.tv_sec += 1;
+		ATF_REQUIRE_MSG(r == (ssize_t)sizeof(exp), "%d %d", (int)r,
+		    errno);
+		ATF_REQUIRE(exp == 1);
+	}
 
 	ATF_REQUIRE(
 	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
@@ -222,11 +271,25 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set, tc)
 	r = read(tfd, &exp, sizeof(exp));
 	ATF_REQUIRE_ERRNO(ECANCELED, r < 0);
 
-	current_time.tv_sec += 3;
-	ATF_REQUIRE(poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1,
-			3000) == 0);
+	r = poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1, 3000);
+	if (
+#ifdef __NetBSD__
+	    r == 1
+#else
+	    false
+#endif
+	) {
+		netbsd_quirks = true;
+	} else {
+		ATF_REQUIRE(r == 0);
+		current_time.tv_sec += 3;
+	}
 
 	ATF_REQUIRE(close(tfd) == 0);
+
+	if (netbsd_quirks) {
+		atf_tc_skip("NetBSD has some timerfd quirks");
+	}
 }
 
 ATF_TC(timerfd_root__cancel_on_set_init);
@@ -256,15 +319,26 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set_init, tc)
 
 	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
 
-	ATF_REQUIRE_ERRNO(ECANCELED,
-	    timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
-		&(struct itimerspec) {
-		    .it_value.tv_sec = current_time.tv_sec + 10,
-		    .it_value.tv_nsec = current_time.tv_nsec,
-		    .it_interval.tv_sec = 0,
-		    .it_interval.tv_nsec = 0,
-		},
-		NULL) < 0);
+	int r = timerfd_settime(tfd,
+	    TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+	    &(struct itimerspec) {
+		.it_value.tv_sec = current_time.tv_sec + 10,
+		.it_value.tv_nsec = current_time.tv_nsec,
+		.it_interval.tv_sec = 0,
+		.it_interval.tv_nsec = 0,
+	    },
+	    NULL);
+	if (
+#ifdef __NetBSD__
+	    r == 0
+#else
+	    false
+#endif
+	) {
+		atf_tc_skip("NetBSD has some timerfd quirks");
+	} else {
+		ATF_REQUIRE_ERRNO(ECANCELED, r < 0);
+	}
 	ATF_REQUIRE(close(tfd) == 0);
 }
 
@@ -357,8 +431,16 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__advance_time_no_cancel, tc)
 	clock_settime_or_skip_test(CLOCK_REALTIME, &current_time);
 	current_time.tv_sec -= 8;
 
-	ATF_REQUIRE(poll(&(struct pollfd) { .fd = tfd, .events = POLLIN }, 1,
-			1800) == 1);
+	{
+		int r = poll(&(struct pollfd) { .fd = tfd, .events = POLLIN },
+		    1, 1800);
+#ifdef __NetBSD__
+		if (r == 0) {
+			atf_tc_skip("NetBSD has some timerfd quirks");
+		}
+#endif
+		ATF_REQUIRE(r == 1);
+	}
 
 	uint64_t exp;
 	ssize_t r;

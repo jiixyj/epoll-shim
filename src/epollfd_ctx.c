@@ -7,6 +7,7 @@
 #endif
 #include <sys/event.h>
 #include <sys/ioctl.h>
+#include <sys/param.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -518,18 +519,25 @@ registered_fds_node_register_for_completion(int *kq,
 	struct kevent kev[3];
 	int n = 0;
 
+	/* EV_ONESHOT on NetBSD current clobbers `udata`. */
+#if defined(__NetBSD__) && __NetBSD_Version__ >= 999009100
+#define MY_EV_ONESHOT EV_DISPATCH
+#else
+#define MY_EV_ONESHOT EV_ONESHOT
+#endif
+
 	if (fd2_node->has_evfilt_read && !fd2_node->got_evfilt_read) {
 		EV_SET(&kev[n++], (unsigned int)fd2_node->fd, EVFILT_READ,
-		    EV_ADD | EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
+		    EV_ADD | MY_EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
 	}
 	if (fd2_node->has_evfilt_write && !fd2_node->got_evfilt_write) {
 		EV_SET(&kev[n++], (unsigned int)fd2_node->fd, EVFILT_WRITE,
-		    EV_ADD | EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
+		    EV_ADD | MY_EV_ONESHOT | EV_RECEIPT, 0, 0, fd2_node);
 	}
 	if (fd2_node->has_evfilt_except && !fd2_node->got_evfilt_except) {
 #ifdef EVFILT_EXCEPT
 		EV_SET(&kev[n++], (unsigned int)fd2_node->fd, EVFILT_EXCEPT,
-		    EV_ADD | EV_ONESHOT | EV_RECEIPT, NOTE_OOB, 0, fd2_node);
+		    EV_ADD | MY_EV_ONESHOT | EV_RECEIPT, NOTE_OOB, 0, fd2_node);
 #else
 		assert(0);
 #endif

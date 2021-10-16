@@ -573,6 +573,12 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__toggle_nonblock, tc)
 	int r = fcntl(efd, F_GETFL);
 	ATF_REQUIRE(r >= 0);
 	r = fcntl(efd, F_SETFL, r | O_NONBLOCK);
+#ifdef __NetBSD__
+	if (r < 0 && errno == EOPNOTSUPP) {
+		atf_tc_skip(
+		    "NetBSD's native eventfd does not support F_SETFL.");
+	}
+#endif
 	ATF_REQUIRE(r >= 0);
 
 	uint64_t value;

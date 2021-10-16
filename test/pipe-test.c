@@ -683,7 +683,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec) { 0, 0 });
-#if defined(__DragonFly__)
+#if defined(__DragonFly__) || defined(__NetBSD__)
 	ATF_REQUIRE(r == 1);
 	ATF_REQUIRE_MSG(kev[0].filter == EVFILT_READ, "%d", kev[0].filter);
 #else
@@ -899,7 +899,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	ATF_REQUIRE(close(p[0]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-#ifdef __DragonFly__
+#if defined(__DragonFly__) || defined(__NetBSD__)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 2);
 	int index = 1;
 #else
@@ -946,7 +946,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	will_notice_new_readers = false;
 #endif
 	if (!will_notice_new_readers) {
-		atf_tc_skip("FreeBSD/Linux FIFOs don't notify on new readers");
+		atf_tc_skip(
+		    "FreeBSD/Linux/NetBSD FIFOs don't notify on new readers");
 	} else {
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 		ATF_REQUIRE(eps[0].events == EPOLLOUT);
