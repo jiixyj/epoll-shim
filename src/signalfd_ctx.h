@@ -37,7 +37,7 @@ typedef struct {
 	uint8_t pad[46];
 } SignalFDCtxSiginfo;
 
-errno_t signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs);
+errno_t signalfd_ctx_init(SignalFDCtx *signalfd, int kq, sigset_t const *sigs);
 errno_t signalfd_ctx_terminate(SignalFDCtx *signalfd);
 
 errno_t signalfd_ctx_read(SignalFDCtx *signalfd, SignalFDCtxSiginfo *siginfo);

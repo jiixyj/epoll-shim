@@ -518,7 +518,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 #endif
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
-	const int pipe_buf =
+	int const pipe_buf =
 #ifdef __DragonFly__
 	    16384
 #else
@@ -723,7 +723,7 @@ try_again:
 
 	ATF_REQUIRE(read(p[0], &c, 1) == 1);
 
-	const int pipe_buf =
+	int const pipe_buf =
 #ifdef __DragonFly__
 	    65536
 #else

@@ -40,7 +40,7 @@ decrement_malloc_fail_cnt(void)
 }
 
 static void *
-dlsym_wrapper(void *restrict handle, const char *restrict symbol)
+dlsym_wrapper(void *restrict handle, char const *restrict symbol)
 {
 	// write(2, "dlsymen\n", 8);
 
@@ -182,7 +182,7 @@ realloc(void *ptr, size_t size)
 
 int
 pthread_mutex_init(pthread_mutex_t *restrict mutex,
-    const pthread_mutexattr_t *restrict attr)
+    pthread_mutexattr_t const *restrict attr)
 {
 	// write(2, "mutexi\n", 7);
 
@@ -191,9 +191,9 @@ pthread_mutex_init(pthread_mutex_t *restrict mutex,
 	}
 
 	int (*real_pthread_mutex_init)(pthread_mutex_t *restrict,
-	    const pthread_mutexattr_t *restrict) =
+	    pthread_mutexattr_t const *restrict) =
 	    (int (*)(pthread_mutex_t *restrict,
-		const pthread_mutexattr_t *restrict))dlsym_wrapper(RTLD_NEXT,
+		pthread_mutexattr_t const *restrict))dlsym_wrapper(RTLD_NEXT,
 		"pthread_mutex_init");
 
 	decrement_malloc_fail_cnt();

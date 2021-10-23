@@ -469,7 +469,7 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__threads_blocking, tc)
 	};
 	/* clang-format on */
 
-	const int LOOP = 1000;
+	int const LOOP = 1000;
 #define THREADS ((int)(sizeof(count) / sizeof(count[0])))
 	int efd;
 	pthread_t thread[THREADS];

@@ -44,7 +44,7 @@ signalfd_signal_handler(int signo)
 }
 
 errno_t
-signalfd_ctx_init(SignalFDCtx *signalfd, int kq, const sigset_t *sigs)
+signalfd_ctx_init(SignalFDCtx *signalfd, int kq, sigset_t const *sigs)
 {
 	errno_t ec;
 

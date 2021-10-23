@@ -17,7 +17,7 @@ typedef struct fd_context_map_node_ FDContextMapNode;
 typedef errno_t (*fd_context_read_fun)(FDContextMapNode *node, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred);
 typedef errno_t (*fd_context_write_fun)(FDContextMapNode *node, /**/
-    const void *buf, size_t nbytes, size_t *bytes_transferred);
+    void const *buf, size_t nbytes, size_t *bytes_transferred);
 typedef errno_t (*fd_context_close_fun)(FDContextMapNode *node);
 typedef void (*fd_context_poll_fun)(FDContextMapNode *node, /**/
     uint32_t *revents);

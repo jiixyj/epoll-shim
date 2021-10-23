@@ -114,7 +114,7 @@ static FDContextVTable const signalfd_vtable = {
 };
 
 static errno_t
-signalfd_impl(FDContextMapNode **node_out, int fd, const sigset_t *sigs,
+signalfd_impl(FDContextMapNode **node_out, int fd, sigset_t const *sigs,
     int flags)
 {
 	errno_t ec;
@@ -159,7 +159,7 @@ fail:
 
 EPOLL_SHIM_EXPORT
 int
-signalfd(int fd, const sigset_t *sigs, int flags)
+signalfd(int fd, sigset_t const *sigs, int flags)
 {
 	errno_t ec;
 	int oe = errno;
