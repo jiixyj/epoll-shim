@@ -454,6 +454,12 @@ static int const SPURIOUS_EV_NODATA = 0
 #endif
     ;
 
+static int const OPTIONAL_EV_HUP = 0
+#if defined(__DragonFly__) && defined(EV_HUP)
+    | EV_HUP
+#endif
+    ;
+
 ATF_TC_WITHOUT_HEAD(pipe__pipe_event_poll);
 ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 {
@@ -578,7 +584,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__pipe_event_poll, tc)
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE_MSG(kev[0].flags ==
 		(EV_CLEAR | SPURIOUS_EV_ADD | EV_EOF | SPURIOUS_EV_ONESHOT |
-		    SPURIOUS_EV_NODATA),
+		    SPURIOUS_EV_NODATA | OPTIONAL_EV_HUP),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	if (kev[0].data == 0) {
@@ -778,7 +784,7 @@ try_again:
 	ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 	ATF_REQUIRE_MSG(kev[0].flags ==
 		(EV_CLEAR | EV_RECEIPT | EV_EOF | SPURIOUS_EV_ADD |
-		    SPURIOUS_EV_NODATA),
+		    SPURIOUS_EV_NODATA | OPTIONAL_EV_HUP),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	if (kev[0].data == 0) {
@@ -1084,7 +1090,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE(kev[0].flags ==
-	    (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA));
+	    (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA |
+		OPTIONAL_EV_HUP));
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -1165,7 +1172,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE(kev[0].flags ==
-	    (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA));
+	    (EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA |
+		OPTIONAL_EV_HUP));
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -1262,7 +1270,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE_MSG(kev[0].flags ==
 		(EV_EOF | EV_CLEAR | SPURIOUS_EV_ADD | EV_RECEIPT |
-		    SPURIOUS_EV_NODATA),
+		    SPURIOUS_EV_NODATA | OPTIONAL_EV_HUP),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
@@ -1580,7 +1588,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE_MSG(kev[0].flags ==
-		(EV_EOF | (EV_CLEAR | SPURIOUS_EV_ADD) | EV_RECEIPT),
+		(EV_EOF | (EV_CLEAR | SPURIOUS_EV_ADD) | EV_RECEIPT |
+		    OPTIONAL_EV_HUP),
 	    "%04x", kev[0].flags);
 	ATF_REQUIRE(kev[0].fflags == 0);
 	int const pipe_read_size =
@@ -1706,7 +1715,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);
 		ATF_REQUIRE_MSG(kev[0].flags ==
 			(EV_EOF | EV_CLEAR | SPURIOUS_EV_ONESHOT | EV_RECEIPT |
-			    SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA),
+			    SPURIOUS_EV_ADD | SPURIOUS_EV_NODATA |
+			    OPTIONAL_EV_HUP),
 		    "%04x", kev[0].flags);
 		ATF_REQUIRE(kev[0].fflags == 0);
 		ATF_REQUIRE_MSG(kev[0].data == 4096 ||
@@ -1719,7 +1729,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 		ATF_REQUIRE(kev[1].ident == (uintptr_t)p[0]);
 		ATF_REQUIRE(kev[1].filter == EVFILT_READ);
 		ATF_REQUIRE_MSG(kev[1].flags ==
-			(EV_EOF | EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD),
+			(EV_EOF | EV_CLEAR | EV_RECEIPT | SPURIOUS_EV_ADD |
+			    OPTIONAL_EV_HUP),
 		    "%04x", kev[1].flags);
 		ATF_REQUIRE(kev[1].fflags == 0);
 		ATF_REQUIRE_MSG(kev[1].data == 65536 ||
