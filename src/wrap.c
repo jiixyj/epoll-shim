@@ -18,7 +18,11 @@ static struct {
 	typeof(write) *real_write;
 	typeof(close) *real_close;
 	typeof(poll) *real_poll;
+#ifdef __NetBSD__
+	typeof(pollts) *real___pollts50;
+#else
 	typeof(ppoll) *real_ppoll;
+#endif
 	typeof(fcntl) *real_fcntl;
 } wrap = { .wrap_init = PTHREAD_ONCE_INIT };
 
@@ -34,7 +38,11 @@ wrap_initialize_impl(void)
 	WRAP(write);
 	WRAP(close);
 	WRAP(poll);
+#ifdef __NetBSD__
+	WRAP(__pollts50);
+#else
 	WRAP(ppoll);
+#endif
 	WRAP(fcntl);
 
 #undef WRAP
@@ -117,8 +125,13 @@ real_poll(struct pollfd fds[], nfds_t nfds, int timeout)
 #ifdef WRAPPERS
 EPOLL_SHIM_EXPORT
 int
-ppoll(struct pollfd fds[], nfds_t nfds, struct timespec const *restrict timeout,
-    sigset_t const *restrict newsigmask)
+#ifdef __NetBSD__
+__pollts50
+#else
+ppoll
+#endif
+    (struct pollfd fds[], nfds_t nfds, struct timespec const *restrict timeout,
+	sigset_t const *restrict newsigmask)
 {
 	return epoll_shim_ppoll(fds, nfds, timeout, newsigmask);
 }
@@ -130,7 +143,11 @@ real_ppoll(struct pollfd fds[], nfds_t nfds,
     sigset_t const *restrict newsigmask)
 {
 	wrap_initialize();
+#ifdef __NetBSD__
+	return wrap.real___pollts50(fds, nfds, timeout, newsigmask);
+#else
 	return wrap.real_ppoll(fds, nfds, timeout, newsigmask);
+#endif
 }
 
 #ifdef WRAPPERS

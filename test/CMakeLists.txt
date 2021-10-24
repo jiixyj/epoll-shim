@@ -42,6 +42,7 @@ get_target_property(_target_type epoll-shim::epoll-shim TYPE)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" #
    AND NOT _target_type STREQUAL STATIC_LIBRARY)
   atf_test(malloc-fail-test)
+  target_sources(malloc-fail-test PRIVATE real_close.c)
   target_link_libraries(malloc-fail-test PRIVATE ${CMAKE_DL_LIBS})
 endif()
 atf_test(tst-epoll)

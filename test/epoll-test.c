@@ -1931,7 +1931,11 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epoll_pwait, tcptr)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 		ATF_REQUIRE(epoll_pwait_got_signal == 0);
 
+#ifdef __NetBSD__
+		int n = pollts(
+#else
 		int n = ppoll(
+#endif
 		    &pfd, 1,
 		    &(struct timespec) {
 			    0,

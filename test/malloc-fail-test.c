@@ -214,19 +214,6 @@ write_to_pipe_thread_fun(void *arg)
 	return NULL;
 }
 
-static int
-real_close(int fd)
-{
-#ifdef close
-#undef close
-#define NEEDS_EPOLL_SHIM_CLOSE
-#endif
-	return close(fd);
-#ifdef NEEDS_EPOLL_SHIM_CLOSE
-#define close epoll_shim_close
-#endif
-}
-
 ATF_TC_WITHOUT_HEAD(malloc_fail__epoll);
 ATF_TC_BODY_FD_LEAKCHECK(malloc_fail__epoll, tc)
 {
@@ -277,7 +264,8 @@ ATF_TC_BODY_FD_LEAKCHECK(malloc_fail__epoll, tc)
 		ATF_REQUIRE(r == 1);
 		ATF_REQUIRE(event.events == POLLIN);
 
-		ATF_REQUIRE(real_close(ep) == 0);
+		extern int real_close_for_test(int fd);
+		ATF_REQUIRE(real_close_for_test(ep) == 0);
 		ATF_REQUIRE_ERRNO(EBADF, close(ep) < 0);
 
 		break;
