@@ -1875,8 +1875,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__using_real_close, tcptr)
 
 	// This closes the underlying kqueue fd directly, without going through
 	// our epoll_shim_close wrapper. It shouldn't blow up too badly.
-	extern int real_close(int fd);
-	ATF_REQUIRE(real_close(ep) == 0);
+	extern int real_close_for_test(int fd);
+	ATF_REQUIRE(real_close_for_test(ep) == 0);
 
 	ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);

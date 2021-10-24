@@ -84,8 +84,11 @@ generate_export_header(epoll-shim BASE_NAME epoll_shim)
 target_link_libraries(
   epoll-shim
   PRIVATE Threads::Threads #
-          queue-macros::queue-macros tree-macros::tree-macros #
-          evfilt_timer_quirks compat_enable_kqueue1 compat_enable_sigops)
+          $<BUILD_INTERFACE:queue-macros::queue-macros>
+          $<BUILD_INTERFACE:tree-macros::tree-macros>
+          $<BUILD_INTERFACE:evfilt_timer_quirks>
+          $<BUILD_INTERFACE:compat_enable_kqueue1>
+          $<BUILD_INTERFACE:compat_enable_sigops>)
 if(HAVE_TIMERFD)
   target_compile_definitions(epoll-shim PRIVATE HAVE_TIMERFD)
 endif()
@@ -94,10 +97,7 @@ target_include_directories(
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/install-include>)
 
-set(_headers
-    "sys/epoll.h" #
-    "sys/signalfd.h" #
-)
+set(_headers "sys/epoll.h" "sys/signalfd.h")
 if(NOT HAVE_EVENTFD)
   list(APPEND _headers "sys/eventfd.h")
 endif()
