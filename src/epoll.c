@@ -15,10 +15,7 @@
 #include "epoll_shim_ctx.h"
 #include "epoll_shim_export.h"
 #include "timespec_util.h"
-
-#ifdef __NetBSD__
-#define ppoll pollts
-#endif
+#include "wrap.h"
 
 static errno_t
 epollfd_close(FDContextMapNode *node)
@@ -210,7 +207,7 @@ epollfd_ctx_wait_or_block(FDContextMapNode *node, /**/
 		usleep(500000);
 #endif
 
-		int n = ppoll(pfds, nfds, timeout, sigs);
+		int n = real_ppoll(pfds, nfds, timeout, sigs);
 		if (n < 0) {
 			ec = errno;
 		}

@@ -1,6 +1,4 @@
 #include <sys/timerfd.h>
-#undef read
-#undef close
 
 #include <sys/event.h>
 #include <sys/select.h>
@@ -15,6 +13,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "wrap.h"
 
 #include "epoll_shim_ctx.h"
 #include "epoll_shim_export.h"
@@ -41,7 +41,7 @@ timerfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
 			.fd = timerfd->kq,
 			.events = POLLIN,
 		};
-		if (poll(&pfd, 1, -1) < 0) {
+		if (real_poll(&pfd, 1, -1) < 0) {
 			return errno;
 		}
 	}

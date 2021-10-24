@@ -104,7 +104,7 @@ ContinuationIndentWidth: 4
 IndentWidth: 8
 TabWidth: 8
 ColumnLimit: 80
-QualifierAlignment: Right
+# QualifierAlignment: Right
 UseTab: Always
 SpaceAfterCStyleCast: false
 # LLVM's header include ordering style is almost the exact opposite of ours.

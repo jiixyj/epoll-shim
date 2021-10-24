@@ -1,7 +1,4 @@
 #include <sys/eventfd.h>
-#undef read
-#undef write
-#undef close
 
 #include <sys/types.h>
 
@@ -16,6 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "wrap.h"
 
 #include "epoll_shim_ctx.h"
 #include "epoll_shim_export.h"
@@ -40,7 +39,7 @@ eventfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
 			.fd = eventfd_ctx->kq_,
 			.events = POLLIN,
 		};
-		if (poll(&pfd, 1, -1) < 0) {
+		if (real_poll(&pfd, 1, -1) < 0) {
 			return errno;
 		}
 	}

@@ -1,8 +1,4 @@
 #include <sys/signalfd.h>
-#undef read
-#undef close
-#undef poll
-#undef ppoll
 
 #include <sys/types.h>
 
@@ -19,6 +15,8 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "wrap.h"
 
 #include "epoll_shim_ctx.h"
 #include "epoll_shim_export.h"
@@ -44,7 +42,7 @@ signalfd_ctx_read_or_block(FDContextMapNode *node, SignalFDCtxSiginfo *siginfo,
 			.fd = signalfd_ctx->kq,
 			.events = POLLIN,
 		};
-		if (poll(&pfd, 1, -1) < 0) {
+		if (real_poll(&pfd, 1, -1) < 0) {
 			return errno;
 		}
 	}

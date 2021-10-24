@@ -21,11 +21,6 @@ int timerfd_settime(int, int, struct itimerspec const *, struct itimerspec *);
 int timerfd_gettime(int, struct itimerspec *);
 
 
-#include <epoll-shim/detail/common.h>
-#include <epoll-shim/detail/poll.h>
-#include <epoll-shim/detail/read.h>
-
-
 #ifdef __cplusplus
 }
 #endif

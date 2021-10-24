@@ -71,7 +71,8 @@ add_library(
   kqueue_event.c
   signalfd.c
   signalfd_ctx.c
-  timespec_util.c)
+  timespec_util.c
+  wrap.c)
 if(NOT HAVE_EVENTFD)
   target_sources(epoll-shim PRIVATE eventfd.c eventfd_ctx.c)
 endif()
@@ -94,10 +95,6 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/install-include>)
 
 set(_headers
-    "epoll-shim/detail/common.h" #
-    "epoll-shim/detail/poll.h" #
-    "epoll-shim/detail/read.h" #
-    "epoll-shim/detail/write.h" #
     "sys/epoll.h" #
     "sys/signalfd.h" #
 )

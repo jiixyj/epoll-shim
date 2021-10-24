@@ -21,6 +21,8 @@
 #include <poll.h>
 #include <unistd.h>
 
+#include "wrap.h"
+
 static RegisteredFDsNode *
 registered_fds_node_create(int fd)
 {
@@ -40,8 +42,8 @@ static void
 registered_fds_node_destroy(RegisteredFDsNode *node)
 {
 	if (node->self_pipe[0] >= 0 && node->self_pipe[1] >= 0) {
-		(void)close(node->self_pipe[0]);
-		(void)close(node->self_pipe[1]);
+		(void)real_close(node->self_pipe[0]);
+		(void)real_close(node->self_pipe[1]);
 	}
 
 	free(node);
@@ -284,7 +286,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, EpollFDCtx *epollfd,
 		assert(kev->filter == EVFILT_USER);
 #else
 		char c[32];
-		while (read(fd2_node->self_pipe[0], c, sizeof(c)) >= 0) {
+		while (real_read(fd2_node->self_pipe[0], c, sizeof(c)) >= 0) {
 		}
 #endif
 
@@ -293,7 +295,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, EpollFDCtx *epollfd,
 			.events = (short)fd2_node->events,
 		};
 
-		revents = poll(&pfd, 1, 0) < 0 ? EPOLLERR : pfd.revents;
+		revents = real_poll(&pfd, 1, 0) < 0 ? EPOLLERR : pfd.revents;
 
 		fd2_node->revents = revents & POLLNVAL ? 0 : (uint32_t)revents;
 		assert(!(fd2_node->revents &
@@ -357,7 +359,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, EpollFDCtx *epollfd,
 				.events = POLLPRI,
 			};
 
-			if ((poll(&pfd, 1, 0) == 1) &&
+			if ((real_poll(&pfd, 1, 0) == 1) &&
 			    (pfd.revents & POLLPRI)) {
 				revents |= EPOLLPRI;
 				fd2_node->pollpri_active = true;
@@ -577,7 +579,7 @@ registered_fds_node_complete(int kq)
 		}
 	}
 
-	(void)close(kq);
+	(void)real_close(kq);
 }
 
 static int
@@ -638,8 +640,8 @@ epollfd_ctx_terminate(EpollFDCtx *epollfd)
 	free(epollfd->kevs);
 	free(epollfd->pfds);
 	if (epollfd->self_pipe[0] >= 0 && epollfd->self_pipe[1] >= 0) {
-		(void)close(epollfd->self_pipe[0]);
-		(void)close(epollfd->self_pipe[1]);
+		(void)real_close(epollfd->self_pipe[0]);
+		(void)real_close(epollfd->self_pipe[1]);
 	}
 
 	return ec;
@@ -763,7 +765,7 @@ epollfd_ctx__trigger_repoll(EpollFDCtx *epollfd)
 
 #ifndef EVFILT_USER
 	char c[32];
-	while (read(epollfd->self_pipe[0], c, sizeof(c)) >= 0) {
+	while (real_read(epollfd->self_pipe[0], c, sizeof(c)) >= 0) {
 	}
 #endif
 }
@@ -788,7 +790,7 @@ epollfd_ctx__remove_node_from_kq(EpollFDCtx *epollfd,
 		(void)kevent(epollfd->kq, kevs, 1, NULL, 0, NULL);
 
 		char c[32];
-		while (read(fd2_node->self_pipe[0], c, sizeof(c)) >= 0) {
+		while (real_read(fd2_node->self_pipe[0], c, sizeof(c)) >= 0) {
 		}
 	}
 
@@ -1064,7 +1066,7 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int fd2,
 		} else {
 			fd2_node->node_type = NODE_TYPE_FIFO;
 
-			int fl = fcntl(fd2, F_GETFL);
+			int fl = real_fcntl(fd2, F_GETFL);
 			if (fl < 0) {
 				errno_t ec = errno;
 				registered_fds_node_destroy(fd2_node);
@@ -1228,7 +1230,8 @@ epollfd_ctx_wait(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
 
 	epollfd_ctx_fill_pollfds(epollfd, epollfd->pfds);
 
-	int n = poll(epollfd->pfds, (nfds_t)(1 + epollfd->poll_fds_size), 0);
+	int n = real_poll(epollfd->pfds, (nfds_t)(1 + epollfd->poll_fds_size),
+	    0);
 	if (n < 0) {
 		return errno;
 	}

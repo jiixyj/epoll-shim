@@ -13,6 +13,7 @@
 #include <signal.h>
 
 #include "timespec_util.h"
+#include "wrap.h"
 
 static bool
 timerfd_ctx_is_disarmed(TimerFDCtx const *timerfd)
@@ -132,7 +133,7 @@ timerfd_ctx_realtime_change(TimerFDCtx *timerfd)
 
 	if (!timerfd->is_cancel_on_set) {
 		struct pollfd pfd = { .fd = timerfd->kq, .events = POLLIN };
-		if (poll(&pfd, 1, 0) != 0) {
+		if (real_poll(&pfd, 1, 0) != 0) {
 			return;
 		}
 

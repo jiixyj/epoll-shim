@@ -21,10 +21,7 @@
 
 #include "epoll_shim_export.h"
 #include "timespec_util.h"
-
-#ifdef __NetBSD__
-#define ppoll pollts
-#endif
+#include "wrap.h"
 
 static void
 fd_context_map_node_install_kq(FDContextMapNode *node, int kq)
@@ -79,7 +76,7 @@ fd_context_map_node_terminate(FDContextMapNode *node)
 	errno_t ec_local = pthread_mutex_destroy(&node->mutex);
 	ec = ec != 0 ? ec : ec_local;
 
-	if (close(node->fd) < 0) {
+	if (real_close(node->fd) < 0) {
 		ec = ec ? ec : errno;
 	}
 
@@ -215,7 +212,7 @@ epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
 
 	if (ec != 0) {
 		(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
-		close(kq);
+		real_close(kq);
 	}
 
 	return ec;
@@ -441,7 +438,7 @@ epoll_shim_close(int fd)
 	    epoll_shim_ctx_remove_node(&epoll_shim_ctx, fd);
 	if (!node) {
 		errno = oe;
-		return close(fd);
+		return real_close(fd);
 	}
 
 	ec = fd_context_map_node_destroy(node);
@@ -464,7 +461,7 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
 		errno = oe;
-		return read(fd, buf, nbytes);
+		return real_read(fd, buf, nbytes);
 	}
 
 	if (nbytes > SSIZE_MAX) {
@@ -493,7 +490,7 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
 		errno = oe;
-		return write(fd, buf, nbytes);
+		return real_write(fd, buf, nbytes);
 	}
 
 	if (nbytes > SSIZE_MAX) {
@@ -548,7 +545,7 @@ retry:;
 		(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
 	}
 
-	int n = ppoll(fds, nfds, timeout, sigmask);
+	int n = real_ppoll(fds, nfds, timeout, sigmask);
 	if (n < 0) {
 		return errno;
 	}
@@ -661,11 +658,19 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	errno_t ec;
 	int oe = errno;
 
-	assert(cmd == F_SETFL);
+	va_list ap;
+
+	if (cmd != F_SETFL) {
+		va_start(ap, cmd);
+		void *arg = va_arg(ap, void *);
+		va_end(ap);
+
+		errno = oe;
+		return real_fcntl(fd, cmd, arg);
+	}
 
 	int arg;
 
-	va_list ap;
 	va_start(ap, cmd);
 	arg = va_arg(ap, int);
 	va_end(ap);
@@ -673,7 +678,7 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
 		errno = oe;
-		return fcntl(fd, F_SETFL, arg);
+		return real_fcntl(fd, F_SETFL, arg);
 	}
 
 	(void)pthread_mutex_lock(&node->mutex);

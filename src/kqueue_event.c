@@ -8,6 +8,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "wrap.h"
+
 errno_t
 kqueue_event_init(KQueueEvent *kqueue_event, struct kevent *kevs,
     int *kevs_length, bool should_trigger)
@@ -57,10 +59,10 @@ kqueue_event_terminate(KQueueEvent *kqueue_event)
 	return 0;
 #else
 	errno_t ec = 0;
-	if (close(kqueue_event->self_pipe_[0]) < 0) {
+	if (real_close(kqueue_event->self_pipe_[0]) < 0) {
 		ec = ec != 0 ? ec : errno;
 	}
-	if (close(kqueue_event->self_pipe_[1]) < 0) {
+	if (real_close(kqueue_event->self_pipe_[1]) < 0) {
 		ec = ec != 0 ? ec : errno;
 	}
 	return ec;
@@ -89,7 +91,7 @@ kqueue_event_trigger(KQueueEvent *kqueue_event, int kq)
 	}
 #else
 	char c = 0;
-	if (write(kqueue_event->self_pipe_[1], &c, 1) < 0) {
+	if (real_write(kqueue_event->self_pipe_[1], &c, 1) < 0) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
 			return errno;
 		}
@@ -105,7 +107,7 @@ kqueue_event_clear(KQueueEvent *kqueue_event, int kq)
 {
 #ifndef EVFILT_USER
 	char c[32];
-	while (read(kqueue_event->self_pipe_[0], c, sizeof(c)) >= 0) {
+	while (real_read(kqueue_event->self_pipe_[0], c, sizeof(c)) >= 0) {
 	}
 #endif
 

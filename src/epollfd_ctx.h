@@ -1,7 +1,6 @@
 #ifndef EPOLLFD_CTX_H_
 #define EPOLLFD_CTX_H_
 
-#define SHIM_SYS_SHIM_HELPERS
 #include <sys/epoll.h>
 
 #include <sys/queue.h>

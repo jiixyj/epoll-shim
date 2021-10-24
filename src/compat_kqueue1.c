@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "wrap.h"
+
 static errno_t
 compat_kqueue1_impl(int *fd_out, int flags)
 {
@@ -29,20 +31,20 @@ compat_kqueue1_impl(int *fd_out, int flags)
 		int r;
 
 		if (flags & O_CLOEXEC) {
-			if ((r = fcntl(fd, F_GETFD)) < 0 ||
-			    fcntl(fd, F_SETFD, r | FD_CLOEXEC) < 0) {
+			if ((r = real_fcntl(fd, F_GETFD)) < 0 ||
+			    real_fcntl(fd, F_SETFD, r | FD_CLOEXEC) < 0) {
 				ec = errno;
 				goto out;
 			}
 		}
 
 		if (flags & O_NONBLOCK) {
-			if ((r = fcntl(fd, F_GETFL)) < 0) {
+			if ((r = real_fcntl(fd, F_GETFL)) < 0) {
 				ec = errno;
 				goto out;
 			}
 
-			if (fcntl(fd, F_SETFL, r | O_NONBLOCK) < 0 &&
+			if (real_fcntl(fd, F_SETFL, r | O_NONBLOCK) < 0 &&
 			    errno != ENOTTY) {
 				ec = errno;
 				goto out;
@@ -54,7 +56,7 @@ compat_kqueue1_impl(int *fd_out, int flags)
 	return 0;
 
 out:
-	(void)close(fd);
+	(void)real_close(fd);
 	return ec;
 }
 
