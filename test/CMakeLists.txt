@@ -29,6 +29,7 @@ endmacro()
 
 atf_test(epoll-test)
 target_sources(epoll-test PRIVATE real_close.c)
+target_link_libraries(epoll-test PRIVATE ${CMAKE_DL_LIBS})
 atf_test(timerfd-test)
 atf_test(timerfd-root-test)
 atf_test(timerfd-mock-test)

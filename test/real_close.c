@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +31,10 @@ real_close_for_test(int fd)
 	if ((libc_handle = dlopen(NULL, RTLD_NOW)) == NULL) {
 		abort();
 	}
+
+#ifdef __linux__
+	typedef struct link_map Link_map;
+#endif
 
 	Link_map *link_map;
 	if (dlinfo(libc_handle, RTLD_DI_LINKMAP, &link_map) < 0) {
