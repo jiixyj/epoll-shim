@@ -32,9 +32,9 @@ signalfd_has_pending(SignalFDCtx const *signalfd, bool *has_pending,
 }
 
 static errno_t
-signalfd_ctx_trigger_manually(SignalFDCtx *signalfd)
+signalfd_ctx_trigger_manually(SignalFDCtx *signalfd, int kq)
 {
-	return kqueue_event_trigger(&signalfd->kqueue_event, signalfd->kq);
+	return kqueue_event_trigger(&signalfd->kqueue_event, kq);
 }
 
 static void
@@ -50,7 +50,7 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, sigset_t const *sigs)
 
 	assert(sigs != NULL);
 
-	*signalfd = (SignalFDCtx) { .kq = kq, .sigs = *sigs };
+	*signalfd = (SignalFDCtx) { .sigs = *sigs };
 
 #ifndef _SIG_MAXSIG
 #define _SIG_MAXSIG (8 * sizeof(sigset_t))
@@ -108,7 +108,7 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, sigset_t const *sigs)
 		}
 	}
 
-	n = kevent(signalfd->kq, kevs, n, NULL, 0, NULL);
+	n = kevent(kq, kevs, n, NULL, 0, NULL);
 	if (n < 0) {
 		ec = errno;
 		goto out;
@@ -119,7 +119,7 @@ signalfd_ctx_init(SignalFDCtx *signalfd, int kq, sigset_t const *sigs)
 		goto out;
 	}
 	if (has_pending) {
-		if ((ec = signalfd_ctx_trigger_manually(signalfd)) != 0) {
+		if ((ec = signalfd_ctx_trigger_manually(signalfd, kq)) != 0) {
 			goto out;
 		}
 	}
@@ -274,7 +274,7 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 }
 
 static bool
-signalfd_ctx_clear_signal(SignalFDCtx *signalfd, bool was_triggered)
+signalfd_ctx_clear_signal(SignalFDCtx *signalfd, int kq, bool was_triggered)
 {
 	if (was_triggered) {
 		/*
@@ -292,7 +292,7 @@ signalfd_ctx_clear_signal(SignalFDCtx *signalfd, bool was_triggered)
 	 * Clear the kq. Signals can arrive here, leading to a race.
 	 */
 
-	kqueue_event_clear(&signalfd->kqueue_event, signalfd->kq);
+	kqueue_event_clear(&signalfd->kqueue_event, kq);
 
 	/*
 	 * Because of the race, we must recheck and manually trigger if
@@ -301,29 +301,29 @@ signalfd_ctx_clear_signal(SignalFDCtx *signalfd, bool was_triggered)
 	bool has_pending;
 	if (signalfd_has_pending(signalfd, &has_pending, NULL) != 0 ||
 	    has_pending) {
-		(void)signalfd_ctx_trigger_manually(signalfd);
+		(void)signalfd_ctx_trigger_manually(signalfd, kq);
 		return true;
 	}
 	return false;
 }
 
 errno_t
-signalfd_ctx_read(SignalFDCtx *signalfd, SignalFDCtxSiginfo *siginfo)
+signalfd_ctx_read(SignalFDCtx *signalfd, int kq, SignalFDCtxSiginfo *siginfo)
 {
 	errno_t ec;
 
 	ec = signalfd_ctx_read_impl(signalfd, siginfo);
 	if (ec == 0 || ec == EAGAIN || ec == EWOULDBLOCK) {
-		(void)signalfd_ctx_clear_signal(signalfd, false);
+		(void)signalfd_ctx_clear_signal(signalfd, kq, false);
 	}
 
 	return ec;
 }
 
 void
-signalfd_ctx_poll(SignalFDCtx *signalfd, uint32_t *revents)
+signalfd_ctx_poll(SignalFDCtx *signalfd, int kq, uint32_t *revents)
 {
-	bool pending = signalfd_ctx_clear_signal(signalfd, revents != NULL);
+	bool pending = signalfd_ctx_clear_signal(signalfd, kq, revents != NULL);
 	if (revents) {
 		*revents = pending ? POLLIN : 0;
 	}

@@ -17,8 +17,6 @@ typedef enum {
 } TimerType;
 
 typedef struct {
-	int kq; // non owning
-
 	bool is_abstime;
 
 	clockid_t clockid;
@@ -35,18 +33,18 @@ typedef struct {
 	uint64_t nr_expirations;
 } TimerFDCtx;
 
-errno_t timerfd_ctx_init(TimerFDCtx *timerfd, int kq, int clockid);
+errno_t timerfd_ctx_init(TimerFDCtx *timerfd, int clockid);
 errno_t timerfd_ctx_terminate(TimerFDCtx *timerfd);
 
-errno_t timerfd_ctx_settime(TimerFDCtx *timerfd, /**/
-    bool is_abstime, bool is_cancel_on_set,	 /**/
+errno_t timerfd_ctx_settime(TimerFDCtx *timerfd, int kq, /**/
+    bool is_abstime, bool is_cancel_on_set,		 /**/
     struct itimerspec const *new, struct itimerspec *old);
 errno_t timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur);
 
-errno_t timerfd_ctx_read(TimerFDCtx *timerfd, uint64_t *value);
-void timerfd_ctx_poll(TimerFDCtx *timerfd, uint32_t *revents);
+errno_t timerfd_ctx_read(TimerFDCtx *timerfd, int kq, uint64_t *value);
+void timerfd_ctx_poll(TimerFDCtx *timerfd, int kq, uint32_t *revents);
 
 errno_t timerfd_ctx_get_monotonic_offset(struct timespec *monotonic_offset);
-void timerfd_ctx_realtime_change(TimerFDCtx *timerfd);
+void timerfd_ctx_realtime_change(TimerFDCtx *timerfd, int kq);
 
 #endif

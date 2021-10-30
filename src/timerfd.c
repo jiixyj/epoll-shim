@@ -20,14 +20,14 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-timerfd_ctx_read_or_block(FileDescription *node, uint64_t *value)
+timerfd_ctx_read_or_block(FileDescription *node, int kq, uint64_t *value)
 {
 	errno_t ec;
 	TimerFDCtx *timerfd = &node->ctx.timerfd;
 
 	for (;;) {
 		(void)pthread_mutex_lock(&node->mutex);
-		ec = timerfd_ctx_read(timerfd, value);
+		ec = timerfd_ctx_read(timerfd, kq, value);
 		bool nonblock = (node->flags & O_NONBLOCK) != 0;
 		(void)pthread_mutex_unlock(&node->mutex);
 		if (nonblock && ec == 0 && *value == 0) {
@@ -38,7 +38,7 @@ timerfd_ctx_read_or_block(FileDescription *node, uint64_t *value)
 		}
 
 		struct pollfd pfd = {
-			.fd = timerfd->kq,
+			.fd = kq,
 			.events = POLLIN,
 		};
 		if (real_poll(&pfd, 1, -1) < 0) {
@@ -48,7 +48,7 @@ timerfd_ctx_read_or_block(FileDescription *node, uint64_t *value)
 }
 
 static errno_t
-timerfd_read(FileDescription *node, void *buf, size_t nbytes,
+timerfd_read(FileDescription *node, int kq, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -58,7 +58,7 @@ timerfd_read(FileDescription *node, void *buf, size_t nbytes,
 	}
 
 	uint64_t nr_expired;
-	if ((ec = timerfd_ctx_read_or_block(node, &nr_expired)) != 0) {
+	if ((ec = timerfd_ctx_read_or_block(node, kq, &nr_expired)) != 0) {
 		return ec;
 	}
 
@@ -84,18 +84,18 @@ timerfd_close(FileDescription *node)
 }
 
 static void
-timerfd_poll(FileDescription *node, uint32_t *revents)
+timerfd_poll(FileDescription *node, int kq, uint32_t *revents)
 {
 	(void)pthread_mutex_lock(&node->mutex);
-	timerfd_ctx_poll(&node->ctx.timerfd, revents);
+	timerfd_ctx_poll(&node->ctx.timerfd, kq, revents);
 	(void)pthread_mutex_unlock(&node->mutex);
 }
 
 static void
-timerfd_realtime_change(FileDescription *node)
+timerfd_realtime_change(FileDescription *node, int kq)
 {
 	(void)pthread_mutex_lock(&node->mutex);
-	timerfd_ctx_realtime_change(&node->ctx.timerfd);
+	timerfd_ctx_realtime_change(&node->ctx.timerfd, kq);
 	(void)pthread_mutex_unlock(&node->mutex);
 }
 
@@ -134,8 +134,7 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 
 	desc->flags = flags & O_NONBLOCK;
 
-	if ((ec = timerfd_ctx_init(&desc->ctx.timerfd, /**/
-		 node->fd, clockid)) != 0) {
+	if ((ec = timerfd_ctx_init(&desc->ctx.timerfd, clockid)) != 0) {
 		goto fail;
 	}
 
@@ -195,7 +194,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		    node->ctx.timerfd.clockid == CLOCK_REALTIME &&
 		    node->ctx.timerfd.is_abstime;
 
-		ec = timerfd_ctx_settime(&node->ctx.timerfd,
+		ec = timerfd_ctx_settime(&node->ctx.timerfd, fd,
 		    (flags & TFD_TIMER_ABSTIME) != 0,	    /**/
 		    (flags & TFD_TIMER_CANCEL_ON_SET) != 0, /**/
 		    new, old);

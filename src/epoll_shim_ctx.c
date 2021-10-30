@@ -84,10 +84,10 @@ fd_context_map_node_terminate(FDContextMapNode *node)
 }
 
 static void
-fd_context_map_node_poll(void *arg, uint32_t *revents)
+fd_context_map_node_poll(void *arg, int kq, uint32_t *revents)
 {
 	FileDescription *node = arg;
-	node->vtable->poll_fun(node, revents);
+	node->vtable->poll_fun(node, kq, revents);
 }
 
 PollableNode
@@ -113,10 +113,11 @@ fd_context_map_node_destroy(FDContextMapNode *node)
 /**/
 
 errno_t
-fd_context_default_read(FileDescription *node, /**/
+fd_context_default_read(FileDescription *node, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	(void)node;
+	(void)kq;
 	(void)buf;
 	(void)nbytes;
 	(void)bytes_transferred;
@@ -125,10 +126,11 @@ fd_context_default_read(FileDescription *node, /**/
 }
 
 errno_t
-fd_context_default_write(FileDescription *node, /**/
+fd_context_default_write(FileDescription *node, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	(void)node;
+	(void)kq;
 	(void)buf;
 	(void)nbytes;
 	(void)bytes_transferred;
@@ -282,22 +284,22 @@ epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
 
 static void
 epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
-    void (*fun)(FileDescription *node))
+    void (*fun)(FileDescription *node, int kq))
 {
 	assert(pthread_mutex_trylock(&epoll_shim_ctx->mutex) == EBUSY);
 
 	FDContextMapNode *node;
 	RB_FOREACH (node, fd_context_map_, &epoll_shim_ctx->fd_context_map) {
-		fun(&node->desc);
+		fun(&node->desc, node->fd);
 	}
 }
 
 #ifndef HAVE_TIMERFD
 static void
-trigger_realtime_change_notification(FileDescription *node)
+trigger_realtime_change_notification(FileDescription *node, int kq)
 {
 	if (node->vtable->realtime_change_fun != NULL) {
-		node->vtable->realtime_change_fun(node);
+		node->vtable->realtime_change_fun(node, kq);
 	}
 }
 
@@ -470,7 +472,7 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	}
 
 	size_t bytes_transferred;
-	ec = node->vtable->read_fun(node, buf, nbytes, &bytes_transferred);
+	ec = node->vtable->read_fun(node, fd, buf, nbytes, &bytes_transferred);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
@@ -499,7 +501,7 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	}
 
 	size_t bytes_transferred;
-	ec = node->vtable->write_fun(node, buf, nbytes, &bytes_transferred);
+	ec = node->vtable->write_fun(node, fd, buf, nbytes, &bytes_transferred);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
@@ -539,7 +541,8 @@ retry:;
 				continue;
 			}
 			if (node->desc.vtable->poll_fun != NULL) {
-				node->desc.vtable->poll_fun(&node->desc, NULL);
+				node->desc.vtable->poll_fun(&node->desc,
+				    fds[i].fd, NULL);
 			}
 		}
 		(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
@@ -567,7 +570,8 @@ retry:;
 		}
 		if (node->desc.vtable->poll_fun != NULL) {
 			uint32_t revents;
-			node->desc.vtable->poll_fun(&node->desc, &revents);
+			node->desc.vtable->poll_fun(&node->desc, fds[i].fd,
+			    &revents);
 			fds[i].revents = (short)revents;
 			if (fds[i].revents == 0) {
 				--n;

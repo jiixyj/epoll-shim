@@ -20,14 +20,14 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-eventfd_ctx_read_or_block(FileDescription *node, uint64_t *value)
+eventfd_ctx_read_or_block(FileDescription *node, int kq, uint64_t *value)
 {
 	errno_t ec;
 	EventFDCtx *eventfd_ctx = &node->ctx.eventfd;
 
 	for (;;) {
 		(void)pthread_mutex_lock(&node->mutex);
-		ec = eventfd_ctx_read(eventfd_ctx, value);
+		ec = eventfd_ctx_read(eventfd_ctx, kq, value);
 		bool nonblock = (node->flags & O_NONBLOCK) != 0;
 		(void)pthread_mutex_unlock(&node->mutex);
 
@@ -36,7 +36,7 @@ eventfd_ctx_read_or_block(FileDescription *node, uint64_t *value)
 		}
 
 		struct pollfd pfd = {
-			.fd = eventfd_ctx->kq_,
+			.fd = kq,
 			.events = POLLIN,
 		};
 		if (real_poll(&pfd, 1, -1) < 0) {
@@ -46,8 +46,8 @@ eventfd_ctx_read_or_block(FileDescription *node, uint64_t *value)
 }
 
 static errno_t
-eventfd_helper_read(FileDescription *node, void *buf, size_t nbytes,
-    size_t *bytes_transferred)
+eventfd_helper_read(FileDescription *node, int kq, /**/
+    void *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	errno_t ec;
 
@@ -56,7 +56,7 @@ eventfd_helper_read(FileDescription *node, void *buf, size_t nbytes,
 	}
 
 	uint64_t value;
-	if ((ec = eventfd_ctx_read_or_block(node, &value)) != 0) {
+	if ((ec = eventfd_ctx_read_or_block(node, kq, &value)) != 0) {
 		return ec;
 	}
 
@@ -66,8 +66,8 @@ eventfd_helper_read(FileDescription *node, void *buf, size_t nbytes,
 }
 
 static errno_t
-eventfd_helper_write(FileDescription *node, void const *buf, size_t nbytes,
-    size_t *bytes_transferred)
+eventfd_helper_write(FileDescription *node, int kq, /**/
+    void const *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	errno_t ec;
 
@@ -79,7 +79,7 @@ eventfd_helper_write(FileDescription *node, void const *buf, size_t nbytes,
 	memcpy(&value, buf, sizeof(uint64_t));
 
 	(void)pthread_mutex_lock(&node->mutex);
-	ec = eventfd_ctx_write(&node->ctx.eventfd, value);
+	ec = eventfd_ctx_write(&node->ctx.eventfd, kq, value);
 	(void)pthread_mutex_unlock(&node->mutex);
 	if (ec != 0) {
 		return ec;

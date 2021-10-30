@@ -10,8 +10,6 @@
 #include "kqueue_event.h"
 
 typedef struct {
-	int kq; // non owning
-
 	sigset_t sigs;
 	KQueueEvent kqueue_event;
 } SignalFDCtx;
@@ -40,7 +38,8 @@ typedef struct {
 errno_t signalfd_ctx_init(SignalFDCtx *signalfd, int kq, sigset_t const *sigs);
 errno_t signalfd_ctx_terminate(SignalFDCtx *signalfd);
 
-errno_t signalfd_ctx_read(SignalFDCtx *signalfd, SignalFDCtxSiginfo *siginfo);
-void signalfd_ctx_poll(SignalFDCtx *signalfd, uint32_t *revents);
+errno_t signalfd_ctx_read(SignalFDCtx *signalfd, int kq,
+    SignalFDCtxSiginfo *siginfo);
+void signalfd_ctx_poll(SignalFDCtx *signalfd, int kq, uint32_t *revents);
 
 #endif

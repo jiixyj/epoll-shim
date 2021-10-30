@@ -75,8 +75,6 @@ typedef TAILQ_HEAD(pollfds_list_, registered_fds_node_) PollFDList;
 typedef RB_HEAD(registered_fds_set_, registered_fds_node_) RegisteredFDsSet;
 
 typedef struct {
-	int kq; // non owning
-
 	PollFDList poll_fds;
 	size_t poll_fds_size;
 
@@ -96,14 +94,14 @@ typedef struct {
 	int self_pipe[2];
 } EpollFDCtx;
 
-errno_t epollfd_ctx_init(EpollFDCtx *epollfd, int kq);
+errno_t epollfd_ctx_init(EpollFDCtx *epollfd);
 errno_t epollfd_ctx_terminate(EpollFDCtx *epollfd);
 
-void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, struct pollfd *pfds);
+void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, int kq, struct pollfd *pfds);
 
-errno_t epollfd_ctx_ctl(EpollFDCtx *epollfd, int op, int fd2,
-    PollableNode fd2_pollable_node, struct epoll_event *ev);
-errno_t epollfd_ctx_wait(EpollFDCtx *epollfd, struct epoll_event *ev, int cnt,
-    int *actual_cnt);
+errno_t epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, /**/
+    int op, int fd2, PollableNode fd2_pollable_node, struct epoll_event *ev);
+errno_t epollfd_ctx_wait(EpollFDCtx *epollfd, int kq, /**/
+    struct epoll_event *ev, int cnt, int *actual_cnt);
 
 #endif

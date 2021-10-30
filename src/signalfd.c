@@ -22,15 +22,15 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-signalfd_ctx_read_or_block(FileDescription *node, SignalFDCtxSiginfo *siginfo,
-    bool force_nonblock)
+signalfd_ctx_read_or_block(FileDescription *node, int kq,
+    SignalFDCtxSiginfo *siginfo, bool force_nonblock)
 {
 	errno_t ec;
 	SignalFDCtx *signalfd_ctx = &node->ctx.signalfd;
 
 	for (;;) {
 		(void)pthread_mutex_lock(&node->mutex);
-		ec = signalfd_ctx_read(signalfd_ctx, siginfo);
+		ec = signalfd_ctx_read(signalfd_ctx, kq, siginfo);
 		bool nonblock = force_nonblock ||
 		    (node->flags & O_NONBLOCK) != 0;
 		(void)pthread_mutex_unlock(&node->mutex);
@@ -39,7 +39,7 @@ signalfd_ctx_read_or_block(FileDescription *node, SignalFDCtxSiginfo *siginfo,
 		}
 
 		struct pollfd pfd = {
-			.fd = signalfd_ctx->kq,
+			.fd = kq,
 			.events = POLLIN,
 		};
 		if (real_poll(&pfd, 1, -1) < 0) {
@@ -49,7 +49,7 @@ signalfd_ctx_read_or_block(FileDescription *node, SignalFDCtxSiginfo *siginfo,
 }
 
 static errno_t
-signalfd_read(FileDescription *node, void *buf, size_t nbytes,
+signalfd_read(FileDescription *node, int kq, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -69,7 +69,7 @@ signalfd_read(FileDescription *node, void *buf, size_t nbytes,
 		SignalFDCtxSiginfo siginfo;
 		memset(&siginfo, 0, sizeof(siginfo));
 
-		if ((ec = signalfd_ctx_read_or_block(node, &siginfo,
+		if ((ec = signalfd_ctx_read_or_block(node, kq, &siginfo,
 			 force_nonblock)) != 0) {
 			break;
 		}
@@ -97,10 +97,10 @@ signalfd_close(FileDescription *node)
 }
 
 static void
-signalfd_poll(FileDescription *node, uint32_t *revents)
+signalfd_poll(FileDescription *node, int kq, uint32_t *revents)
 {
 	(void)pthread_mutex_lock(&node->mutex);
-	signalfd_ctx_poll(&node->ctx.signalfd, revents);
+	signalfd_ctx_poll(&node->ctx.signalfd, kq, revents);
 	(void)pthread_mutex_unlock(&node->mutex);
 }
 

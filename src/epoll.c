@@ -45,7 +45,7 @@ epoll_create_impl(FDContextMapNode **node_out, int flags)
 
 	desc->flags = flags & O_NONBLOCK;
 
-	if ((ec = epollfd_ctx_init(&desc->ctx.epollfd, node->fd)) != 0) {
+	if ((ec = epollfd_ctx_init(&desc->ctx.epollfd)) != 0) {
 		goto fail;
 	}
 
@@ -125,7 +125,7 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 	}
 
 	(void)pthread_mutex_lock(&node->mutex);
-	ec = epollfd_ctx_ctl(&node->ctx.epollfd, op, fd2,
+	ec = epollfd_ctx_ctl(&node->ctx.epollfd, fd, op, fd2,
 	    fd_context_map_node_as_pollable_node(fd2_node), ev);
 	(void)pthread_mutex_unlock(&node->mutex);
 
@@ -150,7 +150,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 }
 
 static errno_t
-epollfd_ctx_wait_or_block(FileDescription *node, /**/
+epollfd_ctx_wait_or_block(FileDescription *node, int kq, /**/
     struct epoll_event *ev, int cnt, int *actual_cnt,
     struct timespec const *deadline, struct timespec *timeout,
     sigset_t const *sigs)
@@ -161,7 +161,7 @@ epollfd_ctx_wait_or_block(FileDescription *node, /**/
 
 	for (;;) {
 		(void)pthread_mutex_lock(&node->mutex);
-		ec = epollfd_ctx_wait(epollfd, ev, cnt, actual_cnt);
+		ec = epollfd_ctx_wait(epollfd, kq, ev, cnt, actual_cnt);
 		(void)pthread_mutex_unlock(&node->mutex);
 		if (ec != 0) {
 			return ec;
@@ -192,7 +192,7 @@ epollfd_ctx_wait_or_block(FileDescription *node, /**/
 			return ec;
 		}
 
-		epollfd_ctx_fill_pollfds(epollfd, pfds);
+		epollfd_ctx_fill_pollfds(epollfd, kq, pfds);
 
 		(void)pthread_mutex_lock(&epollfd->nr_polling_threads_mutex);
 		++epollfd->nr_polling_threads;
@@ -291,9 +291,9 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 		return ec;
 	}
 
-	return epollfd_ctx_wait_or_block(node, ev, cnt, actual_cnt, /**/
-	    (to >= 0) ? &deadline : NULL,			    /**/
-	    (to >= 0) ? &timeout : NULL,			    /**/
+	return epollfd_ctx_wait_or_block(node, fd, ev, cnt, actual_cnt, /**/
+	    (to >= 0) ? &deadline : NULL,				/**/
+	    (to >= 0) ? &timeout : NULL,				/**/
 	    sigs);
 }
 

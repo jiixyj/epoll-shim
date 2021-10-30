@@ -21,7 +21,6 @@ eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 	assert((flags & ~(EVENTFD_CTX_FLAG_SEMAPHORE)) == 0);
 
 	*eventfd = (EventFDCtx) {
-		.kq_ = kq,
 		.flags_ = flags,
 		.counter_ = counter,
 	};
@@ -34,7 +33,7 @@ eventfd_ctx_init(EventFDCtx *eventfd, int kq, unsigned int counter, int flags)
 		goto out2;
 	}
 
-	if (kevent(eventfd->kq_, kevs, kevs_length, NULL, 0, NULL) < 0) {
+	if (kevent(kq, kevs, kevs_length, NULL, 0, NULL) < 0) {
 		ec = errno;
 		goto out;
 	}
@@ -60,7 +59,7 @@ eventfd_ctx_terminate(EventFDCtx *eventfd)
 }
 
 errno_t
-eventfd_ctx_write(EventFDCtx *eventfd, uint64_t value)
+eventfd_ctx_write(EventFDCtx *eventfd, int kq, uint64_t value)
 {
 	errno_t ec;
 
@@ -78,7 +77,7 @@ eventfd_ctx_write(EventFDCtx *eventfd, uint64_t value)
 
 	eventfd->counter_ = new_value;
 
-	ec = kqueue_event_trigger(&eventfd->kqueue_event_, eventfd->kq_);
+	ec = kqueue_event_trigger(&eventfd->kqueue_event_, kq);
 	if (ec != 0) {
 		return ec;
 	}
@@ -87,7 +86,7 @@ eventfd_ctx_write(EventFDCtx *eventfd, uint64_t value)
 }
 
 errno_t
-eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
+eventfd_ctx_read(EventFDCtx *eventfd, int kq, uint64_t *value)
 {
 	uint_least64_t current_value;
 
@@ -103,7 +102,7 @@ eventfd_ctx_read(EventFDCtx *eventfd, uint64_t *value)
 
 	if (new_value == 0 &&
 	    kqueue_event_is_triggered(&eventfd->kqueue_event_)) {
-		kqueue_event_clear(&eventfd->kqueue_event_, eventfd->kq_);
+		kqueue_event_clear(&eventfd->kqueue_event_, kq);
 	}
 
 	eventfd->counter_ = new_value;

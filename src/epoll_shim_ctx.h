@@ -24,13 +24,14 @@ typedef struct {
 	struct file_description_vtable const *vtable;
 } FileDescription;
 
-typedef errno_t (*fd_context_read_fun)(FileDescription *node, /**/
+typedef errno_t (*fd_context_read_fun)(FileDescription *node, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred);
-typedef errno_t (*fd_context_write_fun)(FileDescription *node, /**/
+typedef errno_t (*fd_context_write_fun)(FileDescription *node, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred);
 typedef errno_t (*fd_context_close_fun)(FileDescription *node);
-typedef void (*fd_context_poll_fun)(FileDescription *node, uint32_t *revents);
-typedef void (*fd_context_realtime_change_fun)(FileDescription *node);
+typedef void (*fd_context_poll_fun)(FileDescription *node, int kq, /**/
+    uint32_t *revents);
+typedef void (*fd_context_realtime_change_fun)(FileDescription *node, int kq);
 
 struct file_description_vtable {
 	fd_context_read_fun read_fun;
@@ -40,9 +41,9 @@ struct file_description_vtable {
 	fd_context_realtime_change_fun realtime_change_fun;
 };
 
-errno_t fd_context_default_read(FileDescription *node, /**/
+errno_t fd_context_default_read(FileDescription *node, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred);
-errno_t fd_context_default_write(FileDescription *node, /**/
+errno_t fd_context_default_write(FileDescription *node, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred);
 PollableNode fd_context_map_node_as_pollable_node(FileDescription *node);
 
@@ -79,8 +80,7 @@ errno_t epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
 void epoll_shim_ctx_realize_node(EpollShimCtx *epoll_shim_ctx,
     FDContextMapNode *node);
 
-FileDescription *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx,
-    int fd);
+FileDescription *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd);
 
 FDContextMapNode *epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx,
     int fd);
