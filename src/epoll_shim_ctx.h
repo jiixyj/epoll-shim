@@ -11,34 +11,8 @@
 #include "signalfd_ctx.h"
 #include "timerfd_ctx.h"
 
-struct fd_context_map_node_;
-typedef struct fd_context_map_node_ FDContextMapNode;
-
-typedef errno_t (*fd_context_read_fun)(FDContextMapNode *node, /**/
-    void *buf, size_t nbytes, size_t *bytes_transferred);
-typedef errno_t (*fd_context_write_fun)(FDContextMapNode *node, /**/
-    void const *buf, size_t nbytes, size_t *bytes_transferred);
-typedef errno_t (*fd_context_close_fun)(FDContextMapNode *node);
-typedef void (*fd_context_poll_fun)(FDContextMapNode *node, /**/
-    uint32_t *revents);
-typedef void (*fd_context_realtime_change_fun)(FDContextMapNode *node);
-
+struct file_description_vtable;
 typedef struct {
-	fd_context_read_fun read_fun;
-	fd_context_write_fun write_fun;
-	fd_context_close_fun close_fun;
-	fd_context_poll_fun poll_fun;
-	fd_context_realtime_change_fun realtime_change_fun;
-} FDContextVTable;
-
-errno_t fd_context_default_read(FDContextMapNode *node, /**/
-    void *buf, size_t nbytes, size_t *bytes_transferred);
-errno_t fd_context_default_write(FDContextMapNode *node, /**/
-    void const *buf, size_t nbytes, size_t *bytes_transferred);
-
-struct fd_context_map_node_ {
-	RB_ENTRY(fd_context_map_node_) entry;
-	int fd;
 	pthread_mutex_t mutex;
 	int flags; /* Only for O_NONBLOCK right now. */
 	union {
@@ -47,10 +21,42 @@ struct fd_context_map_node_ {
 		TimerFDCtx timerfd;
 		SignalFDCtx signalfd;
 	} ctx;
-	FDContextVTable const *vtable;
+	struct file_description_vtable const *vtable;
+} FileDescription;
+
+typedef errno_t (*fd_context_read_fun)(FileDescription *node, /**/
+    void *buf, size_t nbytes, size_t *bytes_transferred);
+typedef errno_t (*fd_context_write_fun)(FileDescription *node, /**/
+    void const *buf, size_t nbytes, size_t *bytes_transferred);
+typedef errno_t (*fd_context_close_fun)(FileDescription *node);
+typedef void (*fd_context_poll_fun)(FileDescription *node, uint32_t *revents);
+typedef void (*fd_context_realtime_change_fun)(FileDescription *node);
+
+struct file_description_vtable {
+	fd_context_read_fun read_fun;
+	fd_context_write_fun write_fun;
+	fd_context_close_fun close_fun;
+	fd_context_poll_fun poll_fun;
+	fd_context_realtime_change_fun realtime_change_fun;
 };
 
-PollableNode fd_context_map_node_as_pollable_node(FDContextMapNode *node);
+errno_t fd_context_default_read(FileDescription *node, /**/
+    void *buf, size_t nbytes, size_t *bytes_transferred);
+errno_t fd_context_default_write(FileDescription *node, /**/
+    void const *buf, size_t nbytes, size_t *bytes_transferred);
+PollableNode fd_context_map_node_as_pollable_node(FileDescription *node);
+
+/**/
+
+struct fd_context_map_node_;
+typedef struct fd_context_map_node_ FDContextMapNode;
+
+struct fd_context_map_node_ {
+	RB_ENTRY(fd_context_map_node_) entry;
+	int fd;
+	FileDescription desc;
+};
+
 errno_t fd_context_map_node_destroy(FDContextMapNode *node);
 
 /**/
@@ -72,8 +78,10 @@ errno_t epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
     FDContextMapNode **node);
 void epoll_shim_ctx_realize_node(EpollShimCtx *epoll_shim_ctx,
     FDContextMapNode *node);
-FDContextMapNode *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx,
+
+FileDescription *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx,
     int fd);
+
 FDContextMapNode *epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx,
     int fd);
 void epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,

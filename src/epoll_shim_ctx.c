@@ -27,7 +27,7 @@ static void
 fd_context_map_node_install_kq(FDContextMapNode *node, int kq)
 {
 	node->fd = kq;
-	node->vtable = NULL;
+	node->desc.vtable = NULL;
 }
 
 static errno_t
@@ -35,7 +35,7 @@ fd_context_map_node_init(FDContextMapNode *node, int kq)
 {
 	errno_t ec;
 
-	if ((ec = pthread_mutex_init(&node->mutex, NULL)) != 0) {
+	if ((ec = pthread_mutex_init(&node->desc.mutex, NULL)) != 0) {
 		return ec;
 	}
 	fd_context_map_node_install_kq(node, kq);
@@ -63,7 +63,7 @@ fd_context_map_node_create(FDContextMapNode **node_out, int kq)
 }
 
 static errno_t
-fd_context_map_node_close_ctx(FDContextMapNode *node)
+fd_context_map_node_close_ctx(FileDescription *node)
 {
 	return node->vtable ? node->vtable->close_fun(node) : 0;
 }
@@ -71,9 +71,9 @@ fd_context_map_node_close_ctx(FDContextMapNode *node)
 static errno_t
 fd_context_map_node_terminate(FDContextMapNode *node)
 {
-	errno_t ec = fd_context_map_node_close_ctx(node);
+	errno_t ec = fd_context_map_node_close_ctx(&node->desc);
 
-	errno_t ec_local = pthread_mutex_destroy(&node->mutex);
+	errno_t ec_local = pthread_mutex_destroy(&node->desc.mutex);
 	ec = ec != 0 ? ec : ec_local;
 
 	if (real_close(node->fd) < 0) {
@@ -86,12 +86,12 @@ fd_context_map_node_terminate(FDContextMapNode *node)
 static void
 fd_context_map_node_poll(void *arg, uint32_t *revents)
 {
-	FDContextMapNode *node = arg;
+	FileDescription *node = arg;
 	node->vtable->poll_fun(node, revents);
 }
 
 PollableNode
-fd_context_map_node_as_pollable_node(FDContextMapNode *node)
+fd_context_map_node_as_pollable_node(FileDescription *node)
 {
 	if (!node || !node->vtable->poll_fun) {
 		return (PollableNode) { NULL, NULL };
@@ -113,7 +113,7 @@ fd_context_map_node_destroy(FDContextMapNode *node)
 /**/
 
 errno_t
-fd_context_default_read(FDContextMapNode *node, /**/
+fd_context_default_read(FileDescription *node, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	(void)node;
@@ -125,7 +125,7 @@ fd_context_default_read(FDContextMapNode *node, /**/
 }
 
 errno_t
-fd_context_default_write(FDContextMapNode *node, /**/
+fd_context_default_write(FileDescription *node, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	(void)node;
@@ -178,7 +178,7 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 		 * must not close it, but we must clean up the old context
 		 * object!
 		 */
-		(void)fd_context_map_node_close_ctx(node);
+		(void)fd_context_map_node_close_ctx(&node->desc);
 		fd_context_map_node_install_kq(node, kq);
 	} else {
 		ec = fd_context_map_node_create(&node, kq);
@@ -242,7 +242,7 @@ epoll_shim_ctx_find_node_impl(EpollShimCtx *epoll_shim_ctx, int fd)
 	return node;
 }
 
-FDContextMapNode *
+FileDescription *
 epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 {
 	FDContextMapNode *node;
@@ -251,7 +251,7 @@ epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 	node = epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
 	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 
-	return node;
+	return node != NULL ? &node->desc : NULL;
 }
 
 FDContextMapNode *
@@ -282,19 +282,19 @@ epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
 
 static void
 epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
-    void (*fun)(FDContextMapNode *node))
+    void (*fun)(FileDescription *node))
 {
 	assert(pthread_mutex_trylock(&epoll_shim_ctx->mutex) == EBUSY);
 
 	FDContextMapNode *node;
 	RB_FOREACH (node, fd_context_map_, &epoll_shim_ctx->fd_context_map) {
-		fun(node);
+		fun(&node->desc);
 	}
 }
 
 #ifndef HAVE_TIMERFD
 static void
-trigger_realtime_change_notification(FDContextMapNode *node)
+trigger_realtime_change_notification(FileDescription *node)
 {
 	if (node->vtable->realtime_change_fun != NULL) {
 		node->vtable->realtime_change_fun(node);
@@ -458,7 +458,7 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	errno_t ec;
 	int oe = errno;
 
-	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
 		errno = oe;
 		return real_read(fd, buf, nbytes);
@@ -487,7 +487,7 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	errno_t ec;
 	int oe = errno;
 
-	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
 		errno = oe;
 		return real_write(fd, buf, nbytes);
@@ -538,8 +538,8 @@ retry:;
 			if (!node) {
 				continue;
 			}
-			if (node->vtable->poll_fun != NULL) {
-				node->vtable->poll_fun(node, NULL);
+			if (node->desc.vtable->poll_fun != NULL) {
+				node->desc.vtable->poll_fun(&node->desc, NULL);
 			}
 		}
 		(void)pthread_mutex_unlock(&epoll_shim_ctx.mutex);
@@ -565,9 +565,9 @@ retry:;
 		if (!node) {
 			continue;
 		}
-		if (node->vtable->poll_fun != NULL) {
+		if (node->desc.vtable->poll_fun != NULL) {
 			uint32_t revents;
-			node->vtable->poll_fun(node, &revents);
+			node->desc.vtable->poll_fun(&node->desc, &revents);
 			fds[i].revents = (short)revents;
 			if (fds[i].revents == 0) {
 				--n;
@@ -675,7 +675,7 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	arg = va_arg(ap, int);
 	va_end(ap);
 
-	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
 		errno = oe;
 		return real_fcntl(fd, F_SETFL, arg);

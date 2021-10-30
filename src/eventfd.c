@@ -20,7 +20,7 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-eventfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
+eventfd_ctx_read_or_block(FileDescription *node, uint64_t *value)
 {
 	errno_t ec;
 	EventFDCtx *eventfd_ctx = &node->ctx.eventfd;
@@ -46,7 +46,7 @@ eventfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
 }
 
 static errno_t
-eventfd_helper_read(FDContextMapNode *node, void *buf, size_t nbytes,
+eventfd_helper_read(FileDescription *node, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -66,7 +66,7 @@ eventfd_helper_read(FDContextMapNode *node, void *buf, size_t nbytes,
 }
 
 static errno_t
-eventfd_helper_write(FDContextMapNode *node, void const *buf, size_t nbytes,
+eventfd_helper_write(FileDescription *node, void const *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -90,12 +90,12 @@ eventfd_helper_write(FDContextMapNode *node, void const *buf, size_t nbytes,
 }
 
 static errno_t
-eventfd_close(FDContextMapNode *node)
+eventfd_close(FileDescription *node)
 {
 	return eventfd_ctx_terminate(&node->ctx.eventfd);
 }
 
-static FDContextVTable const eventfd_vtable = {
+static struct file_description_vtable const eventfd_vtable = {
 	.read_fun = eventfd_helper_read,
 	.write_fun = eventfd_helper_write,
 	.close_fun = eventfd_close,
@@ -120,19 +120,21 @@ eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
 		return ec;
 	}
 
-	node->flags = flags & O_NONBLOCK;
+	FileDescription *desc = &node->desc;
+
+	desc->flags = flags & O_NONBLOCK;
 
 	int ctx_flags = 0;
 	if (flags & EFD_SEMAPHORE) {
 		ctx_flags |= EVENTFD_CTX_FLAG_SEMAPHORE;
 	}
 
-	if ((ec = eventfd_ctx_init(&node->ctx.eventfd, node->fd, initval,
+	if ((ec = eventfd_ctx_init(&desc->ctx.eventfd, node->fd, initval,
 		 ctx_flags)) != 0) {
 		goto fail;
 	}
 
-	node->vtable = &eventfd_vtable;
+	desc->vtable = &eventfd_vtable;
 	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
 
 	*node_out = node;

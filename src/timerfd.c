@@ -20,7 +20,7 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-timerfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
+timerfd_ctx_read_or_block(FileDescription *node, uint64_t *value)
 {
 	errno_t ec;
 	TimerFDCtx *timerfd = &node->ctx.timerfd;
@@ -48,7 +48,7 @@ timerfd_ctx_read_or_block(FDContextMapNode *node, uint64_t *value)
 }
 
 static errno_t
-timerfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
+timerfd_read(FileDescription *node, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -73,7 +73,7 @@ timerfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
 }
 
 static errno_t
-timerfd_close(FDContextMapNode *node)
+timerfd_close(FileDescription *node)
 {
 	int const old_can_jump = /**/
 	    node->ctx.timerfd.clockid == CLOCK_REALTIME &&
@@ -84,7 +84,7 @@ timerfd_close(FDContextMapNode *node)
 }
 
 static void
-timerfd_poll(FDContextMapNode *node, uint32_t *revents)
+timerfd_poll(FileDescription *node, uint32_t *revents)
 {
 	(void)pthread_mutex_lock(&node->mutex);
 	timerfd_ctx_poll(&node->ctx.timerfd, revents);
@@ -92,14 +92,14 @@ timerfd_poll(FDContextMapNode *node, uint32_t *revents)
 }
 
 static void
-timerfd_realtime_change(FDContextMapNode *node)
+timerfd_realtime_change(FileDescription *node)
 {
 	(void)pthread_mutex_lock(&node->mutex);
 	timerfd_ctx_realtime_change(&node->ctx.timerfd);
 	(void)pthread_mutex_unlock(&node->mutex);
 }
 
-static FDContextVTable const timerfd_vtable = {
+static struct file_description_vtable const timerfd_vtable = {
 	.read_fun = timerfd_read,
 	.write_fun = fd_context_default_write,
 	.close_fun = timerfd_close,
@@ -130,14 +130,16 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 		return ec;
 	}
 
-	node->flags = flags & O_NONBLOCK;
+	FileDescription *desc = &node->desc;
 
-	if ((ec = timerfd_ctx_init(&node->ctx.timerfd, /**/
+	desc->flags = flags & O_NONBLOCK;
+
+	if ((ec = timerfd_ctx_init(&desc->ctx.timerfd, /**/
 		 node->fd, clockid)) != 0) {
 		goto fail;
 	}
 
-	node->vtable = &timerfd_vtable;
+	desc->vtable = &timerfd_vtable;
 	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
 
 	*node_out = node;
@@ -181,7 +183,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		return EINVAL;
 	}
 
-	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &timerfd_vtable) {
 		struct stat sb;
 		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
@@ -238,7 +240,7 @@ timerfd_gettime_impl(int fd, struct itimerspec *cur)
 {
 	errno_t ec;
 
-	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &timerfd_vtable) {
 		struct stat sb;
 		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;

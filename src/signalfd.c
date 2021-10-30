@@ -22,7 +22,7 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-signalfd_ctx_read_or_block(FDContextMapNode *node, SignalFDCtxSiginfo *siginfo,
+signalfd_ctx_read_or_block(FileDescription *node, SignalFDCtxSiginfo *siginfo,
     bool force_nonblock)
 {
 	errno_t ec;
@@ -49,7 +49,7 @@ signalfd_ctx_read_or_block(FDContextMapNode *node, SignalFDCtxSiginfo *siginfo,
 }
 
 static errno_t
-signalfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
+signalfd_read(FileDescription *node, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -91,20 +91,20 @@ signalfd_read(FDContextMapNode *node, void *buf, size_t nbytes,
 }
 
 static errno_t
-signalfd_close(FDContextMapNode *node)
+signalfd_close(FileDescription *node)
 {
 	return signalfd_ctx_terminate(&node->ctx.signalfd);
 }
 
 static void
-signalfd_poll(FDContextMapNode *node, uint32_t *revents)
+signalfd_poll(FileDescription *node, uint32_t *revents)
 {
 	(void)pthread_mutex_lock(&node->mutex);
 	signalfd_ctx_poll(&node->ctx.signalfd, revents);
 	(void)pthread_mutex_unlock(&node->mutex);
 }
 
-static FDContextVTable const signalfd_vtable = {
+static struct file_description_vtable const signalfd_vtable = {
 	.read_fun = signalfd_read,
 	.write_fun = fd_context_default_write,
 	.close_fun = signalfd_close,
@@ -136,14 +136,16 @@ signalfd_impl(FDContextMapNode **node_out, int fd, sigset_t const *sigs,
 		return ec;
 	}
 
-	node->flags = flags & O_NONBLOCK;
+	FileDescription *desc = &node->desc;
 
-	if ((ec = signalfd_ctx_init(&node->ctx.signalfd, /**/
+	desc->flags = flags & O_NONBLOCK;
+
+	if ((ec = signalfd_ctx_init(&desc->ctx.signalfd, /**/
 		 node->fd, sigs)) != 0) {
 		goto fail;
 	}
 
-	node->vtable = &signalfd_vtable;
+	desc->vtable = &signalfd_vtable;
 	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
 
 	*node_out = node;

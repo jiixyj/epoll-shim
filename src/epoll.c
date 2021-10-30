@@ -18,12 +18,12 @@
 #include "wrap.h"
 
 static errno_t
-epollfd_close(FDContextMapNode *node)
+epollfd_close(FileDescription *node)
 {
 	return epollfd_ctx_terminate(&node->ctx.epollfd);
 }
 
-static FDContextVTable const epollfd_vtable = {
+static struct file_description_vtable const epollfd_vtable = {
 	.read_fun = fd_context_default_read,
 	.write_fun = fd_context_default_write,
 	.close_fun = epollfd_close,
@@ -41,13 +41,15 @@ epoll_create_impl(FDContextMapNode **node_out, int flags)
 		return ec;
 	}
 
-	node->flags = flags & O_NONBLOCK;
+	FileDescription *desc = &node->desc;
 
-	if ((ec = epollfd_ctx_init(&node->ctx.epollfd, node->fd)) != 0) {
+	desc->flags = flags & O_NONBLOCK;
+
+	if ((ec = epollfd_ctx_init(&desc->ctx.epollfd, node->fd)) != 0) {
 		goto fail;
 	}
 
-	node->vtable = &epollfd_vtable;
+	desc->vtable = &epollfd_vtable;
 	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
 
 	*node_out = node;
@@ -111,13 +113,13 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 		return EFAULT;
 	}
 
-	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &epollfd_vtable) {
 		struct stat sb;
 		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 	}
 
-	FDContextMapNode *fd2_node = NULL;
+	FileDescription *fd2_node = NULL;
 	if (op == EPOLL_CTL_ADD) {
 		fd2_node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd2);
 	}
@@ -148,7 +150,7 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 }
 
 static errno_t
-epollfd_ctx_wait_or_block(FDContextMapNode *node, /**/
+epollfd_ctx_wait_or_block(FileDescription *node, /**/
     struct epoll_event *ev, int cnt, int *actual_cnt,
     struct timespec const *deadline, struct timespec *timeout,
     sigset_t const *sigs)
@@ -276,7 +278,7 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 		return EINVAL;
 	}
 
-	FDContextMapNode *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
+	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &epollfd_vtable) {
 		struct stat sb;
 		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
