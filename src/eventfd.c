@@ -120,7 +120,7 @@ eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
 		return ec;
 	}
 
-	FileDescription *desc = &node->desc;
+	FileDescription *desc = node->desc;
 
 	desc->flags = flags & O_NONBLOCK;
 
@@ -142,7 +142,7 @@ eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
 
 fail:
 	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
-	(void)fd_context_map_node_destroy(node);
+	(void)fd_context_map_node_destroy(&node);
 	return ec;
 }
 

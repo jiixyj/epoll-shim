@@ -136,7 +136,7 @@ signalfd_impl(FDContextMapNode **node_out, int fd, sigset_t const *sigs,
 		return ec;
 	}
 
-	FileDescription *desc = &node->desc;
+	FileDescription *desc = node->desc;
 
 	desc->flags = flags & O_NONBLOCK;
 
@@ -153,7 +153,7 @@ signalfd_impl(FDContextMapNode **node_out, int fd, sigset_t const *sigs,
 
 fail:
 	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
-	(void)fd_context_map_node_destroy(node);
+	(void)fd_context_map_node_destroy(&node);
 	return ec;
 }
 

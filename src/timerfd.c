@@ -130,7 +130,7 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 		return ec;
 	}
 
-	FileDescription *desc = &node->desc;
+	FileDescription *desc = node->desc;
 
 	desc->flags = flags & O_NONBLOCK;
 
@@ -146,7 +146,7 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 
 fail:
 	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
-	(void)fd_context_map_node_destroy(node);
+	(void)fd_context_map_node_destroy(&node);
 	return ec;
 }
 
@@ -185,7 +185,8 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &timerfd_vtable) {
 		struct stat sb;
-		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
+		ec = (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
+		goto out;
 	}
 
 	(void)pthread_mutex_lock(&node->mutex);
@@ -209,11 +210,12 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		}
 	}
 	(void)pthread_mutex_unlock(&node->mutex);
-	if (ec != 0) {
-		return ec;
-	}
 
-	return 0;
+out:
+	if (node) {
+		(void)file_description_unref(&node);
+	}
+	return ec;
 }
 
 EPOLL_SHIM_EXPORT
@@ -242,12 +244,18 @@ timerfd_gettime_impl(int fd, struct itimerspec *cur)
 	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &timerfd_vtable) {
 		struct stat sb;
-		return (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
+		ec = (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
+		goto out;
 	}
 
 	(void)pthread_mutex_lock(&node->mutex);
 	ec = timerfd_ctx_gettime(&node->ctx.timerfd, cur);
 	(void)pthread_mutex_unlock(&node->mutex);
+
+out:
+	if (node) {
+		(void)file_description_unref(&node);
+	}
 	return ec;
 }
 

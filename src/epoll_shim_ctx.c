@@ -23,22 +23,103 @@
 #include "timespec_util.h"
 #include "wrap.h"
 
-static void
-fd_context_map_node_install_kq(FDContextMapNode *node, int kq)
+static errno_t
+file_description_init(FileDescription *desc)
 {
-	node->fd = kq;
-	node->desc.vtable = NULL;
+	errno_t ec;
+
+	*desc = (FileDescription) {};
+
+	if ((ec = pthread_mutex_init(&desc->mutex, NULL)) != 0) {
+		return ec;
+	}
+
+	atomic_init(&desc->refcount, 1);
+	return 0;
 }
+
+static errno_t
+file_description_create(FileDescription **desc_out)
+{
+	errno_t ec;
+
+	FileDescription *desc = malloc(sizeof(FileDescription));
+	if (!desc) {
+		return errno;
+	}
+
+	if ((ec = file_description_init(desc)) != 0) {
+		free(desc);
+		return ec;
+	}
+
+	*desc_out = desc;
+	return 0;
+}
+
+static void
+file_description_ref(FileDescription *desc)
+{
+	assert(desc->refcount > 0);
+
+	atomic_fetch_add_explicit(&desc->refcount, 1, memory_order_relaxed);
+}
+
+static errno_t
+file_description_terminate(FileDescription *desc)
+{
+	errno_t ec = 0;
+
+	{
+		errno_t ec_local = desc->vtable ?
+			  desc->vtable->close_fun(desc) :
+			  0;
+		ec = ec != 0 ? ec : ec_local;
+	}
+
+	{
+		errno_t ec_local = pthread_mutex_destroy(&desc->mutex);
+		ec = ec != 0 ? ec : ec_local;
+	}
+
+	return ec;
+}
+
+static errno_t
+file_description_destroy(FileDescription **desc)
+{
+	errno_t ec = file_description_terminate(*desc);
+	free(*desc);
+	return ec;
+}
+
+errno_t
+file_description_unref(FileDescription **desc)
+{
+	errno_t ec = 0;
+
+	assert((*desc)->refcount > 0);
+
+	if (atomic_fetch_sub_explicit(&(*desc)->refcount, 1,
+		memory_order_release) == 1) {
+		atomic_thread_fence(memory_order_acquire);
+		ec = file_description_destroy(desc);
+		*desc = NULL;
+	}
+	return ec;
+}
+
+/**/
 
 static errno_t
 fd_context_map_node_init(FDContextMapNode *node, int kq)
 {
 	errno_t ec;
 
-	if ((ec = pthread_mutex_init(&node->desc.mutex, NULL)) != 0) {
+	if ((ec = file_description_create(&node->desc)) != 0) {
 		return ec;
 	}
-	fd_context_map_node_install_kq(node, kq);
+	node->fd = kq;
 
 	return 0;
 }
@@ -63,23 +144,28 @@ fd_context_map_node_create(FDContextMapNode **node_out, int kq)
 }
 
 static errno_t
-fd_context_map_node_close_ctx(FileDescription *node)
-{
-	return node->vtable ? node->vtable->close_fun(node) : 0;
-}
-
-static errno_t
 fd_context_map_node_terminate(FDContextMapNode *node)
 {
-	errno_t ec = fd_context_map_node_close_ctx(&node->desc);
+	errno_t ec = 0;
 
-	errno_t ec_local = pthread_mutex_destroy(&node->desc.mutex);
-	ec = ec != 0 ? ec : ec_local;
-
-	if (real_close(node->fd) < 0) {
-		ec = ec ? ec : errno;
+	{
+		errno_t ec_local = file_description_unref(&node->desc);
+		ec = ec != 0 ? ec : ec_local;
 	}
 
+	{
+		errno_t ec_local = real_close(node->fd) < 0 ? errno : 0;
+		ec = ec != 0 ? ec : ec_local;
+	}
+
+	return ec;
+}
+
+errno_t
+fd_context_map_node_destroy(FDContextMapNode **node)
+{
+	errno_t ec = fd_context_map_node_terminate(*node);
+	free(*node);
 	return ec;
 }
 
@@ -100,14 +186,6 @@ fd_context_map_node_as_pollable_node(FileDescription *node)
 		.poll_fun = fd_context_map_node_poll,
 	};
 	return (PollableNode) { node, &vtable };
-}
-
-errno_t
-fd_context_map_node_destroy(FDContextMapNode *node)
-{
-	errno_t ec = fd_context_map_node_terminate(node);
-	free(node);
-	return ec;
 }
 
 /**/
@@ -180,8 +258,15 @@ epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
 		 * must not close it, but we must clean up the old context
 		 * object!
 		 */
-		(void)fd_context_map_node_close_ctx(&node->desc);
-		fd_context_map_node_install_kq(node, kq);
+		(void)file_description_unref(&node->desc);
+
+		ec = fd_context_map_node_init(node, kq);
+		if (ec != 0) {
+			RB_REMOVE(fd_context_map_, /**/
+			    &epoll_shim_ctx->fd_context_map, node);
+			free(node);
+			return ec;
+		}
 	} else {
 		ec = fd_context_map_node_create(&node, kq);
 		if (ec != 0) {
@@ -247,13 +332,18 @@ epoll_shim_ctx_find_node_impl(EpollShimCtx *epoll_shim_ctx, int fd)
 FileDescription *
 epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 {
-	FDContextMapNode *node;
+	FileDescription *desc;
 
 	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
-	node = epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
+	FDContextMapNode *node = /**/
+	    epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
+	desc = node != NULL ? node->desc : NULL;
+	if (desc != NULL) {
+		file_description_ref(desc);
+	}
 	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 
-	return node != NULL ? &node->desc : NULL;
+	return desc;
 }
 
 FDContextMapNode *
@@ -290,7 +380,7 @@ epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
 
 	FDContextMapNode *node;
 	RB_FOREACH (node, fd_context_map_, &epoll_shim_ctx->fd_context_map) {
-		fun(&node->desc, node->fd);
+		fun(node->desc, node->fd);
 	}
 }
 
@@ -443,7 +533,7 @@ epoll_shim_close(int fd)
 		return real_close(fd);
 	}
 
-	ec = fd_context_map_node_destroy(node);
+	ec = fd_context_map_node_destroy(&node);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
@@ -466,20 +556,26 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 		return real_read(fd, buf, nbytes);
 	}
 
+	ssize_t rc = -1;
+
 	if (nbytes > SSIZE_MAX) {
-		errno = EINVAL;
-		return -1;
+		ec = EINVAL;
+		goto out;
 	}
 
 	size_t bytes_transferred;
 	ec = node->vtable->read_fun(node, fd, buf, nbytes, &bytes_transferred);
 	if (ec != 0) {
-		errno = ec;
-		return -1;
+		goto out;
 	}
 
-	errno = oe;
-	return (ssize_t)bytes_transferred;
+	ec = oe;
+	rc = (ssize_t)bytes_transferred;
+
+out:
+	(void)file_description_unref(&node);
+	errno = ec;
+	return rc;
 }
 
 EPOLL_SHIM_EXPORT
@@ -495,20 +591,26 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 		return real_write(fd, buf, nbytes);
 	}
 
+	ssize_t rc = -1;
+
 	if (nbytes > SSIZE_MAX) {
-		errno = EINVAL;
-		return -1;
+		ec = EINVAL;
+		goto out;
 	}
 
 	size_t bytes_transferred;
 	ec = node->vtable->write_fun(node, fd, buf, nbytes, &bytes_transferred);
 	if (ec != 0) {
-		errno = ec;
-		return -1;
+		goto out;
 	}
 
-	errno = oe;
-	return (ssize_t)bytes_transferred;
+	ec = oe;
+	rc = (ssize_t)bytes_transferred;
+
+out:
+	(void)file_description_unref(&node);
+	errno = ec;
+	return rc;
 }
 
 EPOLL_SHIM_EXPORT
@@ -540,8 +642,8 @@ retry:;
 			if (!node) {
 				continue;
 			}
-			if (node->desc.vtable->poll_fun != NULL) {
-				node->desc.vtable->poll_fun(&node->desc,
+			if (node->desc->vtable->poll_fun != NULL) {
+				node->desc->vtable->poll_fun(node->desc,
 				    fds[i].fd, NULL);
 			}
 		}
@@ -568,9 +670,9 @@ retry:;
 		if (!node) {
 			continue;
 		}
-		if (node->desc.vtable->poll_fun != NULL) {
+		if (node->desc->vtable->poll_fun != NULL) {
 			uint32_t revents;
-			node->desc.vtable->poll_fun(&node->desc, fds[i].fd,
+			node->desc->vtable->poll_fun(node->desc, fds[i].fd,
 			    &revents);
 			fds[i].revents = (short)revents;
 			if (fds[i].revents == 0) {
@@ -697,11 +799,18 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	}
 	(void)pthread_mutex_unlock(&node->mutex);
 
+	int rc;
+
 	if (ec != 0) {
-		errno = ec;
-		return -1;
+		rc = -1;
+		goto out;
 	}
 
-	errno = oe;
-	return 0;
+	ec = oe;
+	rc = 0;
+
+out:
+	(void)file_description_unref(&node);
+	errno = ec;
+	return rc;
 }

@@ -3,6 +3,8 @@
 
 #include <sys/tree.h>
 
+#include <stdatomic.h>
+
 #include <signal.h>
 #include <unistd.h>
 
@@ -13,6 +15,7 @@
 
 struct file_description_vtable;
 typedef struct {
+	atomic_int refcount;
 	pthread_mutex_t mutex;
 	int flags; /* Only for O_NONBLOCK right now. */
 	union {
@@ -23,6 +26,8 @@ typedef struct {
 	} ctx;
 	struct file_description_vtable const *vtable;
 } FileDescription;
+
+errno_t file_description_unref(FileDescription **desc);
 
 typedef errno_t (*fd_context_read_fun)(FileDescription *node, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred);
@@ -55,10 +60,10 @@ typedef struct fd_context_map_node_ FDContextMapNode;
 struct fd_context_map_node_ {
 	RB_ENTRY(fd_context_map_node_) entry;
 	int fd;
-	FileDescription desc;
+	FileDescription *desc;
 };
 
-errno_t fd_context_map_node_destroy(FDContextMapNode *node);
+errno_t fd_context_map_node_destroy(FDContextMapNode **node);
 
 /**/
 
@@ -82,8 +87,6 @@ void epoll_shim_ctx_realize_node(EpollShimCtx *epoll_shim_ctx,
 
 FileDescription *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd);
 
-FDContextMapNode *epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx,
-    int fd);
 void epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
     FDContextMapNode *node);
 void

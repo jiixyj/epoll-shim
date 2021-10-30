@@ -41,7 +41,7 @@ epoll_create_impl(FDContextMapNode **node_out, int flags)
 		return ec;
 	}
 
-	FileDescription *desc = &node->desc;
+	FileDescription *desc = node->desc;
 
 	desc->flags = flags & O_NONBLOCK;
 
@@ -57,7 +57,7 @@ epoll_create_impl(FDContextMapNode **node_out, int flags)
 
 fail:
 	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
-	(void)fd_context_map_node_destroy(node);
+	(void)fd_context_map_node_destroy(&node);
 	return ec;
 }
 
@@ -116,11 +116,14 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &epollfd_vtable) {
 		struct stat sb;
-		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
+		ec = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
+		goto out;
 	}
 
 	FileDescription *fd2_node = NULL;
 	if (op == EPOLL_CTL_ADD) {
+		// TODO: fix refcounting bug here by removing fd2 nodes from
+		// kq's on close()
 		fd2_node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd2);
 	}
 
@@ -129,6 +132,13 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 	    fd_context_map_node_as_pollable_node(fd2_node), ev);
 	(void)pthread_mutex_unlock(&node->mutex);
 
+	if (fd2_node) {
+		(void)file_description_unref(&fd2_node);
+	}
+out:
+	if (node) {
+		(void)file_description_unref(&node);
+	}
 	return ec;
 }
 
@@ -281,20 +291,27 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node || node->vtable != &epollfd_vtable) {
 		struct stat sb;
-		return (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
+		ec = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
+		goto out;
 	}
 
 	struct timespec deadline;
 	struct timespec timeout;
 	if (to >= 0 &&
 	    (ec = timeout_to_deadline(&deadline, &timeout, to)) != 0) {
-		return ec;
+		goto out;
 	}
 
-	return epollfd_ctx_wait_or_block(node, fd, ev, cnt, actual_cnt, /**/
-	    (to >= 0) ? &deadline : NULL,				/**/
-	    (to >= 0) ? &timeout : NULL,				/**/
+	ec = epollfd_ctx_wait_or_block(node, fd, ev, cnt, actual_cnt, /**/
+	    (to >= 0) ? &deadline : NULL,			      /**/
+	    (to >= 0) ? &timeout : NULL,			      /**/
 	    sigs);
+
+out:
+	if (node) {
+		(void)file_description_unref(&node);
+	}
+	return ec;
 }
 
 EPOLL_SHIM_EXPORT
