@@ -17,6 +17,10 @@
 #include "timespec_util.h"
 #include "wrap.h"
 
+void epollfd_lock(FileDescription *node);
+void epollfd_unlock(FileDescription *node);
+void epollfd_remove_fd(FileDescription *node, int kq, int fd);
+
 static errno_t
 epollfd_close(FileDescription *node)
 {
@@ -28,6 +32,30 @@ static struct file_description_vtable const epollfd_vtable = {
 	.write_fun = fd_context_default_write,
 	.close_fun = epollfd_close,
 };
+
+void
+epollfd_lock(FileDescription *node)
+{
+	if (node->vtable == &epollfd_vtable) {
+		(void)pthread_mutex_lock(&node->mutex);
+	}
+}
+
+void
+epollfd_unlock(FileDescription *node)
+{
+	if (node->vtable == &epollfd_vtable) {
+		(void)pthread_mutex_unlock(&node->mutex);
+	}
+}
+
+void
+epollfd_remove_fd(FileDescription *node, int kq, int fd)
+{
+	if (node->vtable == &epollfd_vtable) {
+		epollfd_ctx_remove_fd(&node->ctx.epollfd, kq, fd);
+	}
+}
 
 static errno_t
 epoll_create_impl(FDContextMapNode **node_out, int flags)

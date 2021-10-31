@@ -1746,6 +1746,38 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__remove_closed, tcptr)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(epoll__remove_closed_when_same_fd_open);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__remove_closed_when_same_fd_open, tcptr)
+{
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	int fds[3];
+	fd_pipe(fds);
+
+	struct epoll_event event = { 0 };
+	event.events = EPOLLIN;
+
+	ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) == 0);
+
+	ATF_REQUIRE(close(fds[0]) == 0);
+	ATF_REQUIRE(close(fds[1]) == 0);
+
+	int p[2];
+	ATF_REQUIRE(pipe2(p, O_CLOEXEC) == 0);
+	ATF_REQUIRE(fds[0] == p[0]);
+	ATF_REQUIRE(fds[1] == p[1]);
+
+	// Trying to delete an event that was already deleted by closing the
+	// associated fd should fail.
+	ATF_REQUIRE_ERRNO(ENOENT,
+	    epoll_ctl(ep, EPOLL_CTL_DEL, fds[0], &event) < 0);
+
+	ATF_REQUIRE(close(p[0]) == 0);
+	ATF_REQUIRE(close(p[1]) == 0);
+	ATF_REQUIRE(close(ep) == 0);
+}
+
 ATF_TC_WITHOUT_HEAD(epoll__add_different_file_with_same_fd_value);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__add_different_file_with_same_fd_value, tcptr)
 {
@@ -2066,6 +2098,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__datagram_connection);
 	ATF_TP_ADD_TC(tp, epoll__epollout_on_own_shutdown);
 	ATF_TP_ADD_TC(tp, epoll__remove_closed);
+	ATF_TP_ADD_TC(tp, epoll__remove_closed_when_same_fd_open);
 	ATF_TP_ADD_TC(tp, epoll__add_different_file_with_same_fd_value);
 	ATF_TP_ADD_TC(tp, epoll__invalid_writes);
 	ATF_TP_ADD_TC(tp, epoll__using_real_close);

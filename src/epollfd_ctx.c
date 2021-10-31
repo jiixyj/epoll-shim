@@ -1149,6 +1149,23 @@ epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, int kq, struct pollfd *pfds)
 	}
 }
 
+void
+epollfd_ctx_remove_fd(EpollFDCtx *epollfd, int kq, int fd2)
+{
+	RegisteredFDsNode *fd2_node;
+	{
+		RegisteredFDsNode find;
+		find.fd = fd2;
+
+		fd2_node = RB_FIND(registered_fds_set_, /**/
+		    &epollfd->registered_fds, &find);
+	}
+
+	if (fd2_node) {
+		epollfd_ctx_remove_node(epollfd, kq, fd2_node);
+	}
+}
+
 errno_t
 epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
     PollableNode (*fd_poll_fun)(int *fd), struct epoll_event *ev)

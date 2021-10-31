@@ -72,8 +72,11 @@ typedef RB_HEAD(fd_context_map_, fd_context_map_node_) FDContextMap;
 typedef struct {
 	FDContextMap fd_context_map;
 	pthread_mutex_t mutex;
+	pthread_rwlock_t rwlock;
+	pthread_cond_t cond;
 
 	/* members for realtime timer change detection */
+	pthread_mutex_t step_detector_mutex;
 	uint64_t nr_fds_for_realtime_step_detector;
 	uint64_t realtime_step_detector_generation;
 } EpollShimCtx;

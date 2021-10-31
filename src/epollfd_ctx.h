@@ -99,6 +99,9 @@ errno_t epollfd_ctx_terminate(EpollFDCtx *epollfd);
 
 void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, int kq, struct pollfd *pfds);
 
+// Called on fd2 close().
+void epollfd_ctx_remove_fd(EpollFDCtx *epollfd, int kq, int fd2);
+
 errno_t epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, /**/
     int op, int fd2, PollableNode (*fd_poll_fun)(int *fd),
     struct epoll_event *ev);
