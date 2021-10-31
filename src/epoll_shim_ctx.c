@@ -354,20 +354,40 @@ epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 	return desc;
 }
 
-static FDContextMapNode *
+static errno_t
 epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 {
+	errno_t ec;
 	FDContextMapNode *node;
 
 	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
+
 	node = epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
 	if (node) {
 		RB_REMOVE(fd_context_map_, /**/
 		    &epoll_shim_ctx->fd_context_map, node);
 	}
+
+	// TODO: downgrade writer lock to reader lock here, then iterate over
+	// all kqueues and remove fd.
+
+	// TODO: downgrade writer lock to reader lock
+
+	// TODO: lock all kqueue mutexes
+
+	// TODO: remove fd from all kqueues
+
+	if (node) {
+		ec = fd_context_map_node_destroy(&node);
+	} else {
+		ec = real_close(fd) < 0 ? errno : 0;
+	}
+
+	// TODO: unlock all kqueue mutexes
+
 	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
 
-	return node;
+	return ec;
 }
 
 void
@@ -534,14 +554,7 @@ epoll_shim_close(int fd)
 	errno_t ec;
 	int oe = errno;
 
-	FDContextMapNode *node = /**/
-	    epoll_shim_ctx_remove_node(&epoll_shim_ctx, fd);
-	if (!node) {
-		errno = oe;
-		return real_close(fd);
-	}
-
-	ec = fd_context_map_node_destroy(&node);
+	ec = epoll_shim_ctx_remove_node(&epoll_shim_ctx, fd);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
