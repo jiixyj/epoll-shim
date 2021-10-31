@@ -503,10 +503,12 @@ out:
 #endif
 	}
 
-	if (fd2_node->node_type == NODE_TYPE_KQUEUE &&
-	    fd2_node->node_data.kqueue.pollable_node.ptr) {
-		pollable_node_poll(fd2_node->node_data.kqueue.pollable_node,
-		    fd2_node->fd, &fd2_node->revents);
+	if (fd2_node->node_type == NODE_TYPE_KQUEUE) {
+		assert(fd2_node->node_data.kqueue.fd_poll_fun != NULL);
+
+		pollable_node_poll(fd2_node->node_data.kqueue.fd_poll_fun(
+				       &fd2_node->fd),
+		    &fd2_node->revents);
 		fd2_node->revents &= (fd2_node->events | EPOLLHUP | EPOLLERR);
 	}
 }
@@ -1025,7 +1027,7 @@ modify_fifo_rights_from_capabilities(RegisteredFDsNode *fd2_node)
 
 static errno_t
 epollfd_ctx_add_node(EpollFDCtx *epollfd, int kq, int fd2,
-    PollableNode fd2_pollable_node, struct epoll_event *ev,
+    PollableNode (*fd_poll_fun)(int *fd), struct epoll_event *ev,
     struct stat const *statbuf)
 {
 	RegisteredFDsNode *fd2_node = registered_fds_node_create(fd2);
@@ -1054,13 +1056,10 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int kq, int fd2,
 #endif
 
 			if (fd2_node->node_type == NODE_TYPE_KQUEUE) {
-				fd2_node->node_data.kqueue.pollable_node =
-				    fd2_pollable_node;
+				fd2_node->node_data.kqueue.fd_poll_fun =
+				    fd_poll_fun;
 
-				if (fd2_pollable_node.ptr != NULL) {
-					pollable_node_poll(fd2_pollable_node,
-					    fd2, NULL);
-				}
+				pollable_node_poll(fd_poll_fun(&fd2), NULL);
 			}
 		} else {
 			fd2_node->node_type = NODE_TYPE_FIFO;
@@ -1152,7 +1151,7 @@ epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, int kq, struct pollfd *pfds)
 
 errno_t
 epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
-    PollableNode fd2_pollable_node, struct epoll_event *ev)
+    PollableNode (*fd_poll_fun)(int *fd), struct epoll_event *ev)
 {
 	assert(op == EPOLL_CTL_DEL || ev != NULL);
 
@@ -1198,7 +1197,7 @@ epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
 		ec = fd2_node != NULL ?
 			  EEXIST :
 			  epollfd_ctx_add_node(epollfd, kq, /**/
-			/* */ fd2, fd2_pollable_node, ev, &statbuf);
+			/* */ fd2, fd_poll_fun, ev, &statbuf);
 	} else if (op == EPOLL_CTL_DEL) {
 		ec = fd2_node == NULL ?
 			  ENOENT :

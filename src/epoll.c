@@ -120,21 +120,11 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 		goto out;
 	}
 
-	FileDescription *fd2_node = NULL;
-	if (op == EPOLL_CTL_ADD) {
-		// TODO: fix refcounting bug here by removing fd2 nodes from
-		// kq's on close()
-		fd2_node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd2);
-	}
-
 	(void)pthread_mutex_lock(&node->mutex);
 	ec = epollfd_ctx_ctl(&node->ctx.epollfd, fd, op, fd2,
-	    fd_context_map_node_as_pollable_node(fd2_node), ev);
+	    fd_as_pollable_node, ev);
 	(void)pthread_mutex_unlock(&node->mutex);
 
-	if (fd2_node) {
-		(void)file_description_unref(&fd2_node);
-	}
 out:
 	if (node) {
 		(void)file_description_unref(&node);

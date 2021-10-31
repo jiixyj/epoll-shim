@@ -50,7 +50,7 @@ errno_t fd_context_default_read(FileDescription *node, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred);
 errno_t fd_context_default_write(FileDescription *node, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred);
-PollableNode fd_context_map_node_as_pollable_node(FileDescription *node);
+PollableNode fd_as_pollable_node(int *fd);
 
 /**/
 

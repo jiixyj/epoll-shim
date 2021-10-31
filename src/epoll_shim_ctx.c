@@ -170,22 +170,30 @@ fd_context_map_node_destroy(FDContextMapNode **node)
 }
 
 static void
-fd_context_map_node_poll(void *arg, int kq, uint32_t *revents)
+fd_poll(void *arg, uint32_t *revents)
 {
-	FileDescription *node = arg;
-	node->vtable->poll_fun(node, kq, revents);
+	int *fd = arg;
+
+	FileDescription *desc = epoll_shim_ctx_find_node(&epoll_shim_ctx, *fd);
+	if (!desc || !desc->vtable->poll_fun) {
+		goto out;
+	}
+
+	desc->vtable->poll_fun(desc, *fd, revents);
+
+out:
+	if (desc) {
+		(void)file_description_unref(&desc);
+	}
 }
 
 PollableNode
-fd_context_map_node_as_pollable_node(FileDescription *node)
+fd_as_pollable_node(int *fd)
 {
-	if (!node || !node->vtable->poll_fun) {
-		return (PollableNode) { NULL, NULL };
-	}
 	static const struct pollable_node_vtable vtable = {
-		.poll_fun = fd_context_map_node_poll,
+		.poll_fun = fd_poll,
 	};
-	return (PollableNode) { node, &vtable };
+	return (PollableNode) { fd, &vtable };
 }
 
 /**/
@@ -346,7 +354,7 @@ epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 	return desc;
 }
 
-FDContextMapNode *
+static FDContextMapNode *
 epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 {
 	FDContextMapNode *node;

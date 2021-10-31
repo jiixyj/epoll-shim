@@ -55,7 +55,7 @@ struct registered_fds_node_ {
 			bool writable;
 		} fifo;
 		struct {
-			PollableNode pollable_node;
+			PollableNode (*fd_poll_fun)(int *fd);
 		} kqueue;
 	} node_data;
 	int eof_state;
@@ -100,7 +100,8 @@ errno_t epollfd_ctx_terminate(EpollFDCtx *epollfd);
 void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, int kq, struct pollfd *pfds);
 
 errno_t epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, /**/
-    int op, int fd2, PollableNode fd2_pollable_node, struct epoll_event *ev);
+    int op, int fd2, PollableNode (*fd_poll_fun)(int *fd),
+    struct epoll_event *ev);
 errno_t epollfd_ctx_wait(EpollFDCtx *epollfd, int kq, /**/
     struct epoll_event *ev, int cnt, int *actual_cnt);
 
