@@ -13,6 +13,8 @@
 #include "signalfd_ctx.h"
 #include "timerfd_ctx.h"
 
+#include "rwlock.h"
+
 struct file_description_vtable;
 typedef struct {
 	atomic_int refcount;
@@ -68,19 +70,6 @@ errno_t fd_context_map_node_destroy(FDContextMapNode **node);
 /**/
 
 typedef RB_HEAD(fd_context_map_, fd_context_map_node_) FDContextMap;
-
-typedef struct {
-	int reader_count;
-	bool has_writer;
-	pthread_mutex_t mutex;
-	pthread_cond_t cond;
-} RWLock;
-
-#define RWLOCK_INITIALIZER                          \
-	{                                           \
-		.mutex = PTHREAD_MUTEX_INITIALIZER, \
-		.cond = PTHREAD_COND_INITIALIZER    \
-	}
 
 typedef struct {
 	FDContextMap fd_context_map;

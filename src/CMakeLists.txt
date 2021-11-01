@@ -1,14 +1,20 @@
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  add_library(epoll-shim INTERFACE)
-  add_library(epoll-shim::epoll-shim ALIAS epoll-shim)
-  return()
-endif()
-
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+
+add_library(rwlock STATIC rwlock.c)
+set_property(TARGET rwlock PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(rwlock PUBLIC Threads::Threads)
+target_include_directories(rwlock
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_library(epoll-shim INTERFACE)
+  add_library(epoll-shim::epoll-shim ALIAS epoll-shim)
+  return()
+endif()
 
 find_package(tree-macros REQUIRED)
 find_package(queue-macros REQUIRED)
@@ -88,7 +94,8 @@ target_link_libraries(
           $<BUILD_INTERFACE:tree-macros::tree-macros>
           $<BUILD_INTERFACE:evfilt_timer_quirks>
           $<BUILD_INTERFACE:compat_enable_kqueue1>
-          $<BUILD_INTERFACE:compat_enable_sigops>)
+          $<BUILD_INTERFACE:compat_enable_sigops>
+          $<BUILD_INTERFACE:rwlock>)
 if(HAVE_TIMERFD)
   target_compile_definitions(epoll-shim PRIVATE HAVE_TIMERFD)
 endif()

@@ -49,6 +49,10 @@ endif()
 atf_test(tst-epoll)
 atf_test(tst-timerfd)
 
+add_executable(rwlock-test rwlock-test.c)
+target_link_libraries(rwlock-test PRIVATE rwlock microatf::microatf-c)
+atf_discover_tests(rwlock-test)
+
 add_executable(epoll-include-test epoll-include-test.c)
 target_link_libraries(epoll-include-test PRIVATE epoll-shim::epoll-shim)
 set_target_properties(
