@@ -242,50 +242,68 @@ RB_GENERATE_STATIC(fd_context_map_, fd_context_map_node_, entry,
 
 EpollShimCtx epoll_shim_ctx = {
 	.fd_context_map = RB_INITIALIZER(&fd_context_map),
-	.mutex = PTHREAD_MUTEX_INITIALIZER,
-	.rwlock = PTHREAD_RWLOCK_INITIALIZER,
-	.cond = PTHREAD_COND_INITIALIZER,
+	.rwlock = RWLOCK_INITIALIZER,
 	.step_detector_mutex = PTHREAD_MUTEX_INITIALIZER,
 };
 
+/**/
+
 static void
-epoll_shim_ctx_lock_read(EpollShimCtx *epoll_shim_ctx)
+rwlock_lock_read(RWLock *rwlock)
 {
-	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
-	while (pthread_rwlock_tryrdlock(&epoll_shim_ctx->rwlock)) {
-		(void)pthread_cond_wait(&epoll_shim_ctx->cond,
-		    &epoll_shim_ctx->mutex);
+	(void)pthread_mutex_lock(&rwlock->mutex);
+	while (rwlock->has_writer) {
+		(void)pthread_cond_wait(&rwlock->cond, &rwlock->mutex);
 	}
-	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
+	++rwlock->reader_count;
+	(void)pthread_mutex_unlock(&rwlock->mutex);
 }
 
 static void
-epoll_shim_ctx_lock_write(EpollShimCtx *epoll_shim_ctx)
+rwlock_unlock_read(RWLock *rwlock)
 {
-	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
-	while (pthread_rwlock_trywrlock(&epoll_shim_ctx->rwlock)) {
-		(void)pthread_cond_wait(&epoll_shim_ctx->cond,
-		    &epoll_shim_ctx->mutex);
+	(void)pthread_mutex_lock(&rwlock->mutex);
+	--rwlock->reader_count;
+	if (rwlock->reader_count == 0) {
+		(void)pthread_cond_broadcast(&rwlock->cond);
 	}
-	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
+	(void)pthread_mutex_unlock(&rwlock->mutex);
 }
 
 static void
-epoll_shim_ctx_lock_downgrade(EpollShimCtx *epoll_shim_ctx)
+rwlock_lock_write(RWLock *rwlock)
 {
-	(void)pthread_mutex_lock(&epoll_shim_ctx->mutex);
-	(void)pthread_rwlock_unlock(&epoll_shim_ctx->rwlock);
-	(void)pthread_rwlock_rdlock(&epoll_shim_ctx->rwlock);
-	(void)pthread_mutex_unlock(&epoll_shim_ctx->mutex);
-	(void)pthread_cond_broadcast(&epoll_shim_ctx->cond);
+	(void)pthread_mutex_lock(&rwlock->mutex);
+	while (rwlock->has_writer) {
+		(void)pthread_cond_wait(&rwlock->cond, &rwlock->mutex);
+	}
+	rwlock->has_writer = true;
+	while (rwlock->reader_count > 0) {
+		(void)pthread_cond_wait(&rwlock->cond, &rwlock->mutex);
+	}
+	(void)pthread_mutex_unlock(&rwlock->mutex);
 }
 
 static void
-epoll_shim_ctx_unlock(EpollShimCtx *epoll_shim_ctx)
+rwlock_unlock_write(RWLock *rwlock)
 {
-	(void)pthread_rwlock_unlock(&epoll_shim_ctx->rwlock);
-	(void)pthread_cond_broadcast(&epoll_shim_ctx->cond);
+	(void)pthread_mutex_lock(&rwlock->mutex);
+	rwlock->has_writer = false;
+	(void)pthread_cond_broadcast(&rwlock->cond);
+	(void)pthread_mutex_unlock(&rwlock->mutex);
 }
+
+static void
+rwlock_downgrade(RWLock *rwlock)
+{
+	(void)pthread_mutex_lock(&rwlock->mutex);
+	rwlock->has_writer = false;
+	(void)pthread_cond_broadcast(&rwlock->cond);
+	++rwlock->reader_count;
+	(void)pthread_mutex_unlock(&rwlock->mutex);
+}
+
+/**/
 
 static errno_t
 epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
@@ -347,11 +365,11 @@ epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
 		return errno;
 	}
 
-	epoll_shim_ctx_lock_write(epoll_shim_ctx);
+	rwlock_lock_write(&epoll_shim_ctx->rwlock);
 	ec = epoll_shim_ctx_create_node_impl(epoll_shim_ctx, kq, node);
 
 	if (ec != 0) {
-		epoll_shim_ctx_unlock(epoll_shim_ctx);
+		rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 		real_close(kq);
 	}
 
@@ -364,7 +382,7 @@ epoll_shim_ctx_realize_node(EpollShimCtx *epoll_shim_ctx,
 {
 	(void)node;
 
-	epoll_shim_ctx_unlock(epoll_shim_ctx);
+	rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 }
 
 static FDContextMapNode *
@@ -386,14 +404,14 @@ epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 {
 	FileDescription *desc;
 
-	epoll_shim_ctx_lock_read(epoll_shim_ctx);
+	rwlock_lock_read(&epoll_shim_ctx->rwlock);
 	FDContextMapNode *node = /**/
 	    epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
 	desc = node != NULL ? node->desc : NULL;
 	if (desc != NULL) {
 		file_description_ref(desc);
 	}
-	epoll_shim_ctx_unlock(epoll_shim_ctx);
+	rwlock_unlock_read(&epoll_shim_ctx->rwlock);
 
 	return desc;
 }
@@ -441,7 +459,7 @@ epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 	errno_t ec;
 	FDContextMapNode *node;
 
-	epoll_shim_ctx_lock_write(epoll_shim_ctx);
+	rwlock_lock_write(&epoll_shim_ctx->rwlock);
 
 	node = epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
 	if (node) {
@@ -449,7 +467,7 @@ epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 		    &epoll_shim_ctx->fd_context_map, node);
 	}
 
-	epoll_shim_ctx_lock_downgrade(epoll_shim_ctx);
+	rwlock_downgrade(&epoll_shim_ctx->rwlock);
 
 	epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
 	    remove_node_lock_epollfd, NULL);
@@ -463,7 +481,7 @@ epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 	epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
 	    remove_node_unlock_epollfd, NULL);
 
-	epoll_shim_ctx_unlock(epoll_shim_ctx);
+	rwlock_unlock_read(&epoll_shim_ctx->rwlock);
 
 	return ec;
 }
@@ -474,7 +492,7 @@ epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
 {
 	RB_REMOVE(fd_context_map_, /**/
 	    &epoll_shim_ctx->fd_context_map, node);
-	epoll_shim_ctx_unlock(epoll_shim_ctx);
+	rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 }
 
 #ifndef HAVE_TIMERFD
@@ -530,10 +548,10 @@ realtime_step_detection(void *arg)
 		    new_monotonic_offset.tv_nsec != monotonic_offset.tv_nsec) {
 			monotonic_offset = new_monotonic_offset;
 
-			epoll_shim_ctx_lock_read(epoll_shim_ctx);
+			rwlock_lock_read(&epoll_shim_ctx->rwlock);
 			epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
 			    trigger_realtime_change_notification, NULL);
-			epoll_shim_ctx_unlock(epoll_shim_ctx);
+			rwlock_unlock_read(&epoll_shim_ctx->rwlock);
 		}
 	}
 
@@ -729,7 +747,7 @@ epoll_shim_ppoll_deadline(struct pollfd *fds, nfds_t nfds,
 
 retry:;
 	if (fds != NULL) {
-		epoll_shim_ctx_lock_read(&epoll_shim_ctx);
+		rwlock_lock_read(&epoll_shim_ctx.rwlock);
 		for (nfds_t i = 0; i < nfds; ++i) {
 			FDContextMapNode *node = epoll_shim_ctx_find_node_impl(
 			    &epoll_shim_ctx, fds[i].fd);
@@ -741,7 +759,7 @@ retry:;
 				    fds[i].fd, NULL);
 			}
 		}
-		epoll_shim_ctx_unlock(&epoll_shim_ctx);
+		rwlock_unlock_read(&epoll_shim_ctx.rwlock);
 	}
 
 	int n = real_ppoll(fds, nfds, timeout, sigmask);
@@ -753,7 +771,7 @@ retry:;
 		return 0;
 	}
 
-	epoll_shim_ctx_lock_read(&epoll_shim_ctx);
+	rwlock_lock_read(&epoll_shim_ctx.rwlock);
 	for (nfds_t i = 0; i < nfds; ++i) {
 		if (fds[i].revents == 0) {
 			continue;
@@ -774,7 +792,7 @@ retry:;
 			}
 		}
 	}
-	epoll_shim_ctx_unlock(&epoll_shim_ctx);
+	rwlock_unlock_read(&epoll_shim_ctx.rwlock);
 
 	if (n == 0 &&
 	    !(timeout && timeout->tv_sec == 0 && timeout->tv_nsec == 0)) {

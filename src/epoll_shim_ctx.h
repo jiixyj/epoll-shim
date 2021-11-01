@@ -70,10 +70,21 @@ errno_t fd_context_map_node_destroy(FDContextMapNode **node);
 typedef RB_HEAD(fd_context_map_, fd_context_map_node_) FDContextMap;
 
 typedef struct {
-	FDContextMap fd_context_map;
+	int reader_count;
+	bool has_writer;
 	pthread_mutex_t mutex;
-	pthread_rwlock_t rwlock;
 	pthread_cond_t cond;
+} RWLock;
+
+#define RWLOCK_INITIALIZER                          \
+	{                                           \
+		.mutex = PTHREAD_MUTEX_INITIALIZER, \
+		.cond = PTHREAD_COND_INITIALIZER    \
+	}
+
+typedef struct {
+	FDContextMap fd_context_map;
+	RWLock rwlock;
 
 	/* members for realtime timer change detection */
 	pthread_mutex_t step_detector_mutex;
