@@ -297,9 +297,9 @@ static void
 rwlock_downgrade(RWLock *rwlock)
 {
 	(void)pthread_mutex_lock(&rwlock->mutex);
+	++rwlock->reader_count;
 	rwlock->has_writer = false;
 	(void)pthread_cond_broadcast(&rwlock->cond);
-	++rwlock->reader_count;
 	(void)pthread_mutex_unlock(&rwlock->mutex);
 }
 
