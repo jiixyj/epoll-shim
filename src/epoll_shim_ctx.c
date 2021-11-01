@@ -242,9 +242,14 @@ RB_GENERATE_STATIC(fd_context_map_, fd_context_map_node_, entry,
 
 EpollShimCtx epoll_shim_ctx = {
 	.fd_context_map = RB_INITIALIZER(&fd_context_map),
-	.rwlock = RWLOCK_INITIALIZER,
 	.step_detector_mutex = PTHREAD_MUTEX_INITIALIZER,
 };
+
+__attribute__((constructor)) static void
+epoll_shim_ctx_initialize(void)
+{
+	rwlock_init(&epoll_shim_ctx.rwlock);
+}
 
 /**/
 

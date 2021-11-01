@@ -3,6 +3,14 @@
 /**/
 
 void
+rwlock_init(RWLock *rwlock)
+{
+	*rwlock = (RWLock) {};
+	(void)pthread_mutex_init(&rwlock->mutex, NULL);
+	(void)pthread_cond_init(&rwlock->cond, NULL);
+}
+
+void
 rwlock_lock_read(RWLock *rwlock)
 {
 	(void)pthread_mutex_lock(&rwlock->mutex);

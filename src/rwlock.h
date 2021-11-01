@@ -12,12 +12,7 @@ typedef struct {
 	pthread_cond_t cond;
 } RWLock;
 
-#define RWLOCK_INITIALIZER                          \
-	{                                           \
-		.mutex = PTHREAD_MUTEX_INITIALIZER, \
-		.cond = PTHREAD_COND_INITIALIZER    \
-	}
-
+void rwlock_init(RWLock *rwlock);
 void rwlock_lock_read(RWLock *rwlock);
 void rwlock_unlock_read(RWLock *rwlock);
 void rwlock_lock_write(RWLock *rwlock);
