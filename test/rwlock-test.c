@@ -51,7 +51,12 @@ stress_writer(void *arg)
 		for (int i = 0; i < 1000; ++i) {
 			stress_data->data[i] += stress_data->inc;
 		}
-		rwlock_unlock_write(stress_data->lock);
+		rwlock_downgrade(stress_data->lock);
+		for (int i = 1; i < 1000; ++i) {
+			ATF_REQUIRE(stress_data->data[i] ==
+			    stress_data->data[i - 1] + 1);
+		}
+		rwlock_unlock_read(stress_data->lock);
 	}
 
 	return NULL;

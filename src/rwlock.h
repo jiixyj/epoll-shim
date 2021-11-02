@@ -1,15 +1,19 @@
 #ifndef RWLOCK_H_
 #define RWLOCK_H_
 
+#include <stdatomic.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include <pthread.h>
+#include <semaphore.h>
 
 typedef struct {
-	int reader_count;
-	bool has_writer;
 	pthread_mutex_t mutex;
-	pthread_cond_t cond;
+	sem_t writer_wait;
+	sem_t reader_wait;
+	atomic_int_fast32_t num_pending;
+	atomic_int_fast32_t readers_departing;
 } RWLock;
 
 void rwlock_init(RWLock *rwlock);
