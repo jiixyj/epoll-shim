@@ -20,7 +20,7 @@ find_package(Threads REQUIRED)
 macro(atf_test _testname)
   add_executable("${_testname}" "${_testname}.c")
   target_link_libraries(
-    "${_testname}" PRIVATE epoll-shim::epoll-shim Threads::Threads
+    "${_testname}" PRIVATE epoll-shim::epoll-shim-elf Threads::Threads
                            microatf::microatf-c)
   atf_discover_tests("${_testname}" ${ARGN})
 endmacro()

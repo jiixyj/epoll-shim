@@ -37,7 +37,8 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 
   if(BUILD_TESTING)
     file(WRITE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
-         "add_library(${_namespace}::epoll-shim ALIAS epoll-shim)\n")
+         "add_library(${_namespace}::epoll-shim ALIAS epoll-shim)\n
+add_library(${_namespace}::epoll-shim-elf ALIAS epoll-shim-elf)\n")
     set(${PROJECT_NAME}_DIR "${PROJECT_BINARY_DIR}")
     add_subdirectory(test)
   endif()
@@ -64,7 +65,7 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 
   set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/libepoll-shim")
   install(
-    TARGETS epoll-shim
+    TARGETS epoll-shim epoll-shim-elf
     EXPORT ${PROJECT_NAME}-targets
     LIBRARY
     INCLUDES

@@ -13,6 +13,8 @@ target_include_directories(rwlock
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_library(epoll-shim INTERFACE)
   add_library(epoll-shim::epoll-shim ALIAS epoll-shim)
+  add_library(epoll-shim-elf INTERFACE)
+  add_library(epoll-shim-elf::epoll-shim-elf ALIAS epoll-shim-elf)
   return()
 endif()
 
@@ -117,3 +119,13 @@ foreach(_header IN LISTS _headers)
 endforeach()
 
 set_target_properties(epoll-shim PROPERTIES SOVERSION 0)
+
+#
+
+add_library(epoll-shim-elf epoll_shim_elf.c)
+target_link_libraries(epoll-shim-elf PUBLIC epoll-shim)
+generate_export_header(epoll-shim-elf BASE_NAME epoll_shim_elf)
+target_include_directories(
+  epoll-shim-elf
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+set_target_properties(epoll-shim-elf PROPERTIES SOVERSION 0)
