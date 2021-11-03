@@ -296,7 +296,7 @@ epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
     void (*fun)(FileDescription *node, int kq, void *arg), void *arg)
 {
 	for (unsigned int i = 0;
-	     i < epoll_shim_ctx->open_files_length && i < INT_MAX; ++i) {
+	     i < epoll_shim_ctx->open_files_length && i <= INT_MAX; ++i) {
 		FileDescription *desc = epoll_shim_ctx->open_files[i];
 		if (!desc) {
 			continue;
