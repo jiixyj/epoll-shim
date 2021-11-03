@@ -108,7 +108,7 @@ static struct file_description_vtable const timerfd_vtable = {
 };
 
 static errno_t
-timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
+timerfd_create_impl(int *fd_out, int clockid, int flags)
 {
 	errno_t ec;
 
@@ -123,14 +123,13 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 	_Static_assert(TFD_CLOEXEC == O_CLOEXEC, "");
 	_Static_assert(TFD_NONBLOCK == O_NONBLOCK, "");
 
-	FDContextMapNode *node;
+	int fd;
+	FileDescription *desc;
 	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
-	    flags & (O_CLOEXEC | O_NONBLOCK), &node);
+	    flags & (O_CLOEXEC | O_NONBLOCK), &fd, &desc);
 	if (ec != 0) {
 		return ec;
 	}
-
-	FileDescription *desc = node->desc;
 
 	desc->flags = flags & O_NONBLOCK;
 
@@ -139,14 +138,13 @@ timerfd_create_impl(FDContextMapNode **node_out, int clockid, int flags)
 	}
 
 	desc->vtable = &timerfd_vtable;
-	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
+	epoll_shim_ctx_install_node(&epoll_shim_ctx, fd, desc);
 
-	*node_out = node;
+	*fd_out = fd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
-	(void)fd_context_map_node_destroy(&node);
+	epoll_shim_ctx_drop_node(&epoll_shim_ctx, fd, desc);
 	return ec;
 }
 
@@ -157,15 +155,15 @@ timerfd_create(int clockid, int flags)
 	errno_t ec;
 	int oe = errno;
 
-	FDContextMapNode *node;
-	ec = timerfd_create_impl(&node, clockid, flags);
+	int fd;
+	ec = timerfd_create_impl(&fd, clockid, flags);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
 	errno = oe;
-	return node->fd;
+	return fd;
 }
 
 static errno_t

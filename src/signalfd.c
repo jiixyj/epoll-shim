@@ -112,8 +112,7 @@ static struct file_description_vtable const signalfd_vtable = {
 };
 
 static errno_t
-signalfd_impl(FDContextMapNode **node_out, int fd, sigset_t const *sigs,
-    int flags)
+signalfd_impl(int *sfd_out, int fd, sigset_t const *sigs, int flags)
 {
 	errno_t ec;
 
@@ -129,31 +128,28 @@ signalfd_impl(FDContextMapNode **node_out, int fd, sigset_t const *sigs,
 	_Static_assert(SFD_CLOEXEC == O_CLOEXEC, "");
 	_Static_assert(SFD_NONBLOCK == O_NONBLOCK, "");
 
-	FDContextMapNode *node;
+	int sfd;
+	FileDescription *desc;
 	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
-	    flags & (O_CLOEXEC | O_NONBLOCK), &node);
+	    flags & (O_CLOEXEC | O_NONBLOCK), &sfd, &desc);
 	if (ec != 0) {
 		return ec;
 	}
 
-	FileDescription *desc = node->desc;
-
 	desc->flags = flags & O_NONBLOCK;
 
-	if ((ec = signalfd_ctx_init(&desc->ctx.signalfd, /**/
-		 node->fd, sigs)) != 0) {
+	if ((ec = signalfd_ctx_init(&desc->ctx.signalfd, sfd, sigs)) != 0) {
 		goto fail;
 	}
 
 	desc->vtable = &signalfd_vtable;
-	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
+	epoll_shim_ctx_install_node(&epoll_shim_ctx, sfd, desc);
 
-	*node_out = node;
+	*sfd_out = sfd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
-	(void)fd_context_map_node_destroy(&node);
+	epoll_shim_ctx_drop_node(&epoll_shim_ctx, sfd, desc);
 	return ec;
 }
 
@@ -164,13 +160,13 @@ signalfd(int fd, sigset_t const *sigs, int flags)
 	errno_t ec;
 	int oe = errno;
 
-	FDContextMapNode *node;
-	ec = signalfd_impl(&node, fd, sigs, flags);
+	int sfd_out;
+	ec = signalfd_impl(&sfd_out, fd, sigs, flags);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
 	errno = oe;
-	return node->fd;
+	return sfd_out;
 }

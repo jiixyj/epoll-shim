@@ -56,23 +56,9 @@ PollableNode fd_as_pollable_node(int *fd);
 
 /**/
 
-struct fd_context_map_node_;
-typedef struct fd_context_map_node_ FDContextMapNode;
-
-struct fd_context_map_node_ {
-	RB_ENTRY(fd_context_map_node_) entry;
-	int fd;
-	FileDescription *desc;
-};
-
-errno_t fd_context_map_node_destroy(FDContextMapNode **node);
-
-/**/
-
-typedef RB_HEAD(fd_context_map_, fd_context_map_node_) FDContextMap;
-
 typedef struct {
-	FDContextMap fd_context_map;
+	FileDescription **open_files;
+	unsigned int open_files_length;
 	RWLock rwlock;
 
 	/* members for realtime timer change detection */
@@ -84,14 +70,13 @@ typedef struct {
 extern EpollShimCtx epoll_shim_ctx;
 
 errno_t epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
-    FDContextMapNode **node);
-void epoll_shim_ctx_realize_node(EpollShimCtx *epoll_shim_ctx,
-    FDContextMapNode *node);
-
+    int *fd, FileDescription **node);
+void epoll_shim_ctx_install_node(EpollShimCtx *epoll_shim_ctx, /**/
+    int fd, FileDescription *node);
 FileDescription *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd);
+void epoll_shim_ctx_drop_node(EpollShimCtx *epoll_shim_ctx, /**/
+    int fd, FileDescription *node);
 
-void epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
-    FDContextMapNode *node);
 void
 epoll_shim_ctx_update_realtime_change_monitoring(EpollShimCtx *epoll_shim_ctx,
     int change);

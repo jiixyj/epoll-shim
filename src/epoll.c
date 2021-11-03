@@ -58,18 +58,17 @@ epollfd_remove_fd(FileDescription *node, int kq, int fd)
 }
 
 static errno_t
-epoll_create_impl(FDContextMapNode **node_out, int flags)
+epoll_create_impl(int *fd_out, int flags)
 {
 	errno_t ec;
 
-	FDContextMapNode *node;
+	int fd;
+	FileDescription *desc;
 	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
-	    flags & (O_CLOEXEC | O_NONBLOCK), &node);
+	    flags & (O_CLOEXEC | O_NONBLOCK), &fd, &desc);
 	if (ec != 0) {
 		return ec;
 	}
-
-	FileDescription *desc = node->desc;
 
 	desc->flags = flags & O_NONBLOCK;
 
@@ -78,14 +77,13 @@ epoll_create_impl(FDContextMapNode **node_out, int flags)
 	}
 
 	desc->vtable = &epollfd_vtable;
-	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
+	epoll_shim_ctx_install_node(&epoll_shim_ctx, fd, desc);
 
-	*node_out = node;
+	*fd_out = fd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
-	(void)fd_context_map_node_destroy(&node);
+	epoll_shim_ctx_drop_node(&epoll_shim_ctx, fd, desc);
 	return ec;
 }
 
@@ -95,15 +93,15 @@ epoll_create_common(int flags)
 	errno_t ec;
 	int oe = errno;
 
-	FDContextMapNode *node;
-	ec = epoll_create_impl(&node, flags);
+	int fd;
+	ec = epoll_create_impl(&fd, flags);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
 	errno = oe;
-	return node->fd;
+	return fd;
 }
 
 EPOLL_SHIM_EXPORT

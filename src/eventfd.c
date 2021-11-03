@@ -102,7 +102,7 @@ static struct file_description_vtable const eventfd_vtable = {
 };
 
 static errno_t
-eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
+eventfd_impl(int *fd_out, unsigned int initval, int flags)
 {
 	errno_t ec;
 
@@ -113,14 +113,13 @@ eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
 	_Static_assert(EFD_CLOEXEC == O_CLOEXEC, "");
 	_Static_assert(EFD_NONBLOCK == O_NONBLOCK, "");
 
-	FDContextMapNode *node;
+	int fd;
+	FileDescription *desc;
 	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
-	    flags & (O_CLOEXEC | O_NONBLOCK), &node);
+	    flags & (O_CLOEXEC | O_NONBLOCK), &fd, &desc);
 	if (ec != 0) {
 		return ec;
 	}
-
-	FileDescription *desc = node->desc;
 
 	desc->flags = flags & O_NONBLOCK;
 
@@ -129,20 +128,19 @@ eventfd_impl(FDContextMapNode **node_out, unsigned int initval, int flags)
 		ctx_flags |= EVENTFD_CTX_FLAG_SEMAPHORE;
 	}
 
-	if ((ec = eventfd_ctx_init(&desc->ctx.eventfd, node->fd, initval,
+	if ((ec = eventfd_ctx_init(&desc->ctx.eventfd, fd, initval,
 		 ctx_flags)) != 0) {
 		goto fail;
 	}
 
 	desc->vtable = &eventfd_vtable;
-	epoll_shim_ctx_realize_node(&epoll_shim_ctx, node);
+	epoll_shim_ctx_install_node(&epoll_shim_ctx, fd, desc);
 
-	*node_out = node;
+	*fd_out = fd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_remove_node_explicit(&epoll_shim_ctx, node);
-	(void)fd_context_map_node_destroy(&node);
+	epoll_shim_ctx_drop_node(&epoll_shim_ctx, fd, desc);
 	return ec;
 }
 
@@ -150,16 +148,16 @@ EPOLL_SHIM_EXPORT
 int
 eventfd(unsigned int initval, int flags)
 {
-	FDContextMapNode *node;
 	errno_t ec;
 
-	ec = eventfd_impl(&node, initval, flags);
+	int fd;
+	ec = eventfd_impl(&fd, initval, flags);
 	if (ec != 0) {
 		errno = ec;
 		return -1;
 	}
 
-	return node->fd;
+	return fd;
 }
 
 EPOLL_SHIM_EXPORT

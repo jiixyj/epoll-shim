@@ -112,66 +112,6 @@ file_description_unref(FileDescription **desc)
 
 /**/
 
-static errno_t
-fd_context_map_node_init(FDContextMapNode *node, int kq)
-{
-	errno_t ec;
-
-	if ((ec = file_description_create(&node->desc)) != 0) {
-		return ec;
-	}
-	node->fd = kq;
-
-	return 0;
-}
-
-static errno_t
-fd_context_map_node_create(FDContextMapNode **node_out, int kq)
-{
-	errno_t ec;
-
-	FDContextMapNode *node = malloc(sizeof(FDContextMapNode));
-	if (!node) {
-		return errno;
-	}
-
-	if ((ec = fd_context_map_node_init(node, kq)) != 0) {
-		free(node);
-		return ec;
-	}
-
-	*node_out = node;
-	return 0;
-}
-
-static errno_t
-fd_context_map_node_terminate(FDContextMapNode *node)
-{
-	errno_t ec = 0;
-
-	{
-		errno_t ec_local = file_description_unref(&node->desc);
-		ec = ec != 0 ? ec : ec_local;
-	}
-
-	{
-		errno_t ec_local = real_close(node->fd) < 0 ? errno : 0;
-		ec = ec != 0 ? ec : ec_local;
-	}
-
-	return ec;
-}
-
-errno_t
-fd_context_map_node_destroy(FDContextMapNode **node)
-{
-	errno_t ec = fd_context_map_node_terminate(*node);
-	free(*node);
-	return ec;
-}
-
-/**/
-
 static void
 fd_poll(void *arg, uint32_t *revents)
 {
@@ -229,19 +169,7 @@ fd_context_default_write(FileDescription *node, int kq, /**/
 
 /**/
 
-static int
-fd_context_map_node_cmp(FDContextMapNode *e1, FDContextMapNode *e2)
-{
-	return (e1->fd < e2->fd) ? -1 : (e1->fd > e2->fd);
-}
-
-RB_PROTOTYPE_STATIC(fd_context_map_, fd_context_map_node_, entry,
-    fd_context_map_node_cmp);
-RB_GENERATE_STATIC(fd_context_map_, fd_context_map_node_, entry,
-    fd_context_map_node_cmp);
-
 EpollShimCtx epoll_shim_ctx = {
-	.fd_context_map = RB_INITIALIZER(&fd_context_map),
 	.step_detector_mutex = PTHREAD_MUTEX_INITIALIZER,
 };
 
@@ -253,109 +181,108 @@ epoll_shim_ctx_initialize(void)
 
 /**/
 
-static errno_t
-epoll_shim_ctx_create_node_impl(EpollShimCtx *epoll_shim_ctx, int kq,
-    FDContextMapNode **node_out)
-{
-	errno_t ec;
-
-	FDContextMapNode *node;
-	{
-		FDContextMapNode find;
-		find.fd = kq;
-
-		node = RB_FIND(fd_context_map_, /**/
-		    &epoll_shim_ctx->fd_context_map, &find);
-	}
-
-	if (node) {
-		/*
-		 * If we get here, someone must have already closed the old fd
-		 * with a normal 'close()' call, i.e. not with our
-		 * 'epoll_shim_close()' wrapper. The fd inside the node
-		 * refers now to the new kq we are currently creating. We
-		 * must not close it, but we must clean up the old context
-		 * object!
-		 */
-		(void)file_description_unref(&node->desc);
-
-		ec = fd_context_map_node_init(node, kq);
-		if (ec != 0) {
-			RB_REMOVE(fd_context_map_, /**/
-			    &epoll_shim_ctx->fd_context_map, node);
-			free(node);
-			return ec;
-		}
-	} else {
-		ec = fd_context_map_node_create(&node, kq);
-		if (ec != 0) {
-			return ec;
-		}
-
-		void *colliding_node = RB_INSERT(fd_context_map_,
-		    &epoll_shim_ctx->fd_context_map, node);
-		(void)colliding_node;
-		assert(colliding_node == NULL);
-	}
-
-	*node_out = node;
-	return 0;
-}
-
 errno_t
-epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
-    FDContextMapNode **node)
+epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags, /**/
+    int *fd, FileDescription **node)
 {
-	errno_t ec;
+	errno_t ec = 0;
+
+	rwlock_lock_write(&epoll_shim_ctx->rwlock);
 
 	int kq = kqueue1(flags);
 	if (kq < 0) {
-		return errno;
+		ec = errno;
+		goto out_kqueue;
 	}
 
-	rwlock_lock_write(&epoll_shim_ctx->rwlock);
-	ec = epoll_shim_ctx_create_node_impl(epoll_shim_ctx, kq, node);
+	unsigned int open_files_length = epoll_shim_ctx->open_files_length;
 
+	while (open_files_length <= (unsigned int)kq) {
+		unsigned int space_needed = 32;
+		while (space_needed <= (unsigned int)kq) {
+			space_needed <<= 1;
+		}
+
+		size_t size;
+		if (__builtin_mul_overflow(space_needed,
+			sizeof(FileDescription *), &size)) {
+			ec = ENOMEM;
+			goto out;
+		}
+
+		FileDescription **new_files =
+		    realloc(epoll_shim_ctx->open_files, size);
+		if (!new_files) {
+			ec = errno;
+			goto out;
+		}
+
+		size_t old_size = open_files_length * sizeof(FileDescription *);
+		memset(&new_files[open_files_length], 0, size - old_size);
+
+		epoll_shim_ctx->open_files = new_files;
+		epoll_shim_ctx->open_files_length = space_needed;
+		break;
+	}
+
+	if (epoll_shim_ctx->open_files[kq] != NULL) {
+		/*
+		 * If we get here, someone must have already closed the old fd
+		 * with a normal 'close()' call, i.e. not with our
+		 * 'epoll_shim_close()' wrapper.
+		 */
+		(void)file_description_unref(&epoll_shim_ctx->open_files[kq]);
+		epoll_shim_ctx->open_files[kq] = NULL;
+	}
+
+	ec = file_description_create(node);
 	if (ec != 0) {
-		rwlock_unlock_write(&epoll_shim_ctx->rwlock);
+		goto out;
+	}
+
+	*fd = kq;
+
+out:
+	if (ec != 0) {
 		real_close(kq);
+	out_kqueue:
+		rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 	}
 
 	return ec;
 }
 
 void
-epoll_shim_ctx_realize_node(EpollShimCtx *epoll_shim_ctx,
-    FDContextMapNode *node)
+epoll_shim_ctx_install_node(EpollShimCtx *epoll_shim_ctx, /**/
+    int fd, FileDescription *node)
 {
-	(void)node;
-
+	assert((unsigned int)fd < epoll_shim_ctx->open_files_length);
+	epoll_shim_ctx->open_files[fd] = node;
 	rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 }
 
-static FDContextMapNode *
+static FileDescription *
 epoll_shim_ctx_find_node_impl(EpollShimCtx *epoll_shim_ctx, int fd)
 {
-	FDContextMapNode *node;
-
-	FDContextMapNode find;
-	find.fd = fd;
-
-	node = RB_FIND(fd_context_map_, /**/
-	    &epoll_shim_ctx->fd_context_map, &find);
-
-	return node;
+	if (fd < 0) {
+		return NULL;
+	}
+	return (unsigned int)fd < epoll_shim_ctx->open_files_length ?
+		  epoll_shim_ctx->open_files[fd] :
+		  NULL;
 }
 
 FileDescription *
 epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 {
+	if (fd < 0) {
+		return NULL;
+	}
+
 	FileDescription *desc;
 
 	rwlock_lock_read(&epoll_shim_ctx->rwlock);
-	FDContextMapNode *node = /**/
-	    epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
-	desc = node != NULL ? node->desc : NULL;
+	desc = epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
 	if (desc != NULL) {
 		file_description_ref(desc);
 	}
@@ -368,9 +295,14 @@ static void
 epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
     void (*fun)(FileDescription *node, int kq, void *arg), void *arg)
 {
-	FDContextMapNode *node;
-	RB_FOREACH (node, fd_context_map_, &epoll_shim_ctx->fd_context_map) {
-		fun(node->desc, node->fd, arg);
+	for (unsigned int i = 0;
+	     i < epoll_shim_ctx->open_files_length && i < INT_MAX; ++i) {
+		FileDescription *desc = epoll_shim_ctx->open_files[i];
+		if (!desc) {
+			continue;
+		}
+
+		fun(desc, (int)i, arg);
 	}
 }
 
@@ -388,9 +320,6 @@ remove_node_lock_epollfd(FileDescription *node, int kq, void *arg)
 static void
 remove_node_remove_fd_from_epollfd(FileDescription *node, int kq, void *arg)
 {
-	(void)kq;
-	(void)arg;
-
 	epollfd_remove_fd(node, kq, *(int *)arg);
 }
 static void
@@ -404,15 +333,15 @@ remove_node_unlock_epollfd(FileDescription *node, int kq, void *arg)
 static errno_t
 epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 {
-	errno_t ec;
-	FDContextMapNode *node;
+	errno_t ec = 0;
+	FileDescription *node;
 
 	rwlock_lock_write(&epoll_shim_ctx->rwlock);
 
 	node = epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
 	if (node) {
-		RB_REMOVE(fd_context_map_, /**/
-		    &epoll_shim_ctx->fd_context_map, node);
+		epoll_shim_ctx->open_files[fd] = NULL;
+		ec = file_description_unref(&node);
 	}
 
 	rwlock_downgrade(&epoll_shim_ctx->rwlock);
@@ -421,10 +350,9 @@ epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 	    remove_node_lock_epollfd, NULL);
 	epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
 	    remove_node_remove_fd_from_epollfd, &fd);
-	if (node) {
-		ec = fd_context_map_node_destroy(&node);
-	} else {
-		ec = real_close(fd) < 0 ? errno : 0;
+	{
+		errno_t ec_local = real_close(fd) < 0 ? errno : 0;
+		ec = ec != 0 ? ec : ec_local;
 	}
 	epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
 	    remove_node_unlock_epollfd, NULL);
@@ -435,11 +363,11 @@ epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 }
 
 void
-epoll_shim_ctx_remove_node_explicit(EpollShimCtx *epoll_shim_ctx,
-    FDContextMapNode *node)
+epoll_shim_ctx_drop_node(EpollShimCtx *epoll_shim_ctx, /**/
+    int fd, FileDescription *node)
 {
-	RB_REMOVE(fd_context_map_, /**/
-	    &epoll_shim_ctx->fd_context_map, node);
+	(void)file_description_unref(&node);
+	(void)real_close(fd);
 	rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 }
 
@@ -697,14 +625,13 @@ retry:;
 	if (fds != NULL) {
 		rwlock_lock_read(&epoll_shim_ctx.rwlock);
 		for (nfds_t i = 0; i < nfds; ++i) {
-			FDContextMapNode *node = epoll_shim_ctx_find_node_impl(
+			FileDescription *node = epoll_shim_ctx_find_node_impl(
 			    &epoll_shim_ctx, fds[i].fd);
 			if (!node) {
 				continue;
 			}
-			if (node->desc->vtable->poll_fun != NULL) {
-				node->desc->vtable->poll_fun(node->desc,
-				    fds[i].fd, NULL);
+			if (node->vtable->poll_fun != NULL) {
+				node->vtable->poll_fun(node, fds[i].fd, NULL);
 			}
 		}
 		rwlock_unlock_read(&epoll_shim_ctx.rwlock);
@@ -725,15 +652,14 @@ retry:;
 			continue;
 		}
 
-		FDContextMapNode *node =
+		FileDescription *node =
 		    epoll_shim_ctx_find_node_impl(&epoll_shim_ctx, fds[i].fd);
 		if (!node) {
 			continue;
 		}
-		if (node->desc->vtable->poll_fun != NULL) {
+		if (node->vtable->poll_fun != NULL) {
 			uint32_t revents;
-			node->desc->vtable->poll_fun(node->desc, fds[i].fd,
-			    &revents);
+			node->vtable->poll_fun(node, fds[i].fd, &revents);
 			fds[i].revents = (short)revents;
 			if (fds[i].revents == 0) {
 				--n;
