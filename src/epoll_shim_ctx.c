@@ -458,6 +458,7 @@ epoll_shim_ctx_start_realtime_step_detection(EpollShimCtx *epoll_shim_ctx)
 	struct realtime_step_detection_args *args = malloc(
 	    sizeof(struct realtime_step_detection_args));
 	if (args == NULL) {
+		ec = errno;
 		goto out;
 	}
 	*args = (struct realtime_step_detection_args) {
