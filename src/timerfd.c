@@ -18,6 +18,7 @@
 
 #include "epoll_shim_ctx.h"
 #include "epoll_shim_export.h"
+#include "errno_return.h"
 
 static errno_t
 timerfd_ctx_read_or_block(FileDescription *node, int kq, uint64_t *value)
@@ -152,18 +153,13 @@ EPOLL_SHIM_EXPORT
 int
 timerfd_create(int clockid, int flags)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	int fd;
 	ec = timerfd_create_impl(&fd, clockid, flags);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return fd;
+	ERRNO_RETURN(ec, -1, fd);
 }
 
 static errno_t
@@ -221,17 +217,12 @@ int
 timerfd_settime(int fd, int flags, const struct itimerspec *new,
     struct itimerspec *old)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	ec = timerfd_settime_impl(fd, flags, new, old);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return 0;
+	ERRNO_RETURN(ec, -1, 0);
 }
 
 static errno_t
@@ -261,15 +252,10 @@ EPOLL_SHIM_EXPORT
 int
 timerfd_gettime(int fd, struct itimerspec *cur)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	ec = timerfd_gettime_impl(fd, cur);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return 0;
+	ERRNO_RETURN(ec, -1, 0);
 }

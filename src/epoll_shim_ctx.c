@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "epoll_shim_export.h"
+#include "errno_return.h"
 #include "timespec_util.h"
 #include "wrap.h"
 
@@ -518,33 +519,25 @@ EPOLL_SHIM_EXPORT
 int
 epoll_shim_close(int fd)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	ec = epoll_shim_ctx_remove_node(&epoll_shim_ctx, fd);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return 0;
+	ERRNO_RETURN(ec, -1, 0);
 }
 
 EPOLL_SHIM_EXPORT
 ssize_t
 epoll_shim_read(int fd, void *buf, size_t nbytes)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
-		errno = oe;
-		return real_read(fd, buf, nbytes);
+		ERRNO_RETURN(0, -1, real_read(fd, buf, nbytes));
 	}
-
-	ssize_t rc = -1;
 
 	if (nbytes > SSIZE_MAX) {
 		ec = EINVAL;
@@ -553,33 +546,23 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 
 	size_t bytes_transferred;
 	ec = node->vtable->read_fun(node, fd, buf, nbytes, &bytes_transferred);
-	if (ec != 0) {
-		goto out;
-	}
-
-	ec = oe;
-	rc = (ssize_t)bytes_transferred;
 
 out:
 	(void)file_description_unref(&node);
-	errno = ec;
-	return rc;
+	ERRNO_RETURN(ec, -1, (ssize_t)bytes_transferred);
 }
 
 EPOLL_SHIM_EXPORT
 ssize_t
 epoll_shim_write(int fd, void const *buf, size_t nbytes)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
-		errno = oe;
-		return real_write(fd, buf, nbytes);
+		ERRNO_RETURN(0, -1, real_write(fd, buf, nbytes));
 	}
-
-	ssize_t rc = -1;
 
 	if (nbytes > SSIZE_MAX) {
 		ec = EINVAL;
@@ -588,17 +571,10 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 
 	size_t bytes_transferred;
 	ec = node->vtable->write_fun(node, fd, buf, nbytes, &bytes_transferred);
-	if (ec != 0) {
-		goto out;
-	}
-
-	ec = oe;
-	rc = (ssize_t)bytes_transferred;
 
 out:
 	(void)file_description_unref(&node);
-	errno = ec;
-	return rc;
+	ERRNO_RETURN(ec, -1, (ssize_t)bytes_transferred);
 }
 
 EPOLL_SHIM_EXPORT
@@ -729,26 +705,21 @@ int
 epoll_shim_ppoll(struct pollfd *fds, nfds_t nfds, struct timespec const *tmo_p,
     sigset_t const *sigmask)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	int n;
 	ec = epoll_shim_ppoll_impl(fds, nfds, tmo_p, sigmask, &n);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return n;
+	ERRNO_RETURN(ec, -1, n);
 }
 
 EPOLL_SHIM_EXPORT
 int
 epoll_shim_fcntl(int fd, int cmd, ...)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	va_list ap;
 
@@ -757,8 +728,7 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 		void *arg = va_arg(ap, void *);
 		va_end(ap);
 
-		errno = oe;
-		return real_fcntl(fd, cmd, arg);
+		ERRNO_RETURN(0, -1, real_fcntl(fd, cmd, arg));
 	}
 
 	int arg;
@@ -769,8 +739,7 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 
 	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
 	if (!node) {
-		errno = oe;
-		return real_fcntl(fd, F_SETFL, arg);
+		ERRNO_RETURN(0, -1, real_fcntl(fd, F_SETFL, arg));
 	}
 
 	(void)pthread_mutex_lock(&node->mutex);
@@ -785,18 +754,6 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	}
 	(void)pthread_mutex_unlock(&node->mutex);
 
-	int rc;
-
-	if (ec != 0) {
-		rc = -1;
-		goto out;
-	}
-
-	ec = oe;
-	rc = 0;
-
-out:
 	(void)file_description_unref(&node);
-	errno = ec;
-	return rc;
+	ERRNO_RETURN(ec, -1, 0);
 }

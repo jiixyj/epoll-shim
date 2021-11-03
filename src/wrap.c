@@ -51,7 +51,7 @@ wrap_initialize_impl(void)
 static void
 wrap_initialize(void)
 {
-	int oe = errno;
+	int const oe = errno;
 	(void)pthread_once(&wrap.wrap_init, wrap_initialize_impl);
 	errno = oe;
 }

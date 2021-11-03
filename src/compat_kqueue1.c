@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "errno_return.h"
 #include "wrap.h"
 
 static errno_t
@@ -63,16 +64,11 @@ out:
 int
 compat_kqueue1(int flags)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	int fd;
 	ec = compat_kqueue1_impl(&fd, flags);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return fd;
+	ERRNO_RETURN(ec, -1, fd);
 }

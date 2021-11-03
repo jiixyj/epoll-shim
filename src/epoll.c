@@ -14,6 +14,7 @@
 
 #include "epoll_shim_ctx.h"
 #include "epoll_shim_export.h"
+#include "errno_return.h"
 #include "timespec_util.h"
 #include "wrap.h"
 
@@ -90,30 +91,25 @@ fail:
 static int
 epoll_create_common(int flags)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	int fd;
 	ec = epoll_create_impl(&fd, flags);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return fd;
+	ERRNO_RETURN(ec, -1, fd);
 }
 
 EPOLL_SHIM_EXPORT
 int
 epoll_create(int size)
 {
-	if (size <= 0) {
-		errno = EINVAL;
-		return -1;
-	}
+	ERRNO_SAVE;
+	errno_t ec;
 
-	return epoll_create_common(0);
+	ec = size <= 0 ? EINVAL : 0;
+
+	ERRNO_RETURN(ec, -1, epoll_create_common(0));
 }
 
 EPOLL_SHIM_EXPORT
@@ -162,17 +158,12 @@ EPOLL_SHIM_EXPORT
 int
 epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	ec = epoll_ctl_impl(fd, op, fd2, ev);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return 0;
+	ERRNO_RETURN(ec, -1, 0);
 }
 
 static errno_t
@@ -335,18 +326,13 @@ int
 epoll_pwait(int fd, struct epoll_event *ev, int cnt, int to,
     sigset_t const *sigs)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	int actual_cnt;
 	ec = epoll_pwait_impl(fd, ev, cnt, to, sigs, &actual_cnt);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return actual_cnt;
+	ERRNO_RETURN(ec, -1, actual_cnt);
 }
 
 EPOLL_SHIM_EXPORT

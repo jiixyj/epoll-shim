@@ -20,6 +20,7 @@
 
 #include "epoll_shim_ctx.h"
 #include "epoll_shim_export.h"
+#include "errno_return.h"
 
 static errno_t
 signalfd_ctx_read_or_block(FileDescription *node, int kq,
@@ -157,16 +158,11 @@ EPOLL_SHIM_EXPORT
 int
 signalfd(int fd, sigset_t const *sigs, int flags)
 {
+	ERRNO_SAVE;
 	errno_t ec;
-	int oe = errno;
 
 	int sfd_out;
 	ec = signalfd_impl(&sfd_out, fd, sigs, flags);
-	if (ec != 0) {
-		errno = ec;
-		return -1;
-	}
 
-	errno = oe;
-	return sfd_out;
+	ERRNO_RETURN(ec, -1, sfd_out);
 }
