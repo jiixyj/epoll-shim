@@ -20,16 +20,16 @@
 #include "epoll_shim_export.h"
 
 static errno_t
-eventfd_ctx_read_or_block(FileDescription *node, int kq, uint64_t *value)
+eventfd_ctx_read_or_block(FileDescription *desc, int kq, uint64_t *value)
 {
 	errno_t ec;
-	EventFDCtx *eventfd_ctx = &node->ctx.eventfd;
+	EventFDCtx *eventfd_ctx = &desc->ctx.eventfd;
 
 	for (;;) {
-		(void)pthread_mutex_lock(&node->mutex);
+		(void)pthread_mutex_lock(&desc->mutex);
 		ec = eventfd_ctx_read(eventfd_ctx, kq, value);
-		bool nonblock = (node->flags & O_NONBLOCK) != 0;
-		(void)pthread_mutex_unlock(&node->mutex);
+		bool nonblock = (desc->flags & O_NONBLOCK) != 0;
+		(void)pthread_mutex_unlock(&desc->mutex);
 
 		if (nonblock || ec != EAGAIN) {
 			return ec;
@@ -46,7 +46,7 @@ eventfd_ctx_read_or_block(FileDescription *node, int kq, uint64_t *value)
 }
 
 static errno_t
-eventfd_helper_read(FileDescription *node, int kq, /**/
+eventfd_helper_read(FileDescription *desc, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -56,7 +56,7 @@ eventfd_helper_read(FileDescription *node, int kq, /**/
 	}
 
 	uint64_t value;
-	if ((ec = eventfd_ctx_read_or_block(node, kq, &value)) != 0) {
+	if ((ec = eventfd_ctx_read_or_block(desc, kq, &value)) != 0) {
 		return ec;
 	}
 
@@ -66,7 +66,7 @@ eventfd_helper_read(FileDescription *node, int kq, /**/
 }
 
 static errno_t
-eventfd_helper_write(FileDescription *node, int kq, /**/
+eventfd_helper_write(FileDescription *desc, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -78,9 +78,9 @@ eventfd_helper_write(FileDescription *node, int kq, /**/
 	uint64_t value;
 	memcpy(&value, buf, sizeof(uint64_t));
 
-	(void)pthread_mutex_lock(&node->mutex);
-	ec = eventfd_ctx_write(&node->ctx.eventfd, kq, value);
-	(void)pthread_mutex_unlock(&node->mutex);
+	(void)pthread_mutex_lock(&desc->mutex);
+	ec = eventfd_ctx_write(&desc->ctx.eventfd, kq, value);
+	(void)pthread_mutex_unlock(&desc->mutex);
 	if (ec != 0) {
 		return ec;
 	}
@@ -90,9 +90,9 @@ eventfd_helper_write(FileDescription *node, int kq, /**/
 }
 
 static errno_t
-eventfd_close(FileDescription *node)
+eventfd_close(FileDescription *desc)
 {
-	return eventfd_ctx_terminate(&node->ctx.eventfd);
+	return eventfd_ctx_terminate(&desc->ctx.eventfd);
 }
 
 static struct file_description_vtable const eventfd_vtable = {
@@ -115,7 +115,7 @@ eventfd_impl(int *fd_out, unsigned int initval, int flags)
 
 	int fd;
 	FileDescription *desc;
-	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
+	ec = epoll_shim_ctx_create_desc(&epoll_shim_ctx,
 	    flags & (O_CLOEXEC | O_NONBLOCK), &fd, &desc);
 	if (ec != 0) {
 		return ec;
@@ -134,13 +134,13 @@ eventfd_impl(int *fd_out, unsigned int initval, int flags)
 	}
 
 	desc->vtable = &eventfd_vtable;
-	epoll_shim_ctx_install_node(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_install_desc(&epoll_shim_ctx, fd, desc);
 
 	*fd_out = fd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_drop_node(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_drop_desc(&epoll_shim_ctx, fd, desc);
 	return ec;
 }
 

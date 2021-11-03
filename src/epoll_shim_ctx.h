@@ -31,14 +31,14 @@ typedef struct {
 
 errno_t file_description_unref(FileDescription **desc);
 
-typedef errno_t (*fd_context_read_fun)(FileDescription *node, int kq, /**/
+typedef errno_t (*fd_context_read_fun)(FileDescription *desc, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred);
-typedef errno_t (*fd_context_write_fun)(FileDescription *node, int kq, /**/
+typedef errno_t (*fd_context_write_fun)(FileDescription *desc, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred);
-typedef errno_t (*fd_context_close_fun)(FileDescription *node);
-typedef void (*fd_context_poll_fun)(FileDescription *node, int kq, /**/
+typedef errno_t (*fd_context_close_fun)(FileDescription *desc);
+typedef void (*fd_context_poll_fun)(FileDescription *desc, int kq, /**/
     uint32_t *revents);
-typedef void (*fd_context_realtime_change_fun)(FileDescription *node, int kq);
+typedef void (*fd_context_realtime_change_fun)(FileDescription *desc, int kq);
 
 struct file_description_vtable {
 	fd_context_read_fun read_fun;
@@ -48,9 +48,9 @@ struct file_description_vtable {
 	fd_context_realtime_change_fun realtime_change_fun;
 };
 
-errno_t fd_context_default_read(FileDescription *node, int kq, /**/
+errno_t fd_context_default_read(FileDescription *desc, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred);
-errno_t fd_context_default_write(FileDescription *node, int kq, /**/
+errno_t fd_context_default_write(FileDescription *desc, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred);
 PollableNode fd_as_pollable_node(int *fd);
 
@@ -69,13 +69,13 @@ typedef struct {
 
 extern EpollShimCtx epoll_shim_ctx;
 
-errno_t epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags,
-    int *fd, FileDescription **node);
-void epoll_shim_ctx_install_node(EpollShimCtx *epoll_shim_ctx, /**/
-    int fd, FileDescription *node);
-FileDescription *epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd);
-void epoll_shim_ctx_drop_node(EpollShimCtx *epoll_shim_ctx, /**/
-    int fd, FileDescription *node);
+errno_t epoll_shim_ctx_create_desc(EpollShimCtx *epoll_shim_ctx, int flags,
+    int *fd, FileDescription **desc);
+void epoll_shim_ctx_install_desc(EpollShimCtx *epoll_shim_ctx, /**/
+    int fd, FileDescription *desc);
+FileDescription *epoll_shim_ctx_find_desc(EpollShimCtx *epoll_shim_ctx, int fd);
+void epoll_shim_ctx_drop_desc(EpollShimCtx *epoll_shim_ctx, /**/
+    int fd, FileDescription *desc);
 
 void
 epoll_shim_ctx_update_realtime_change_monitoring(EpollShimCtx *epoll_shim_ctx,

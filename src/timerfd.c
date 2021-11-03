@@ -21,16 +21,16 @@
 #include "errno_return.h"
 
 static errno_t
-timerfd_ctx_read_or_block(FileDescription *node, int kq, uint64_t *value)
+timerfd_ctx_read_or_block(FileDescription *desc, int kq, uint64_t *value)
 {
 	errno_t ec;
-	TimerFDCtx *timerfd = &node->ctx.timerfd;
+	TimerFDCtx *timerfd = &desc->ctx.timerfd;
 
 	for (;;) {
-		(void)pthread_mutex_lock(&node->mutex);
+		(void)pthread_mutex_lock(&desc->mutex);
 		ec = timerfd_ctx_read(timerfd, kq, value);
-		bool nonblock = (node->flags & O_NONBLOCK) != 0;
-		(void)pthread_mutex_unlock(&node->mutex);
+		bool nonblock = (desc->flags & O_NONBLOCK) != 0;
+		(void)pthread_mutex_unlock(&desc->mutex);
 		if (nonblock && ec == 0 && *value == 0) {
 			ec = EAGAIN;
 		}
@@ -49,7 +49,7 @@ timerfd_ctx_read_or_block(FileDescription *node, int kq, uint64_t *value)
 }
 
 static errno_t
-timerfd_read(FileDescription *node, int kq, void *buf, size_t nbytes,
+timerfd_read(FileDescription *desc, int kq, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -59,7 +59,7 @@ timerfd_read(FileDescription *node, int kq, void *buf, size_t nbytes,
 	}
 
 	uint64_t nr_expired;
-	if ((ec = timerfd_ctx_read_or_block(node, kq, &nr_expired)) != 0) {
+	if ((ec = timerfd_ctx_read_or_block(desc, kq, &nr_expired)) != 0) {
 		return ec;
 	}
 
@@ -74,30 +74,30 @@ timerfd_read(FileDescription *node, int kq, void *buf, size_t nbytes,
 }
 
 static errno_t
-timerfd_close(FileDescription *node)
+timerfd_close(FileDescription *desc)
 {
 	int const old_can_jump = /**/
-	    node->ctx.timerfd.clockid == CLOCK_REALTIME &&
-	    node->ctx.timerfd.is_abstime;
+	    desc->ctx.timerfd.clockid == CLOCK_REALTIME &&
+	    desc->ctx.timerfd.is_abstime;
 	epoll_shim_ctx_update_realtime_change_monitoring(&epoll_shim_ctx,
 	    -old_can_jump);
-	return timerfd_ctx_terminate(&node->ctx.timerfd);
+	return timerfd_ctx_terminate(&desc->ctx.timerfd);
 }
 
 static void
-timerfd_poll(FileDescription *node, int kq, uint32_t *revents)
+timerfd_poll(FileDescription *desc, int kq, uint32_t *revents)
 {
-	(void)pthread_mutex_lock(&node->mutex);
-	timerfd_ctx_poll(&node->ctx.timerfd, kq, revents);
-	(void)pthread_mutex_unlock(&node->mutex);
+	(void)pthread_mutex_lock(&desc->mutex);
+	timerfd_ctx_poll(&desc->ctx.timerfd, kq, revents);
+	(void)pthread_mutex_unlock(&desc->mutex);
 }
 
 static void
-timerfd_realtime_change(FileDescription *node, int kq)
+timerfd_realtime_change(FileDescription *desc, int kq)
 {
-	(void)pthread_mutex_lock(&node->mutex);
-	timerfd_ctx_realtime_change(&node->ctx.timerfd, kq);
-	(void)pthread_mutex_unlock(&node->mutex);
+	(void)pthread_mutex_lock(&desc->mutex);
+	timerfd_ctx_realtime_change(&desc->ctx.timerfd, kq);
+	(void)pthread_mutex_unlock(&desc->mutex);
 }
 
 static struct file_description_vtable const timerfd_vtable = {
@@ -126,7 +126,7 @@ timerfd_create_impl(int *fd_out, int clockid, int flags)
 
 	int fd;
 	FileDescription *desc;
-	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
+	ec = epoll_shim_ctx_create_desc(&epoll_shim_ctx,
 	    flags & (O_CLOEXEC | O_NONBLOCK), &fd, &desc);
 	if (ec != 0) {
 		return ec;
@@ -139,13 +139,13 @@ timerfd_create_impl(int *fd_out, int clockid, int flags)
 	}
 
 	desc->vtable = &timerfd_vtable;
-	epoll_shim_ctx_install_node(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_install_desc(&epoll_shim_ctx, fd, desc);
 
 	*fd_out = fd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_drop_node(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_drop_desc(&epoll_shim_ctx, fd, desc);
 	return ec;
 }
 
@@ -176,38 +176,38 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		return EINVAL;
 	}
 
-	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &timerfd_vtable) {
+	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	if (!desc || desc->vtable != &timerfd_vtable) {
 		struct stat sb;
 		ec = (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
 		goto out;
 	}
 
-	(void)pthread_mutex_lock(&node->mutex);
+	(void)pthread_mutex_lock(&desc->mutex);
 	{
 		int const old_can_jump = /**/
-		    node->ctx.timerfd.clockid == CLOCK_REALTIME &&
-		    node->ctx.timerfd.is_abstime;
+		    desc->ctx.timerfd.clockid == CLOCK_REALTIME &&
+		    desc->ctx.timerfd.is_abstime;
 
-		ec = timerfd_ctx_settime(&node->ctx.timerfd, fd,
+		ec = timerfd_ctx_settime(&desc->ctx.timerfd, fd,
 		    (flags & TFD_TIMER_ABSTIME) != 0,	    /**/
 		    (flags & TFD_TIMER_CANCEL_ON_SET) != 0, /**/
 		    new, old);
 
 		if (ec == 0 || ec == ECANCELED) {
 			int const new_can_jump = /**/
-			    node->ctx.timerfd.clockid == CLOCK_REALTIME &&
-			    node->ctx.timerfd.is_abstime;
+			    desc->ctx.timerfd.clockid == CLOCK_REALTIME &&
+			    desc->ctx.timerfd.is_abstime;
 
 			epoll_shim_ctx_update_realtime_change_monitoring(
 			    &epoll_shim_ctx, new_can_jump - old_can_jump);
 		}
 	}
-	(void)pthread_mutex_unlock(&node->mutex);
+	(void)pthread_mutex_unlock(&desc->mutex);
 
 out:
-	if (node) {
-		(void)file_description_unref(&node);
+	if (desc) {
+		(void)file_description_unref(&desc);
 	}
 	return ec;
 }
@@ -230,20 +230,20 @@ timerfd_gettime_impl(int fd, struct itimerspec *cur)
 {
 	errno_t ec;
 
-	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &timerfd_vtable) {
+	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	if (!desc || desc->vtable != &timerfd_vtable) {
 		struct stat sb;
 		ec = (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
 		goto out;
 	}
 
-	(void)pthread_mutex_lock(&node->mutex);
-	ec = timerfd_ctx_gettime(&node->ctx.timerfd, cur);
-	(void)pthread_mutex_unlock(&node->mutex);
+	(void)pthread_mutex_lock(&desc->mutex);
+	ec = timerfd_ctx_gettime(&desc->ctx.timerfd, cur);
+	(void)pthread_mutex_unlock(&desc->mutex);
 
 out:
-	if (node) {
-		(void)file_description_unref(&node);
+	if (desc) {
+		(void)file_description_unref(&desc);
 	}
 	return ec;
 }

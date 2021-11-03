@@ -18,14 +18,14 @@
 #include "timespec_util.h"
 #include "wrap.h"
 
-void epollfd_lock(FileDescription *node);
-void epollfd_unlock(FileDescription *node);
-void epollfd_remove_fd(FileDescription *node, int kq, int fd);
+void epollfd_lock(FileDescription *desc);
+void epollfd_unlock(FileDescription *desc);
+void epollfd_remove_fd(FileDescription *desc, int kq, int fd);
 
 static errno_t
-epollfd_close(FileDescription *node)
+epollfd_close(FileDescription *desc)
 {
-	return epollfd_ctx_terminate(&node->ctx.epollfd);
+	return epollfd_ctx_terminate(&desc->ctx.epollfd);
 }
 
 static struct file_description_vtable const epollfd_vtable = {
@@ -35,26 +35,26 @@ static struct file_description_vtable const epollfd_vtable = {
 };
 
 void
-epollfd_lock(FileDescription *node)
+epollfd_lock(FileDescription *desc)
 {
-	if (node->vtable == &epollfd_vtable) {
-		(void)pthread_mutex_lock(&node->mutex);
+	if (desc->vtable == &epollfd_vtable) {
+		(void)pthread_mutex_lock(&desc->mutex);
 	}
 }
 
 void
-epollfd_unlock(FileDescription *node)
+epollfd_unlock(FileDescription *desc)
 {
-	if (node->vtable == &epollfd_vtable) {
-		(void)pthread_mutex_unlock(&node->mutex);
+	if (desc->vtable == &epollfd_vtable) {
+		(void)pthread_mutex_unlock(&desc->mutex);
 	}
 }
 
 void
-epollfd_remove_fd(FileDescription *node, int kq, int fd)
+epollfd_remove_fd(FileDescription *desc, int kq, int fd)
 {
-	if (node->vtable == &epollfd_vtable) {
-		epollfd_ctx_remove_fd(&node->ctx.epollfd, kq, fd);
+	if (desc->vtable == &epollfd_vtable) {
+		epollfd_ctx_remove_fd(&desc->ctx.epollfd, kq, fd);
 	}
 }
 
@@ -65,7 +65,7 @@ epoll_create_impl(int *fd_out, int flags)
 
 	int fd;
 	FileDescription *desc;
-	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
+	ec = epoll_shim_ctx_create_desc(&epoll_shim_ctx,
 	    flags & (O_CLOEXEC | O_NONBLOCK), &fd, &desc);
 	if (ec != 0) {
 		return ec;
@@ -78,13 +78,13 @@ epoll_create_impl(int *fd_out, int flags)
 	}
 
 	desc->vtable = &epollfd_vtable;
-	epoll_shim_ctx_install_node(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_install_desc(&epoll_shim_ctx, fd, desc);
 
 	*fd_out = fd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_drop_node(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_drop_desc(&epoll_shim_ctx, fd, desc);
 	return ec;
 }
 
@@ -135,21 +135,21 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 		return EFAULT;
 	}
 
-	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &epollfd_vtable) {
+	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	if (!desc || desc->vtable != &epollfd_vtable) {
 		struct stat sb;
 		ec = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 		goto out;
 	}
 
-	(void)pthread_mutex_lock(&node->mutex);
-	ec = epollfd_ctx_ctl(&node->ctx.epollfd, fd, op, fd2,
+	(void)pthread_mutex_lock(&desc->mutex);
+	ec = epollfd_ctx_ctl(&desc->ctx.epollfd, fd, op, fd2,
 	    fd_as_pollable_node, ev);
-	(void)pthread_mutex_unlock(&node->mutex);
+	(void)pthread_mutex_unlock(&desc->mutex);
 
 out:
-	if (node) {
-		(void)file_description_unref(&node);
+	if (desc) {
+		(void)file_description_unref(&desc);
 	}
 	return ec;
 }
@@ -167,19 +167,19 @@ epoll_ctl(int fd, int op, int fd2, struct epoll_event *ev)
 }
 
 static errno_t
-epollfd_ctx_wait_or_block(FileDescription *node, int kq, /**/
+epollfd_ctx_wait_or_block(FileDescription *desc, int kq, /**/
     struct epoll_event *ev, int cnt, int *actual_cnt,
     struct timespec const *deadline, struct timespec *timeout,
     sigset_t const *sigs)
 {
 	errno_t ec;
 
-	EpollFDCtx *epollfd = &node->ctx.epollfd;
+	EpollFDCtx *epollfd = &desc->ctx.epollfd;
 
 	for (;;) {
-		(void)pthread_mutex_lock(&node->mutex);
+		(void)pthread_mutex_lock(&desc->mutex);
 		ec = epollfd_ctx_wait(epollfd, kq, ev, cnt, actual_cnt);
-		(void)pthread_mutex_unlock(&node->mutex);
+		(void)pthread_mutex_unlock(&desc->mutex);
 		if (ec != 0) {
 			return ec;
 		}
@@ -190,7 +190,7 @@ epollfd_ctx_wait_or_block(FileDescription *node, int kq, /**/
 			return 0;
 		}
 
-		(void)pthread_mutex_lock(&node->mutex);
+		(void)pthread_mutex_lock(&desc->mutex);
 
 		nfds_t nfds = (nfds_t)(1 + epollfd->poll_fds_size);
 
@@ -198,14 +198,14 @@ epollfd_ctx_wait_or_block(FileDescription *node, int kq, /**/
 		if (__builtin_mul_overflow(nfds, sizeof(struct pollfd),
 			&size)) {
 			ec = ENOMEM;
-			(void)pthread_mutex_unlock(&node->mutex);
+			(void)pthread_mutex_unlock(&desc->mutex);
 			return ec;
 		}
 
 		struct pollfd *pfds = malloc(size);
 		if (!pfds) {
 			ec = errno;
-			(void)pthread_mutex_unlock(&node->mutex);
+			(void)pthread_mutex_unlock(&desc->mutex);
 			return ec;
 		}
 
@@ -215,7 +215,7 @@ epollfd_ctx_wait_or_block(FileDescription *node, int kq, /**/
 		++epollfd->nr_polling_threads;
 		(void)pthread_mutex_unlock(&epollfd->nr_polling_threads_mutex);
 
-		(void)pthread_mutex_unlock(&node->mutex);
+		(void)pthread_mutex_unlock(&desc->mutex);
 
 		/*
 		 * This surfaced a race condition when
@@ -295,8 +295,8 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 		return EINVAL;
 	}
 
-	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node || node->vtable != &epollfd_vtable) {
+	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	if (!desc || desc->vtable != &epollfd_vtable) {
 		struct stat sb;
 		ec = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
 		goto out;
@@ -309,14 +309,14 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 		goto out;
 	}
 
-	ec = epollfd_ctx_wait_or_block(node, fd, ev, cnt, actual_cnt, /**/
+	ec = epollfd_ctx_wait_or_block(desc, fd, ev, cnt, actual_cnt, /**/
 	    (to >= 0) ? &deadline : NULL,			      /**/
 	    (to >= 0) ? &timeout : NULL,			      /**/
 	    sigs);
 
 out:
-	if (node) {
-		(void)file_description_unref(&node);
+	if (desc) {
+		(void)file_description_unref(&desc);
 	}
 	return ec;
 }

@@ -118,7 +118,7 @@ fd_poll(void *arg, uint32_t *revents)
 {
 	int *fd = arg;
 
-	FileDescription *desc = epoll_shim_ctx_find_node(&epoll_shim_ctx, *fd);
+	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, *fd);
 	if (!desc || !desc->vtable->poll_fun) {
 		goto out;
 	}
@@ -143,10 +143,10 @@ fd_as_pollable_node(int *fd)
 /**/
 
 errno_t
-fd_context_default_read(FileDescription *node, int kq, /**/
+fd_context_default_read(FileDescription *desc, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred)
 {
-	(void)node;
+	(void)desc;
 	(void)kq;
 	(void)buf;
 	(void)nbytes;
@@ -156,10 +156,10 @@ fd_context_default_read(FileDescription *node, int kq, /**/
 }
 
 errno_t
-fd_context_default_write(FileDescription *node, int kq, /**/
+fd_context_default_write(FileDescription *desc, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred)
 {
-	(void)node;
+	(void)desc;
 	(void)kq;
 	(void)buf;
 	(void)nbytes;
@@ -183,8 +183,8 @@ epoll_shim_ctx_initialize(void)
 /**/
 
 errno_t
-epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags, /**/
-    int *fd, FileDescription **node)
+epoll_shim_ctx_create_desc(EpollShimCtx *epoll_shim_ctx, int flags, /**/
+    int *fd, FileDescription **desc)
 {
 	errno_t ec = 0;
 
@@ -236,7 +236,7 @@ epoll_shim_ctx_create_node(EpollShimCtx *epoll_shim_ctx, int flags, /**/
 		epoll_shim_ctx->open_files[kq] = NULL;
 	}
 
-	ec = file_description_create(node);
+	ec = file_description_create(desc);
 	if (ec != 0) {
 		goto out;
 	}
@@ -254,16 +254,16 @@ out:
 }
 
 void
-epoll_shim_ctx_install_node(EpollShimCtx *epoll_shim_ctx, /**/
-    int fd, FileDescription *node)
+epoll_shim_ctx_install_desc(EpollShimCtx *epoll_shim_ctx, /**/
+    int fd, FileDescription *desc)
 {
 	assert((unsigned int)fd < epoll_shim_ctx->open_files_length);
-	epoll_shim_ctx->open_files[fd] = node;
+	epoll_shim_ctx->open_files[fd] = desc;
 	rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 }
 
 static FileDescription *
-epoll_shim_ctx_find_node_impl(EpollShimCtx *epoll_shim_ctx, int fd)
+epoll_shim_ctx_find_desc_impl(EpollShimCtx *epoll_shim_ctx, int fd)
 {
 	if (fd < 0) {
 		return NULL;
@@ -274,7 +274,7 @@ epoll_shim_ctx_find_node_impl(EpollShimCtx *epoll_shim_ctx, int fd)
 }
 
 FileDescription *
-epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
+epoll_shim_ctx_find_desc(EpollShimCtx *epoll_shim_ctx, int fd)
 {
 	if (fd < 0) {
 		return NULL;
@@ -283,7 +283,7 @@ epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 	FileDescription *desc;
 
 	rwlock_lock_read(&epoll_shim_ctx->rwlock);
-	desc = epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
+	desc = epoll_shim_ctx_find_desc_impl(epoll_shim_ctx, fd);
 	if (desc != NULL) {
 		file_description_ref(desc);
 	}
@@ -294,7 +294,7 @@ epoll_shim_ctx_find_node(EpollShimCtx *epoll_shim_ctx, int fd)
 
 static void
 epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
-    void (*fun)(FileDescription *node, int kq, void *arg), void *arg)
+    void (*fun)(FileDescription *desc, int kq, void *arg), void *arg)
 {
 	for (unsigned int i = 0;
 	     i < epoll_shim_ctx->open_files_length && i <= INT_MAX; ++i) {
@@ -307,56 +307,56 @@ epoll_shim_ctx_for_each_unlocked(EpollShimCtx *epoll_shim_ctx,
 	}
 }
 
-void epollfd_lock(FileDescription *node);
-void epollfd_unlock(FileDescription *node);
-void epollfd_remove_fd(FileDescription *node, int kq, int fd);
+void epollfd_lock(FileDescription *desc);
+void epollfd_unlock(FileDescription *desc);
+void epollfd_remove_fd(FileDescription *desc, int kq, int fd);
 static void
-remove_node_lock_epollfd(FileDescription *node, int kq, void *arg)
+remove_desc_lock_epollfd(FileDescription *desc, int kq, void *arg)
 {
 	(void)kq;
 	(void)arg;
 
-	epollfd_lock(node);
+	epollfd_lock(desc);
 }
 static void
-remove_node_remove_fd_from_epollfd(FileDescription *node, int kq, void *arg)
+remove_desc_remove_fd_from_epollfd(FileDescription *desc, int kq, void *arg)
 {
-	epollfd_remove_fd(node, kq, *(int *)arg);
+	epollfd_remove_fd(desc, kq, *(int *)arg);
 }
 static void
-remove_node_unlock_epollfd(FileDescription *node, int kq, void *arg)
+remove_desc_unlock_epollfd(FileDescription *desc, int kq, void *arg)
 {
 	(void)kq;
 	(void)arg;
 
-	epollfd_unlock(node);
+	epollfd_unlock(desc);
 }
 static errno_t
-epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
+epoll_shim_ctx_remove_desc(EpollShimCtx *epoll_shim_ctx, int fd)
 {
 	errno_t ec = 0;
-	FileDescription *node;
+	FileDescription *desc;
 
 	rwlock_lock_write(&epoll_shim_ctx->rwlock);
 
-	node = epoll_shim_ctx_find_node_impl(epoll_shim_ctx, fd);
-	if (node) {
+	desc = epoll_shim_ctx_find_desc_impl(epoll_shim_ctx, fd);
+	if (desc) {
 		epoll_shim_ctx->open_files[fd] = NULL;
-		ec = file_description_unref(&node);
+		ec = file_description_unref(&desc);
 	}
 
 	rwlock_downgrade(&epoll_shim_ctx->rwlock);
 
 	epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
-	    remove_node_lock_epollfd, NULL);
+	    remove_desc_lock_epollfd, NULL);
 	epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
-	    remove_node_remove_fd_from_epollfd, &fd);
+	    remove_desc_remove_fd_from_epollfd, &fd);
 	{
 		errno_t ec_local = real_close(fd) < 0 ? errno : 0;
 		ec = ec != 0 ? ec : ec_local;
 	}
 	epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
-	    remove_node_unlock_epollfd, NULL);
+	    remove_desc_unlock_epollfd, NULL);
 
 	rwlock_unlock_read(&epoll_shim_ctx->rwlock);
 
@@ -364,21 +364,21 @@ epoll_shim_ctx_remove_node(EpollShimCtx *epoll_shim_ctx, int fd)
 }
 
 void
-epoll_shim_ctx_drop_node(EpollShimCtx *epoll_shim_ctx, /**/
-    int fd, FileDescription *node)
+epoll_shim_ctx_drop_desc(EpollShimCtx *epoll_shim_ctx, /**/
+    int fd, FileDescription *desc)
 {
-	(void)file_description_unref(&node);
+	(void)file_description_unref(&desc);
 	(void)real_close(fd);
 	rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 }
 
 #ifndef HAVE_TIMERFD
 static void
-trigger_realtime_change_notification(FileDescription *node, int kq, void *arg)
+trigger_realtime_change_notification(FileDescription *desc, int kq, void *arg)
 {
 	(void)arg;
-	if (node->vtable->realtime_change_fun != NULL) {
-		node->vtable->realtime_change_fun(node, kq);
+	if (desc->vtable->realtime_change_fun != NULL) {
+		desc->vtable->realtime_change_fun(desc, kq);
 	}
 }
 
@@ -522,7 +522,7 @@ epoll_shim_close(int fd)
 	ERRNO_SAVE;
 	errno_t ec;
 
-	ec = epoll_shim_ctx_remove_node(&epoll_shim_ctx, fd);
+	ec = epoll_shim_ctx_remove_desc(&epoll_shim_ctx, fd);
 
 	ERRNO_RETURN(ec, -1, 0);
 }
@@ -534,8 +534,8 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	ERRNO_SAVE;
 	errno_t ec;
 
-	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node) {
+	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	if (!desc) {
 		ERRNO_RETURN(0, -1, real_read(fd, buf, nbytes));
 	}
 
@@ -545,10 +545,10 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	}
 
 	size_t bytes_transferred;
-	ec = node->vtable->read_fun(node, fd, buf, nbytes, &bytes_transferred);
+	ec = desc->vtable->read_fun(desc, fd, buf, nbytes, &bytes_transferred);
 
 out:
-	(void)file_description_unref(&node);
+	(void)file_description_unref(&desc);
 	ERRNO_RETURN(ec, -1, (ssize_t)bytes_transferred);
 }
 
@@ -559,8 +559,8 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	ERRNO_SAVE;
 	errno_t ec;
 
-	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node) {
+	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	if (!desc) {
 		ERRNO_RETURN(0, -1, real_write(fd, buf, nbytes));
 	}
 
@@ -570,10 +570,10 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	}
 
 	size_t bytes_transferred;
-	ec = node->vtable->write_fun(node, fd, buf, nbytes, &bytes_transferred);
+	ec = desc->vtable->write_fun(desc, fd, buf, nbytes, &bytes_transferred);
 
 out:
-	(void)file_description_unref(&node);
+	(void)file_description_unref(&desc);
 	ERRNO_RETURN(ec, -1, (ssize_t)bytes_transferred);
 }
 
@@ -601,13 +601,13 @@ retry:;
 	if (fds != NULL) {
 		rwlock_lock_read(&epoll_shim_ctx.rwlock);
 		for (nfds_t i = 0; i < nfds; ++i) {
-			FileDescription *node = epoll_shim_ctx_find_node_impl(
+			FileDescription *desc = epoll_shim_ctx_find_desc_impl(
 			    &epoll_shim_ctx, fds[i].fd);
-			if (!node) {
+			if (!desc) {
 				continue;
 			}
-			if (node->vtable->poll_fun != NULL) {
-				node->vtable->poll_fun(node, fds[i].fd, NULL);
+			if (desc->vtable->poll_fun != NULL) {
+				desc->vtable->poll_fun(desc, fds[i].fd, NULL);
 			}
 		}
 		rwlock_unlock_read(&epoll_shim_ctx.rwlock);
@@ -628,14 +628,14 @@ retry:;
 			continue;
 		}
 
-		FileDescription *node =
-		    epoll_shim_ctx_find_node_impl(&epoll_shim_ctx, fds[i].fd);
-		if (!node) {
+		FileDescription *desc =
+		    epoll_shim_ctx_find_desc_impl(&epoll_shim_ctx, fds[i].fd);
+		if (!desc) {
 			continue;
 		}
-		if (node->vtable->poll_fun != NULL) {
+		if (desc->vtable->poll_fun != NULL) {
 			uint32_t revents;
-			node->vtable->poll_fun(node, fds[i].fd, &revents);
+			desc->vtable->poll_fun(desc, fds[i].fd, &revents);
 			fds[i].revents = (short)revents;
 			if (fds[i].revents == 0) {
 				--n;
@@ -737,23 +737,23 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	arg = va_arg(ap, int);
 	va_end(ap);
 
-	FileDescription *node = epoll_shim_ctx_find_node(&epoll_shim_ctx, fd);
-	if (!node) {
+	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	if (!desc) {
 		ERRNO_RETURN(0, -1, real_fcntl(fd, F_SETFL, arg));
 	}
 
-	(void)pthread_mutex_lock(&node->mutex);
+	(void)pthread_mutex_lock(&desc->mutex);
 	{
 		int opt = (arg & O_NONBLOCK) ? 1 : 0;
 		ec = ioctl(fd, FIONBIO, &opt) < 0 ? errno : 0;
 		ec = (ec == ENOTTY) ? 0 : ec;
 
 		if (ec == 0) {
-			node->flags = arg & O_NONBLOCK;
+			desc->flags = arg & O_NONBLOCK;
 		}
 	}
-	(void)pthread_mutex_unlock(&node->mutex);
+	(void)pthread_mutex_unlock(&desc->mutex);
 
-	(void)file_description_unref(&node);
+	(void)file_description_unref(&desc);
 	ERRNO_RETURN(ec, -1, 0);
 }

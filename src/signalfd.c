@@ -23,18 +23,18 @@
 #include "errno_return.h"
 
 static errno_t
-signalfd_ctx_read_or_block(FileDescription *node, int kq,
+signalfd_ctx_read_or_block(FileDescription *desc, int kq,
     SignalFDCtxSiginfo *siginfo, bool force_nonblock)
 {
 	errno_t ec;
-	SignalFDCtx *signalfd_ctx = &node->ctx.signalfd;
+	SignalFDCtx *signalfd_ctx = &desc->ctx.signalfd;
 
 	for (;;) {
-		(void)pthread_mutex_lock(&node->mutex);
+		(void)pthread_mutex_lock(&desc->mutex);
 		ec = signalfd_ctx_read(signalfd_ctx, kq, siginfo);
 		bool nonblock = force_nonblock ||
-		    (node->flags & O_NONBLOCK) != 0;
-		(void)pthread_mutex_unlock(&node->mutex);
+		    (desc->flags & O_NONBLOCK) != 0;
+		(void)pthread_mutex_unlock(&desc->mutex);
 		if (nonblock || (ec != EAGAIN && ec != EWOULDBLOCK)) {
 			return ec;
 		}
@@ -50,7 +50,7 @@ signalfd_ctx_read_or_block(FileDescription *node, int kq,
 }
 
 static errno_t
-signalfd_read(FileDescription *node, int kq, void *buf, size_t nbytes,
+signalfd_read(FileDescription *desc, int kq, void *buf, size_t nbytes,
     size_t *bytes_transferred)
 {
 	errno_t ec;
@@ -70,7 +70,7 @@ signalfd_read(FileDescription *node, int kq, void *buf, size_t nbytes,
 		SignalFDCtxSiginfo siginfo;
 		memset(&siginfo, 0, sizeof(siginfo));
 
-		if ((ec = signalfd_ctx_read_or_block(node, kq, &siginfo,
+		if ((ec = signalfd_ctx_read_or_block(desc, kq, &siginfo,
 			 force_nonblock)) != 0) {
 			break;
 		}
@@ -92,17 +92,17 @@ signalfd_read(FileDescription *node, int kq, void *buf, size_t nbytes,
 }
 
 static errno_t
-signalfd_close(FileDescription *node)
+signalfd_close(FileDescription *desc)
 {
-	return signalfd_ctx_terminate(&node->ctx.signalfd);
+	return signalfd_ctx_terminate(&desc->ctx.signalfd);
 }
 
 static void
-signalfd_poll(FileDescription *node, int kq, uint32_t *revents)
+signalfd_poll(FileDescription *desc, int kq, uint32_t *revents)
 {
-	(void)pthread_mutex_lock(&node->mutex);
-	signalfd_ctx_poll(&node->ctx.signalfd, kq, revents);
-	(void)pthread_mutex_unlock(&node->mutex);
+	(void)pthread_mutex_lock(&desc->mutex);
+	signalfd_ctx_poll(&desc->ctx.signalfd, kq, revents);
+	(void)pthread_mutex_unlock(&desc->mutex);
 }
 
 static struct file_description_vtable const signalfd_vtable = {
@@ -131,7 +131,7 @@ signalfd_impl(int *sfd_out, int fd, sigset_t const *sigs, int flags)
 
 	int sfd;
 	FileDescription *desc;
-	ec = epoll_shim_ctx_create_node(&epoll_shim_ctx,
+	ec = epoll_shim_ctx_create_desc(&epoll_shim_ctx,
 	    flags & (O_CLOEXEC | O_NONBLOCK), &sfd, &desc);
 	if (ec != 0) {
 		return ec;
@@ -144,13 +144,13 @@ signalfd_impl(int *sfd_out, int fd, sigset_t const *sigs, int flags)
 	}
 
 	desc->vtable = &signalfd_vtable;
-	epoll_shim_ctx_install_node(&epoll_shim_ctx, sfd, desc);
+	epoll_shim_ctx_install_desc(&epoll_shim_ctx, sfd, desc);
 
 	*sfd_out = sfd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_drop_node(&epoll_shim_ctx, sfd, desc);
+	epoll_shim_ctx_drop_desc(&epoll_shim_ctx, sfd, desc);
 	return ec;
 }
 
