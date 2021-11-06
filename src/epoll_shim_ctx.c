@@ -587,7 +587,7 @@ epoll_shim_close(int fd)
 	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
-	if (fd < 0 || (ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+	if (fd < 0 || epoll_shim_ctx_global(&epoll_shim_ctx) != 0) {
 		ERRNO_RETURN(0, -1, real_close(fd));
 	}
 
@@ -604,12 +604,9 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
-	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
-		ERRNO_RETURN(0, -1, real_read(fd, buf, nbytes));
-	}
-
-	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
-	if (!desc) {
+	FileDescription *desc;
+	if (fd < 0 || epoll_shim_ctx_global(&epoll_shim_ctx) != 0 ||
+	    (desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd)) == NULL) {
 		ERRNO_RETURN(0, -1, real_read(fd, buf, nbytes));
 	}
 
@@ -634,12 +631,9 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
-	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
-		ERRNO_RETURN(0, -1, real_write(fd, buf, nbytes));
-	}
-
-	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
-	if (!desc) {
+	FileDescription *desc;
+	if (fd < 0 || epoll_shim_ctx_global(&epoll_shim_ctx) != 0 ||
+	    (desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd)) == NULL) {
 		ERRNO_RETURN(0, -1, real_write(fd, buf, nbytes));
 	}
 
@@ -790,7 +784,7 @@ epoll_shim_ppoll(struct pollfd *fds, nfds_t nfds, struct timespec const *tmo_p,
 	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
-	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+	if (epoll_shim_ctx_global(&epoll_shim_ctx) != 0) {
 		ERRNO_RETURN(0, -1, real_ppoll(fds, nfds, tmo_p, sigmask));
 	}
 
@@ -809,14 +803,12 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
-	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
-		goto pass_through;
-	}
-
+	FileDescription *desc;
 	va_list ap;
 
-	if (cmd != F_SETFL) {
-	pass_through:
+	if (fd < 0 || cmd != F_SETFL ||
+	    epoll_shim_ctx_global(&epoll_shim_ctx) != 0 ||
+	    (desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd)) == NULL) {
 		va_start(ap, cmd);
 		void *arg = va_arg(ap, void *);
 		va_end(ap);
@@ -824,16 +816,9 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 		ERRNO_RETURN(0, -1, real_fcntl(fd, cmd, arg));
 	}
 
-	int arg;
-
 	va_start(ap, cmd);
-	arg = va_arg(ap, int);
+	int arg = va_arg(ap, int);
 	va_end(ap);
-
-	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
-	if (!desc) {
-		ERRNO_RETURN(0, -1, real_fcntl(fd, F_SETFL, arg));
-	}
 
 	(void)pthread_mutex_lock(&desc->mutex);
 	{
