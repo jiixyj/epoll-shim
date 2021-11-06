@@ -144,7 +144,7 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 
 	(void)pthread_mutex_lock(&desc->mutex);
 	ec = epollfd_ctx_ctl(&desc->ctx.epollfd, fd, op, fd2,
-	    fd_as_pollable_node, ev);
+	    fd_as_pollable_desc, ev);
 	(void)pthread_mutex_unlock(&desc->mutex);
 
 out:

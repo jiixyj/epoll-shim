@@ -13,7 +13,7 @@
 #include <poll.h>
 #include <pthread.h>
 
-#include "pollable_node.h"
+#include "pollable_desc.h"
 
 struct registered_fds_node_;
 typedef struct registered_fds_node_ RegisteredFDsNode;
@@ -55,7 +55,7 @@ struct registered_fds_node_ {
 			bool writable;
 		} fifo;
 		struct {
-			PollableNode (*fd_poll_fun)(int *fd);
+			PollableDesc (*fd_poll_fun)(int *fd);
 		} kqueue;
 	} node_data;
 	int eof_state;
@@ -103,7 +103,7 @@ void epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, int kq, struct pollfd *pfds);
 void epollfd_ctx_remove_fd(EpollFDCtx *epollfd, int kq, int fd2);
 
 errno_t epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, /**/
-    int op, int fd2, PollableNode (*fd_poll_fun)(int *fd),
+    int op, int fd2, PollableDesc (*fd_poll_fun)(int *fd),
     struct epoll_event *ev);
 errno_t epollfd_ctx_wait(EpollFDCtx *epollfd, int kq, /**/
     struct epoll_event *ev, int cnt, int *actual_cnt);

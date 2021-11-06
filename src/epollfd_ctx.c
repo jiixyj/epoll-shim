@@ -506,7 +506,7 @@ out:
 	if (fd2_node->node_type == NODE_TYPE_KQUEUE) {
 		assert(fd2_node->node_data.kqueue.fd_poll_fun != NULL);
 
-		pollable_node_poll(fd2_node->node_data.kqueue.fd_poll_fun(
+		pollable_desc_poll(fd2_node->node_data.kqueue.fd_poll_fun(
 				       &fd2_node->fd),
 		    &fd2_node->revents);
 		fd2_node->revents &= (fd2_node->events | EPOLLHUP | EPOLLERR);
@@ -1027,7 +1027,7 @@ modify_fifo_rights_from_capabilities(RegisteredFDsNode *fd2_node)
 
 static errno_t
 epollfd_ctx_add_node(EpollFDCtx *epollfd, int kq, int fd2,
-    PollableNode (*fd_poll_fun)(int *fd), struct epoll_event *ev,
+    PollableDesc (*fd_poll_fun)(int *fd), struct epoll_event *ev,
     struct stat const *statbuf)
 {
 	RegisteredFDsNode *fd2_node = registered_fds_node_create(fd2);
@@ -1059,7 +1059,7 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int kq, int fd2,
 				fd2_node->node_data.kqueue.fd_poll_fun =
 				    fd_poll_fun;
 
-				pollable_node_poll(fd_poll_fun(&fd2), NULL);
+				pollable_desc_poll(fd_poll_fun(&fd2), NULL);
 			}
 		} else {
 			fd2_node->node_type = NODE_TYPE_FIFO;
@@ -1168,7 +1168,7 @@ epollfd_ctx_remove_fd(EpollFDCtx *epollfd, int kq, int fd2)
 
 errno_t
 epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
-    PollableNode (*fd_poll_fun)(int *fd), struct epoll_event *ev)
+    PollableDesc (*fd_poll_fun)(int *fd), struct epoll_event *ev)
 {
 	assert(op == EPOLL_CTL_DEL || ev != NULL);
 

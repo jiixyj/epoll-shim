@@ -131,13 +131,13 @@ out:
 	}
 }
 
-PollableNode
-fd_as_pollable_node(int *fd)
+PollableDesc
+fd_as_pollable_desc(int *fd)
 {
-	static const struct pollable_node_vtable vtable = {
+	static const struct pollable_desc_vtable vtable = {
 		.poll_fun = fd_poll,
 	};
-	return (PollableNode) { fd, &vtable };
+	return (PollableDesc) { fd, &vtable };
 }
 
 /**/
