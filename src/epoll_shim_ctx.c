@@ -587,7 +587,7 @@ epoll_shim_close(int fd)
 	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
-	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+	if (fd < 0 || (ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
 		ERRNO_RETURN(0, -1, real_close(fd));
 	}
 
