@@ -25,13 +25,44 @@ sem_wait_nointr(sem_t *sem)
 	return rc;
 }
 
-void
+errno_t
 rwlock_init(RWLock *rwlock)
 {
+	errno_t ec;
+
 	*rwlock = (RWLock) {};
-	(void)pthread_mutex_init(&rwlock->mutex, NULL);
-	(void)sem_init(&rwlock->writer_wait, 0, 0);
-	(void)sem_init(&rwlock->reader_wait, 0, 0);
+
+	if ((ec = pthread_mutex_init(&rwlock->mutex, NULL)) != 0) {
+		goto out_mutex;
+	}
+
+	if (sem_init(&rwlock->writer_wait, 0, 0) < 0) {
+		ec = errno;
+		goto out_writer_wait;
+	}
+
+	if (sem_init(&rwlock->reader_wait, 0, 0) < 0) {
+		ec = errno;
+		goto out_reader_wait;
+	}
+
+	return 0;
+
+	(void)sem_destroy(&rwlock->reader_wait);
+out_reader_wait:
+	(void)sem_destroy(&rwlock->writer_wait);
+out_writer_wait:
+	(void)pthread_mutex_destroy(&rwlock->mutex);
+out_mutex:
+	return ec;
+}
+
+void
+rwlock_terminate(RWLock *rwlock)
+{
+	(void)sem_destroy(&rwlock->reader_wait);
+	(void)sem_destroy(&rwlock->writer_wait);
+	(void)pthread_mutex_destroy(&rwlock->mutex);
 }
 
 void

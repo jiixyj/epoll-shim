@@ -183,7 +183,7 @@ EpollShimCtx epoll_shim_ctx = {
 __attribute__((constructor)) static void
 epoll_shim_ctx_initialize(void)
 {
-	rwlock_init(&epoll_shim_ctx.rwlock);
+	(void)rwlock_init(&epoll_shim_ctx.rwlock);
 }
 
 /**/

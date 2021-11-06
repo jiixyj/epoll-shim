@@ -66,7 +66,7 @@ ATF_TC_WITHOUT_HEAD(stress);
 ATF_TC_BODY(stress, tc)
 {
 	RWLock rwlock;
-	rwlock_init(&rwlock);
+	ATF_REQUIRE(rwlock_init(&rwlock) == 0);
 
 	int data[1000];
 	for (int i = 0; i < 1000; ++i) {
