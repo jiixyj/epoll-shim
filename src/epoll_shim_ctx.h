@@ -52,7 +52,7 @@ errno_t fd_context_default_read(FileDescription *desc, int kq, /**/
     void *buf, size_t nbytes, size_t *bytes_transferred);
 errno_t fd_context_default_write(FileDescription *desc, int kq, /**/
     void const *buf, size_t nbytes, size_t *bytes_transferred);
-PollableDesc fd_as_pollable_desc(int *fd);
+PollableDesc fd_as_pollable_desc(FileDescription *desc);
 
 /**/
 

@@ -114,30 +114,36 @@ file_description_unref(FileDescription **desc)
 /**/
 
 static void
-fd_poll(void *arg, uint32_t *revents)
+fd_poll(void *arg, int fd, uint32_t *revents)
 {
-	int *fd = arg;
-
-	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, *fd);
-	if (!desc || !desc->vtable->poll_fun) {
-		goto out;
-	}
-
-	desc->vtable->poll_fun(desc, *fd, revents);
-
-out:
-	if (desc) {
-		(void)file_description_unref(&desc);
-	}
+	FileDescription *desc = arg;
+	desc->vtable->poll_fun(desc, fd, revents);
 }
-
-PollableDesc
-fd_as_pollable_desc(int *fd)
+static void
+fd_ref(void *arg)
 {
+	FileDescription *desc = arg;
+	file_description_ref(desc);
+}
+static void
+fd_unref(void *arg)
+{
+	FileDescription *desc = arg;
+	(void)file_description_unref(&desc);
+}
+PollableDesc
+fd_as_pollable_desc(FileDescription *desc)
+{
+	if (!desc || !desc->vtable->poll_fun) {
+		return (PollableDesc) { NULL, NULL };
+	}
+
 	static const struct pollable_desc_vtable vtable = {
 		.poll_fun = fd_poll,
+		.ref_fun = fd_ref,
+		.unref_fun = fd_unref,
 	};
-	return (PollableDesc) { fd, &vtable };
+	return (PollableDesc) { desc, &vtable };
 }
 
 /**/

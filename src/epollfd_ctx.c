@@ -41,6 +41,10 @@ registered_fds_node_create(int fd)
 static void
 registered_fds_node_destroy(RegisteredFDsNode *node)
 {
+	if (node->node_type == NODE_TYPE_KQUEUE) {
+		pollable_desc_unref(node->node_data.kqueue.pollable_desc);
+	}
+
 	if (node->self_pipe[0] >= 0 && node->self_pipe[1] >= 0) {
 		(void)real_close(node->self_pipe[0]);
 		(void)real_close(node->self_pipe[1]);
@@ -504,11 +508,8 @@ out:
 	}
 
 	if (fd2_node->node_type == NODE_TYPE_KQUEUE) {
-		assert(fd2_node->node_data.kqueue.fd_poll_fun != NULL);
-
-		pollable_desc_poll(fd2_node->node_data.kqueue.fd_poll_fun(
-				       &fd2_node->fd),
-		    &fd2_node->revents);
+		pollable_desc_poll(fd2_node->node_data.kqueue.pollable_desc,
+		    fd2_node->fd, &fd2_node->revents);
 		fd2_node->revents &= (fd2_node->events | EPOLLHUP | EPOLLERR);
 	}
 }
@@ -1027,7 +1028,7 @@ modify_fifo_rights_from_capabilities(RegisteredFDsNode *fd2_node)
 
 static errno_t
 epollfd_ctx_add_node(EpollFDCtx *epollfd, int kq, int fd2,
-    PollableDesc (*fd_poll_fun)(int *fd), struct epoll_event *ev,
+    PollableDesc pollable_desc, struct epoll_event *ev,
     struct stat const *statbuf)
 {
 	RegisteredFDsNode *fd2_node = registered_fds_node_create(fd2);
@@ -1056,10 +1057,10 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int kq, int fd2,
 #endif
 
 			if (fd2_node->node_type == NODE_TYPE_KQUEUE) {
-				fd2_node->node_data.kqueue.fd_poll_fun =
-				    fd_poll_fun;
-
-				pollable_desc_poll(fd_poll_fun(&fd2), NULL);
+				fd2_node->node_data.kqueue.pollable_desc =
+				    pollable_desc;
+				pollable_desc_ref(pollable_desc);
+				pollable_desc_poll(pollable_desc, fd2, NULL);
 			}
 		} else {
 			fd2_node->node_type = NODE_TYPE_FIFO;
@@ -1168,7 +1169,7 @@ epollfd_ctx_remove_fd(EpollFDCtx *epollfd, int kq, int fd2)
 
 errno_t
 epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
-    PollableDesc (*fd_poll_fun)(int *fd), struct epoll_event *ev)
+    PollableDesc pollable_desc, struct epoll_event *ev)
 {
 	assert(op == EPOLL_CTL_DEL || ev != NULL);
 
@@ -1214,7 +1215,7 @@ epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
 		ec = fd2_node != NULL ?
 			  EEXIST :
 			  epollfd_ctx_add_node(epollfd, kq, /**/
-			/* */ fd2, fd_poll_fun, ev, &statbuf);
+			/* */ fd2, pollable_desc, ev, &statbuf);
 	} else if (op == EPOLL_CTL_DEL) {
 		ec = fd2_node == NULL ?
 			  ENOENT :

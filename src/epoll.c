@@ -142,11 +142,18 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 		goto out;
 	}
 
+	FileDescription *fd2_desc = (op == EPOLL_CTL_ADD) ?
+		  epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd2) :
+		  NULL;
+
 	(void)pthread_mutex_lock(&desc->mutex);
 	ec = epollfd_ctx_ctl(&desc->ctx.epollfd, fd, op, fd2,
-	    fd_as_pollable_desc, ev);
+	    fd_as_pollable_desc(fd2_desc), ev);
 	(void)pthread_mutex_unlock(&desc->mutex);
 
+	if (fd2_desc) {
+		(void)file_description_unref(&fd2_desc);
+	}
 out:
 	if (desc) {
 		(void)file_description_unref(&desc);
