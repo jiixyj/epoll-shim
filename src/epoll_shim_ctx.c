@@ -342,7 +342,6 @@ epoll_shim_ctx_remove_desc(EpollShimCtx *epoll_shim_ctx, int fd)
 	desc = epoll_shim_ctx_find_desc_impl(epoll_shim_ctx, fd);
 	if (desc) {
 		epoll_shim_ctx->open_files[fd] = NULL;
-		ec = file_description_unref(&desc);
 	}
 
 	rwlock_downgrade(&epoll_shim_ctx->rwlock);
@@ -351,6 +350,10 @@ epoll_shim_ctx_remove_desc(EpollShimCtx *epoll_shim_ctx, int fd)
 	    remove_desc_lock_epollfd, NULL);
 	epoll_shim_ctx_for_each_unlocked(epoll_shim_ctx,
 	    remove_desc_remove_fd_from_epollfd, &fd);
+	if (desc) {
+		errno_t ec_local = file_description_unref(&desc);
+		ec = ec != 0 ? ec : ec_local;
+	}
 	{
 		errno_t ec_local = real_close(fd) < 0 ? errno : 0;
 		ec = ec != 0 ? ec : ec_local;
