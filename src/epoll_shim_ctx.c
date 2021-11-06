@@ -325,12 +325,10 @@ epoll_shim_ctx_install_desc(EpollShimCtx *epoll_shim_ctx, /**/
 static FileDescription *
 epoll_shim_ctx_find_desc_impl(EpollShimCtx *epoll_shim_ctx, int fd)
 {
-	if (fd < 0) {
+	if (fd < 0 || (unsigned int)fd >= epoll_shim_ctx->open_files_length) {
 		return NULL;
 	}
-	return (unsigned int)fd < epoll_shim_ctx->open_files_length ?
-		  epoll_shim_ctx->open_files[fd] :
-		  NULL;
+	return epoll_shim_ctx->open_files[fd];
 }
 
 FileDescription *
@@ -396,6 +394,8 @@ epoll_shim_ctx_remove_desc(EpollShimCtx *epoll_shim_ctx, int fd)
 {
 	errno_t ec = 0;
 	FileDescription *desc;
+
+	assert(fd >= 0);
 
 	rwlock_lock_write(&epoll_shim_ctx->rwlock);
 	{
