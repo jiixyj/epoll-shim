@@ -63,9 +63,14 @@ epoll_create_impl(int *fd_out, int flags)
 {
 	errno_t ec;
 
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		return ec;
+	}
+
 	int fd;
 	FileDescription *desc;
-	ec = epoll_shim_ctx_create_desc(&epoll_shim_ctx,
+	ec = epoll_shim_ctx_create_desc(epoll_shim_ctx,
 	    flags & (O_CLOEXEC | O_NONBLOCK), &fd, &desc);
 	if (ec != 0) {
 		return ec;
@@ -78,13 +83,13 @@ epoll_create_impl(int *fd_out, int flags)
 	}
 
 	desc->vtable = &epollfd_vtable;
-	epoll_shim_ctx_install_desc(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_install_desc(epoll_shim_ctx, fd, desc);
 
 	*fd_out = fd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_drop_desc(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_drop_desc(epoll_shim_ctx, fd, desc);
 	return ec;
 }
 
@@ -135,7 +140,12 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 		return EFAULT;
 	}
 
-	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		return ec;
+	}
+
+	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
 	if (!desc || desc->vtable != &epollfd_vtable) {
 		struct stat sb;
 		ec = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;
@@ -143,7 +153,7 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 	}
 
 	FileDescription *fd2_desc = (op == EPOLL_CTL_ADD) ?
-		  epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd2) :
+		  epoll_shim_ctx_find_desc(epoll_shim_ctx, fd2) :
 		  NULL;
 
 	(void)pthread_mutex_lock(&desc->mutex);
@@ -302,7 +312,12 @@ epoll_pwait_impl(int fd, struct epoll_event *ev, int cnt, int to,
 		return EINVAL;
 	}
 
-	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		return ec;
+	}
+
+	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
 	if (!desc || desc->vtable != &epollfd_vtable) {
 		struct stat sb;
 		ec = (fd < 0 || fstat(fd, &sb) < 0) ? EBADF : EINVAL;

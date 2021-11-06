@@ -67,7 +67,7 @@ typedef struct {
 	uint64_t realtime_step_detector_generation;
 } EpollShimCtx;
 
-extern EpollShimCtx epoll_shim_ctx;
+errno_t epoll_shim_ctx_global(EpollShimCtx **epoll_shim_ctx);
 
 errno_t epoll_shim_ctx_create_desc(EpollShimCtx *epoll_shim_ctx, int flags,
     int *fd, FileDescription **desc);

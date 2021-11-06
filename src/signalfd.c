@@ -129,9 +129,14 @@ signalfd_impl(int *sfd_out, int fd, sigset_t const *sigs, int flags)
 	_Static_assert(SFD_CLOEXEC == O_CLOEXEC, "");
 	_Static_assert(SFD_NONBLOCK == O_NONBLOCK, "");
 
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		return ec;
+	}
+
 	int sfd;
 	FileDescription *desc;
-	ec = epoll_shim_ctx_create_desc(&epoll_shim_ctx,
+	ec = epoll_shim_ctx_create_desc(epoll_shim_ctx,
 	    flags & (O_CLOEXEC | O_NONBLOCK), &sfd, &desc);
 	if (ec != 0) {
 		return ec;
@@ -144,13 +149,13 @@ signalfd_impl(int *sfd_out, int fd, sigset_t const *sigs, int flags)
 	}
 
 	desc->vtable = &signalfd_vtable;
-	epoll_shim_ctx_install_desc(&epoll_shim_ctx, sfd, desc);
+	epoll_shim_ctx_install_desc(epoll_shim_ctx, sfd, desc);
 
 	*sfd_out = sfd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_drop_desc(&epoll_shim_ctx, sfd, desc);
+	epoll_shim_ctx_drop_desc(epoll_shim_ctx, sfd, desc);
 	return ec;
 }
 

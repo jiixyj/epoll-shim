@@ -76,10 +76,15 @@ timerfd_read(FileDescription *desc, int kq, void *buf, size_t nbytes,
 static errno_t
 timerfd_close(FileDescription *desc)
 {
+	EpollShimCtx *epoll_shim_ctx;
+	errno_t ec = epoll_shim_ctx_global(&epoll_shim_ctx);
+	assert(ec == 0);
+	(void)ec;
+
 	int const old_can_jump = /**/
 	    desc->ctx.timerfd.clockid == CLOCK_REALTIME &&
 	    desc->ctx.timerfd.is_abstime;
-	epoll_shim_ctx_update_realtime_change_monitoring(&epoll_shim_ctx,
+	epoll_shim_ctx_update_realtime_change_monitoring(epoll_shim_ctx,
 	    -old_can_jump);
 	return timerfd_ctx_terminate(&desc->ctx.timerfd);
 }
@@ -124,9 +129,14 @@ timerfd_create_impl(int *fd_out, int clockid, int flags)
 	_Static_assert(TFD_CLOEXEC == O_CLOEXEC, "");
 	_Static_assert(TFD_NONBLOCK == O_NONBLOCK, "");
 
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		return ec;
+	}
+
 	int fd;
 	FileDescription *desc;
-	ec = epoll_shim_ctx_create_desc(&epoll_shim_ctx,
+	ec = epoll_shim_ctx_create_desc(epoll_shim_ctx,
 	    flags & (O_CLOEXEC | O_NONBLOCK), &fd, &desc);
 	if (ec != 0) {
 		return ec;
@@ -139,13 +149,13 @@ timerfd_create_impl(int *fd_out, int clockid, int flags)
 	}
 
 	desc->vtable = &timerfd_vtable;
-	epoll_shim_ctx_install_desc(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_install_desc(epoll_shim_ctx, fd, desc);
 
 	*fd_out = fd;
 	return 0;
 
 fail:
-	epoll_shim_ctx_drop_desc(&epoll_shim_ctx, fd, desc);
+	epoll_shim_ctx_drop_desc(epoll_shim_ctx, fd, desc);
 	return ec;
 }
 
@@ -176,7 +186,12 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 		return EINVAL;
 	}
 
-	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		return ec;
+	}
+
+	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
 	if (!desc || desc->vtable != &timerfd_vtable) {
 		struct stat sb;
 		ec = (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;
@@ -200,7 +215,7 @@ timerfd_settime_impl(int fd, int flags, const struct itimerspec *new,
 			    desc->ctx.timerfd.is_abstime;
 
 			epoll_shim_ctx_update_realtime_change_monitoring(
-			    &epoll_shim_ctx, new_can_jump - old_can_jump);
+			    epoll_shim_ctx, new_can_jump - old_can_jump);
 		}
 	}
 	(void)pthread_mutex_unlock(&desc->mutex);
@@ -230,7 +245,12 @@ timerfd_gettime_impl(int fd, struct itimerspec *cur)
 {
 	errno_t ec;
 
-	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		return ec;
+	}
+
+	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
 	if (!desc || desc->vtable != &timerfd_vtable) {
 		struct stat sb;
 		ec = (fd < 0 || fstat(fd, &sb)) ? EBADF : EINVAL;

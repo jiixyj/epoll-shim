@@ -176,14 +176,57 @@ fd_context_default_write(FileDescription *desc, int kq, /**/
 
 /**/
 
-EpollShimCtx epoll_shim_ctx = {
-	.step_detector_mutex = PTHREAD_MUTEX_INITIALIZER,
-};
-
-__attribute__((constructor)) static void
-epoll_shim_ctx_initialize(void)
+static errno_t
+epoll_shim_ctx_init(EpollShimCtx *epoll_shim_ctx)
 {
-	(void)rwlock_init(&epoll_shim_ctx.rwlock);
+	errno_t ec;
+
+	*epoll_shim_ctx = (EpollShimCtx) {};
+
+	if ((ec = pthread_mutex_init(/**/
+		 &epoll_shim_ctx->step_detector_mutex, NULL)) != 0) {
+		goto out_step_detector_mutex;
+	}
+
+	if ((ec = rwlock_init(&epoll_shim_ctx->rwlock)) != 0) {
+		goto out_rwlock;
+	}
+
+	return 0;
+
+	(void)rwlock_terminate(&epoll_shim_ctx->rwlock);
+out_rwlock:
+	(void)pthread_mutex_destroy(&epoll_shim_ctx->step_detector_mutex);
+out_step_detector_mutex:
+	return ec;
+}
+
+static EpollShimCtx epoll_shim_ctx_global_;
+static errno_t epoll_shim_ctx_init_error;
+static void
+epoll_shim_ctx_global_init(void)
+{
+	epoll_shim_ctx_init_error = /**/
+	    epoll_shim_ctx_init(&epoll_shim_ctx_global_);
+}
+static pthread_once_t epoll_shim_ctx_once = PTHREAD_ONCE_INIT;
+
+errno_t
+epoll_shim_ctx_global(EpollShimCtx **epoll_shim_ctx_out)
+{
+	errno_t ec;
+
+	if ((ec = pthread_once(&epoll_shim_ctx_once,
+		 epoll_shim_ctx_global_init)) != 0) {
+		return ec;
+	}
+
+	if (epoll_shim_ctx_init_error != 0) {
+		return epoll_shim_ctx_init_error;
+	}
+
+	*epoll_shim_ctx_out = &epoll_shim_ctx_global_;
+	return 0;
 }
 
 /**/
@@ -532,7 +575,12 @@ epoll_shim_close(int fd)
 	ERRNO_SAVE;
 	errno_t ec;
 
-	ec = epoll_shim_ctx_remove_desc(&epoll_shim_ctx, fd);
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		ERRNO_RETURN(0, -1, real_close(fd));
+	}
+
+	ec = epoll_shim_ctx_remove_desc(epoll_shim_ctx, fd);
 
 	ERRNO_RETURN(ec, -1, 0);
 }
@@ -544,7 +592,12 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	ERRNO_SAVE;
 	errno_t ec;
 
-	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		ERRNO_RETURN(0, -1, real_read(fd, buf, nbytes));
+	}
+
+	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
 	if (!desc) {
 		ERRNO_RETURN(0, -1, real_read(fd, buf, nbytes));
 	}
@@ -569,7 +622,12 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	ERRNO_SAVE;
 	errno_t ec;
 
-	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		ERRNO_RETURN(0, -1, real_write(fd, buf, nbytes));
+	}
+
+	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
 	if (!desc) {
 		ERRNO_RETURN(0, -1, real_write(fd, buf, nbytes));
 	}
@@ -602,17 +660,18 @@ epoll_shim_poll(struct pollfd *fds, nfds_t nfds, int timeout)
 }
 
 static errno_t
-epoll_shim_ppoll_deadline(struct pollfd *fds, nfds_t nfds,
+epoll_shim_ppoll_deadline(EpollShimCtx *epoll_shim_ctx, /**/
+    struct pollfd *fds, nfds_t nfds,			/**/
     struct timespec const *deadline, struct timespec *timeout,
     sigset_t const *sigmask, int *n_out)
 {
 
 retry:;
 	if (fds != NULL) {
-		rwlock_lock_read(&epoll_shim_ctx.rwlock);
+		rwlock_lock_read(&epoll_shim_ctx->rwlock);
 		for (nfds_t i = 0; i < nfds; ++i) {
 			FileDescription *desc = epoll_shim_ctx_find_desc_impl(
-			    &epoll_shim_ctx, fds[i].fd);
+			    epoll_shim_ctx, fds[i].fd);
 			if (!desc) {
 				continue;
 			}
@@ -620,7 +679,7 @@ retry:;
 				desc->vtable->poll_fun(desc, fds[i].fd, NULL);
 			}
 		}
-		rwlock_unlock_read(&epoll_shim_ctx.rwlock);
+		rwlock_unlock_read(&epoll_shim_ctx->rwlock);
 	}
 
 	int n = real_ppoll(fds, nfds, timeout, sigmask);
@@ -632,14 +691,14 @@ retry:;
 		return 0;
 	}
 
-	rwlock_lock_read(&epoll_shim_ctx.rwlock);
+	rwlock_lock_read(&epoll_shim_ctx->rwlock);
 	for (nfds_t i = 0; i < nfds; ++i) {
 		if (fds[i].revents == 0) {
 			continue;
 		}
 
 		FileDescription *desc =
-		    epoll_shim_ctx_find_desc_impl(&epoll_shim_ctx, fds[i].fd);
+		    epoll_shim_ctx_find_desc_impl(epoll_shim_ctx, fds[i].fd);
 		if (!desc) {
 			continue;
 		}
@@ -652,7 +711,7 @@ retry:;
 			}
 		}
 	}
-	rwlock_unlock_read(&epoll_shim_ctx.rwlock);
+	rwlock_unlock_read(&epoll_shim_ctx->rwlock);
 
 	if (n == 0 &&
 	    !(timeout && timeout->tv_sec == 0 && timeout->tv_nsec == 0)) {
@@ -678,7 +737,8 @@ retry:;
 }
 
 static errno_t
-epoll_shim_ppoll_impl(struct pollfd *fds, nfds_t nfds,
+epoll_shim_ppoll_impl(EpollShimCtx *epoll_shim_ctx, /**/
+    struct pollfd *fds, nfds_t nfds,		    /**/
     struct timespec const *tmo_p, sigset_t const *sigmask, int *n)
 {
 	struct timespec deadline;
@@ -704,9 +764,9 @@ epoll_shim_ppoll_impl(struct pollfd *fds, nfds_t nfds,
 		}
 	}
 
-	return epoll_shim_ppoll_deadline(fds, nfds, /**/
-	    tmo_p ? &deadline : NULL,		    /**/
-	    tmo_p ? &timeout : NULL,		    /**/
+	return epoll_shim_ppoll_deadline(epoll_shim_ctx, fds, nfds, /**/
+	    tmo_p ? &deadline : NULL,				    /**/
+	    tmo_p ? &timeout : NULL,				    /**/
 	    sigmask, n);
 }
 
@@ -718,8 +778,14 @@ epoll_shim_ppoll(struct pollfd *fds, nfds_t nfds, struct timespec const *tmo_p,
 	ERRNO_SAVE;
 	errno_t ec;
 
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		ERRNO_RETURN(0, -1, real_ppoll(fds, nfds, tmo_p, sigmask));
+	}
+
 	int n;
-	ec = epoll_shim_ppoll_impl(fds, nfds, tmo_p, sigmask, &n);
+	ec = epoll_shim_ppoll_impl(epoll_shim_ctx, /**/
+	    fds, nfds, tmo_p, sigmask, &n);
 
 	ERRNO_RETURN(ec, -1, n);
 }
@@ -731,9 +797,15 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	ERRNO_SAVE;
 	errno_t ec;
 
+	EpollShimCtx *epoll_shim_ctx;
+	if ((ec = epoll_shim_ctx_global(&epoll_shim_ctx)) != 0) {
+		goto pass_through;
+	}
+
 	va_list ap;
 
 	if (cmd != F_SETFL) {
+	pass_through:
 		va_start(ap, cmd);
 		void *arg = va_arg(ap, void *);
 		va_end(ap);
@@ -747,7 +819,7 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	arg = va_arg(ap, int);
 	va_end(ap);
 
-	FileDescription *desc = epoll_shim_ctx_find_desc(&epoll_shim_ctx, fd);
+	FileDescription *desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd);
 	if (!desc) {
 		ERRNO_RETURN(0, -1, real_fcntl(fd, F_SETFL, arg));
 	}
