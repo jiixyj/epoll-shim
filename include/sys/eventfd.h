@@ -1,5 +1,5 @@
-#ifndef SHIM_SYS_EVENTFD_H
-#define SHIM_SYS_EVENTFD_H
+#ifndef EPOLL_SHIM_SYS_EVENTFD_H_
+#define EPOLL_SHIM_SYS_EVENTFD_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,9 +20,11 @@ int eventfd_read(int, eventfd_t *);
 int eventfd_write(int, eventfd_t);
 
 
+#ifndef EPOLL_SHIM_DISABLE_WRAPPER_MACROS
 #include <epoll-shim/detail/common.h>
 #include <epoll-shim/detail/read.h>
 #include <epoll-shim/detail/write.h>
+#endif
 
 
 #ifdef __cplusplus

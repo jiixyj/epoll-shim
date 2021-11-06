@@ -20,16 +20,28 @@ find_package(Threads REQUIRED)
 macro(atf_test _testname)
   add_executable("${_testname}" "${_testname}.c")
   target_link_libraries(
-    "${_testname}" PRIVATE epoll-shim::epoll-shim-elf Threads::Threads
+    "${_testname}" PRIVATE epoll-shim::epoll-shim Threads::Threads
                            microatf::microatf-c)
   atf_discover_tests("${_testname}" ${ARGN})
+
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable("${_testname}-elf" "${_testname}.c")
+    target_link_libraries(
+      "${_testname}-elf" PRIVATE epoll-shim::epoll-shim-elf Threads::Threads
+                                 microatf::microatf-c)
+    atf_discover_tests("${_testname}-elf" ${ARGN})
+  endif()
 endmacro()
 
 #
 
 atf_test(epoll-test)
-target_sources(epoll-test PRIVATE real_close.c)
-target_link_libraries(epoll-test PRIVATE ${CMAKE_DL_LIBS})
+foreach(_target epoll-test epoll-test-elf)
+  if(TARGET ${_target})
+    target_sources(${_target} PRIVATE real_close.c)
+    target_link_libraries(${_target} PRIVATE ${CMAKE_DL_LIBS})
+  endif()
+endforeach()
 atf_test(timerfd-test)
 atf_test(timerfd-root-test)
 atf_test(timerfd-mock-test)
@@ -43,8 +55,12 @@ get_target_property(_target_type epoll-shim::epoll-shim TYPE)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" #
    AND NOT _target_type STREQUAL STATIC_LIBRARY)
   atf_test(malloc-fail-test)
-  target_sources(malloc-fail-test PRIVATE real_close.c)
-  target_link_libraries(malloc-fail-test PRIVATE ${CMAKE_DL_LIBS})
+  foreach(_target malloc-fail-test malloc-fail-test-elf)
+    if(TARGET ${_target})
+      target_sources(${_target} PRIVATE real_close.c)
+      target_link_libraries(${_target} PRIVATE ${CMAKE_DL_LIBS})
+    endif()
+  endforeach()
 endif()
 atf_test(tst-epoll)
 atf_test(tst-timerfd)

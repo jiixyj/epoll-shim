@@ -4,11 +4,11 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-add_library(rwlock STATIC rwlock.c)
+add_library(rwlock OBJECT rwlock.c)
 set_property(TARGET rwlock PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(rwlock PUBLIC Threads::Threads)
 target_include_directories(rwlock
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
+                           PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_library(epoll-shim INTERFACE)
@@ -22,13 +22,15 @@ find_package(tree-macros REQUIRED)
 find_package(queue-macros REQUIRED)
 
 macro(add_compat_target _name _condition)
-  add_library(compat_${_name} STATIC compat_${_name}.c)
+  add_library(compat_${_name} OBJECT compat_${_name}.c)
   set_property(TARGET compat_${_name} PROPERTY POSITION_INDEPENDENT_CODE ON)
   target_compile_options(
     compat_${_name}
     INTERFACE "SHELL:-include \"${CMAKE_CURRENT_LIST_DIR}/compat_${_name}.h\"")
   add_library(compat_enable_${_name} INTERFACE)
   if(${_condition})
+    target_sources(compat_enable_${_name}
+                   INTERFACE $<TARGET_OBJECTS:compat_${_name}>)
     target_link_libraries(compat_enable_${_name} INTERFACE compat_${_name})
     string(TOUPPER "${_name}" _upper_name)
     target_compile_definitions(compat_enable_${_name}
@@ -37,9 +39,8 @@ macro(add_compat_target _name _condition)
 endmacro()
 
 include(CheckSymbolExists)
-# FreeBSD 13 and NetBSD 10 support native eventfd descriptors.
-# NetBSD 10 supports native timerfd descriptors.
-# Prefer them if available.
+# FreeBSD 13 and NetBSD 10 support native eventfd descriptors. NetBSD 10
+# supports native timerfd descriptors. Prefer them if available.
 check_symbol_exists(eventfd "sys/eventfd.h" HAVE_EVENTFD)
 check_symbol_exists(timerfd_create "sys/timerfd.h" HAVE_TIMERFD)
 
@@ -101,12 +102,19 @@ target_link_libraries(
 if(HAVE_TIMERFD)
   target_compile_definitions(epoll-shim PRIVATE HAVE_TIMERFD)
 endif()
+target_compile_definitions(epoll-shim PRIVATE EPOLL_SHIM_DISABLE_WRAPPER_MACROS)
 target_include_directories(
   epoll-shim
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/install-include>)
 
-set(_headers "sys/epoll.h" "sys/signalfd.h")
+set(_headers
+    "epoll-shim/detail/common.h" #
+    "epoll-shim/detail/poll.h" #
+    "epoll-shim/detail/read.h" #
+    "epoll-shim/detail/write.h" #
+    "sys/epoll.h" #
+    "sys/signalfd.h")
 if(NOT HAVE_EVENTFD)
   list(APPEND _headers "sys/eventfd.h")
 endif()
@@ -124,8 +132,9 @@ set_target_properties(epoll-shim PROPERTIES SOVERSION 0)
 
 add_library(epoll-shim-elf epoll_shim_elf.c)
 target_link_libraries(epoll-shim-elf PUBLIC epoll-shim)
+target_compile_definitions(epoll-shim-elf
+                           PUBLIC EPOLL_SHIM_DISABLE_WRAPPER_MACROS)
 generate_export_header(epoll-shim-elf BASE_NAME epoll_shim_elf)
 target_include_directories(
-  epoll-shim-elf
-  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+  epoll-shim-elf PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 set_target_properties(epoll-shim-elf PROPERTIES SOVERSION 0)

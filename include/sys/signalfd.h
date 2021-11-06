@@ -1,5 +1,5 @@
-#ifndef SHIM_SYS_SIGNALFD_H
-#define SHIM_SYS_SIGNALFD_H
+#ifndef EPOLL_SHIM_SYS_SIGNALFD_H_
+#define EPOLL_SHIM_SYS_SIGNALFD_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,9 +40,11 @@ struct signalfd_siginfo {
 };
 
 
+#ifndef EPOLL_SHIM_DISABLE_WRAPPER_MACROS
 #include <epoll-shim/detail/common.h>
 #include <epoll-shim/detail/poll.h>
 #include <epoll-shim/detail/read.h>
+#endif
 
 
 #ifdef __cplusplus

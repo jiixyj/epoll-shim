@@ -58,10 +58,12 @@ add_library(${_namespace}::epoll-shim-elf ALIAS epoll-shim-elf)\n")
       CACHE PATH "Installation directory for CMake config (.cmake) files")
   mark_as_advanced(CMAKE_INSTALL_CMAKEBASEDIR)
 
-  configure_file("${PROJECT_SOURCE_DIR}/${PROJECT_NAME}.pc.cmakein"
-                 "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.pc" @ONLY)
-  install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.pc"
-          DESTINATION "${CMAKE_INSTALL_PKGCONFIGDIR}")
+  foreach(_pc_filename "${PROJECT_NAME}" "${PROJECT_NAME}-elf")
+    configure_file("${PROJECT_SOURCE_DIR}/${_pc_filename}.pc.cmakein"
+                   "${PROJECT_BINARY_DIR}/${_pc_filename}.pc" @ONLY)
+    install(FILES "${PROJECT_BINARY_DIR}/${_pc_filename}.pc"
+            DESTINATION "${CMAKE_INSTALL_PKGCONFIGDIR}")
+  endforeach()
 
   set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/libepoll-shim")
   install(

@@ -1,5 +1,5 @@
-#ifndef SHIM_SYS_TIMERFD_H
-#define SHIM_SYS_TIMERFD_H
+#ifndef EPOLL_SHIM_SYS_TIMERFD_H_
+#define EPOLL_SHIM_SYS_TIMERFD_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,9 +21,11 @@ int timerfd_settime(int, int, struct itimerspec const *, struct itimerspec *);
 int timerfd_gettime(int, struct itimerspec *);
 
 
+#ifndef EPOLL_SHIM_DISABLE_WRAPPER_MACROS
 #include <epoll-shim/detail/common.h>
 #include <epoll-shim/detail/poll.h>
 #include <epoll-shim/detail/read.h>
+#endif
 
 
 #ifdef __cplusplus

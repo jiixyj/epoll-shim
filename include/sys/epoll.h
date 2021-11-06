@@ -1,5 +1,5 @@
-#ifndef SHIM_SYS_EPOLL_H
-#define SHIM_SYS_EPOLL_H
+#ifndef EPOLL_SHIM_SYS_EPOLL_H_
+#define EPOLL_SHIM_SYS_EPOLL_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,7 +60,9 @@ int epoll_wait(int, struct epoll_event *, int, int);
 int epoll_pwait(int, struct epoll_event *, int, int, sigset_t const *);
 
 
+#ifndef EPOLL_SHIM_DISABLE_WRAPPER_MACROS
 #include <epoll-shim/detail/common.h>
+#endif
 
 
 #ifdef __cplusplus
