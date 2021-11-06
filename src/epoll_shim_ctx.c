@@ -584,14 +584,13 @@ int
 epoll_shim_close(int fd)
 {
 	ERRNO_SAVE;
-	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
 	if (fd < 0 || epoll_shim_ctx_global(&epoll_shim_ctx) != 0) {
 		ERRNO_RETURN(0, -1, real_close(fd));
 	}
 
-	ec = epoll_shim_ctx_remove_desc(epoll_shim_ctx, fd);
+	errno_t ec = epoll_shim_ctx_remove_desc(epoll_shim_ctx, fd);
 
 	ERRNO_RETURN(ec, -1, 0);
 }
@@ -601,7 +600,6 @@ ssize_t
 epoll_shim_read(int fd, void *buf, size_t nbytes)
 {
 	ERRNO_SAVE;
-	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
 	FileDescription *desc;
@@ -609,6 +607,8 @@ epoll_shim_read(int fd, void *buf, size_t nbytes)
 	    (desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd)) == NULL) {
 		ERRNO_RETURN(0, -1, real_read(fd, buf, nbytes));
 	}
+
+	errno_t ec;
 
 	if (nbytes > SSIZE_MAX) {
 		ec = EINVAL;
@@ -628,7 +628,6 @@ ssize_t
 epoll_shim_write(int fd, void const *buf, size_t nbytes)
 {
 	ERRNO_SAVE;
-	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
 	FileDescription *desc;
@@ -636,6 +635,8 @@ epoll_shim_write(int fd, void const *buf, size_t nbytes)
 	    (desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd)) == NULL) {
 		ERRNO_RETURN(0, -1, real_write(fd, buf, nbytes));
 	}
+
+	errno_t ec;
 
 	if (nbytes > SSIZE_MAX) {
 		ec = EINVAL;
@@ -781,12 +782,13 @@ epoll_shim_ppoll(struct pollfd *fds, nfds_t nfds, struct timespec const *tmo_p,
     sigset_t const *sigmask)
 {
 	ERRNO_SAVE;
-	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
 	if (epoll_shim_ctx_global(&epoll_shim_ctx) != 0) {
 		ERRNO_RETURN(0, -1, real_ppoll(fds, nfds, tmo_p, sigmask));
 	}
+
+	errno_t ec;
 
 	int n;
 	ec = epoll_shim_ppoll_impl(epoll_shim_ctx, /**/
@@ -800,7 +802,6 @@ int
 epoll_shim_fcntl(int fd, int cmd, ...)
 {
 	ERRNO_SAVE;
-	errno_t ec;
 
 	EpollShimCtx *epoll_shim_ctx;
 	FileDescription *desc;
@@ -815,6 +816,8 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 
 		ERRNO_RETURN(0, -1, real_fcntl(fd, cmd, arg));
 	}
+
+	errno_t ec;
 
 	va_start(ap, cmd);
 	int arg = va_arg(ap, int);
