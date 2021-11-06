@@ -13,10 +13,14 @@ static int
 sem_wait_nointr(sem_t *sem)
 {
 	int rc;
+	int cs;
+	(void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cs);
 
 	do {
 		rc = sem_wait(sem);
 	} while (rc < 0 && errno == EINTR);
+
+	(void)pthread_setcancelstate(cs, NULL);
 
 	return rc;
 }

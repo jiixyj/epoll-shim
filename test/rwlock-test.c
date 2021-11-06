@@ -78,7 +78,7 @@ ATF_TC_BODY(stress, tc)
 
 	for (int i = 0; i < 1000; ++i) {
 		stress_data[i] = (struct stress_data) {
-			.iterations = 100,
+			.iterations = 500,
 			.lock = &rwlock,
 			.data = data,
 		};
@@ -88,7 +88,7 @@ ATF_TC_BODY(stress, tc)
 
 	for (int i = 0; i < 10; ++i) {
 		stress_data[1000 + i] = (struct stress_data) {
-			.iterations = 100,
+			.iterations = 500,
 			.lock = &rwlock,
 			.data = data,
 			.inc = i + 1,
