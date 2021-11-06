@@ -56,16 +56,7 @@ PollableDesc fd_as_pollable_desc(FileDescription *desc);
 
 /**/
 
-typedef struct {
-	FileDescription **open_files;
-	unsigned int open_files_length;
-	RWLock rwlock;
-
-	/* members for realtime timer change detection */
-	pthread_mutex_t step_detector_mutex;
-	uint64_t nr_fds_for_realtime_step_detector;
-	uint64_t realtime_step_detector_generation;
-} EpollShimCtx;
+typedef struct epoll_shim_ctx EpollShimCtx;
 
 errno_t epoll_shim_ctx_global(EpollShimCtx **epoll_shim_ctx);
 

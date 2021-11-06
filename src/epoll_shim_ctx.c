@@ -176,6 +176,17 @@ fd_context_default_write(FileDescription *desc, int kq, /**/
 
 /**/
 
+struct epoll_shim_ctx {
+	FileDescription **open_files;
+	unsigned int open_files_length;
+	RWLock rwlock;
+
+	/* members for realtime timer change detection */
+	pthread_mutex_t step_detector_mutex;
+	uint64_t nr_fds_for_realtime_step_detector;
+	uint64_t realtime_step_detector_generation;
+};
+
 static errno_t
 epoll_shim_ctx_init(EpollShimCtx *epoll_shim_ctx)
 {
