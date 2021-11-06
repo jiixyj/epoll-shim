@@ -214,24 +214,16 @@ out_step_detector_mutex:
 
 static EpollShimCtx epoll_shim_ctx_global_;
 static errno_t epoll_shim_ctx_init_error;
-static void
+static __attribute__((constructor)) void
 epoll_shim_ctx_global_init(void)
 {
 	epoll_shim_ctx_init_error = /**/
 	    epoll_shim_ctx_init(&epoll_shim_ctx_global_);
 }
-static pthread_once_t epoll_shim_ctx_once = PTHREAD_ONCE_INIT;
 
 errno_t
 epoll_shim_ctx_global(EpollShimCtx **epoll_shim_ctx_out)
 {
-	errno_t ec;
-
-	if ((ec = pthread_once(&epoll_shim_ctx_once,
-		 epoll_shim_ctx_global_init)) != 0) {
-		return ec;
-	}
-
 	if (epoll_shim_ctx_init_error != 0) {
 		return epoll_shim_ctx_init_error;
 	}
