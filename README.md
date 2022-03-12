@@ -44,7 +44,7 @@ example:
 The library is tested on the following operating systems:
 
 - FreeBSD 12.2, 13.0
-- NetBSD 9.1, -current 2021-10-15
+- NetBSD 9.1, -current 2022-03-06
 - OpenBSD 7.0
 - DragonFlyBSD 6.0.1
 
