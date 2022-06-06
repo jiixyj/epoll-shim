@@ -12,8 +12,8 @@
 #ifndef timespeccmp
 #define timespeccmp(tvp, uvp, cmp)                   \
 	(((tvp)->tv_sec == (uvp)->tv_sec) ?          \
-		      ((tvp)->tv_nsec cmp(uvp)->tv_nsec) : \
-		      ((tvp)->tv_sec cmp(uvp)->tv_sec))
+		((tvp)->tv_nsec cmp(uvp)->tv_nsec) : \
+		((tvp)->tv_sec cmp(uvp)->tv_sec))
 #endif
 #ifndef timespecsub
 #define timespecsub(tsp, usp, vsp)                                \

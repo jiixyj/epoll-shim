@@ -171,8 +171,8 @@ eventfd_read(int fd, eventfd_t *value)
 {
 	return (epoll_shim_read(fd, /**/
 		    value, sizeof(*value)) == (ssize_t)sizeof(*value)) ?
-		  0 :
-		  -1;
+	    0 :
+	    -1;
 }
 
 EPOLL_SHIM_EXPORT
@@ -181,6 +181,6 @@ eventfd_write(int fd, eventfd_t value)
 {
 	return (epoll_shim_write(fd, /**/
 		    &value, sizeof(value)) == (ssize_t)sizeof(value)) ?
-		  0 :
-		  -1;
+	    0 :
+	    -1;
 }

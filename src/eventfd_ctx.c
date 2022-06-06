@@ -97,8 +97,8 @@ eventfd_ctx_read(EventFDCtx *eventfd, int kq, uint64_t *value)
 
 	uint_least64_t new_value =			     /**/
 	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? /**/
-		  current_value - 1 :
-		  0;
+	    current_value - 1 :
+	    0;
 
 	if (new_value == 0 &&
 	    kqueue_event_is_triggered(&eventfd->kqueue_event_)) {
@@ -109,7 +109,7 @@ eventfd_ctx_read(EventFDCtx *eventfd, int kq, uint64_t *value)
 
 	*value =					     /**/
 	    (eventfd->flags_ & EVENTFD_CTX_FLAG_SEMAPHORE) ? /**/
-		  1 :
-		  current_value;
+	    1 :
+	    current_value;
 	return 0;
 }

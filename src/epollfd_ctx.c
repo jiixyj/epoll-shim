@@ -124,8 +124,8 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 		    (fd2_node->events & EPOLLRDHUP)) {
 			needed_filters.evfilt_read = (fd2_node->eof_state &
 							 EOF_STATE_READ_EOF) ?
-				  1 :
-				  EV_CLEAR;
+			    1 :
+			    EV_CLEAR;
 		}
 
 #ifdef EVFILT_EXCEPT
@@ -134,8 +134,8 @@ get_needed_filters(RegisteredFDsNode *fd2_node)
 		if (needed_filters.evfilt_read == 0 &&
 		    (fd2_node->events & EPOLLPRI)) {
 			needed_filters.evfilt_read = fd2_node->pollpri_active ?
-				  1 :
-				  EV_CLEAR;
+			    1 :
+			    EV_CLEAR;
 		}
 #endif
 
@@ -1137,8 +1137,8 @@ epollfd_ctx_fill_pollfds(EpollFDCtx *epollfd, int kq, struct pollfd *pfds)
 		pfds[i++] = (struct pollfd) {
 			.fd = poll_node->fd,
 			.events = poll_node->node_type == NODE_TYPE_POLL ?
-				  (short)poll_node->events :
-				  POLLPRI,
+			    (short)poll_node->events :
+			    POLLPRI,
 		};
 	}
 }
@@ -1206,17 +1206,17 @@ epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
 
 	if (op == EPOLL_CTL_ADD) {
 		ec = fd2_node != NULL ?
-			  EEXIST :
-			  epollfd_ctx_add_node(epollfd, kq, /**/
+		    EEXIST :
+		    epollfd_ctx_add_node(epollfd, kq, /**/
 			/* */ fd2, pollable_desc, ev, &statbuf);
 	} else if (op == EPOLL_CTL_DEL) {
 		ec = fd2_node == NULL ?
-			  ENOENT :
-			  (epollfd_ctx_remove_node(epollfd, kq, fd2_node), 0);
+		    ENOENT :
+		    (epollfd_ctx_remove_node(epollfd, kq, fd2_node), 0);
 	} else if (op == EPOLL_CTL_MOD) {
 		ec = fd2_node == NULL ?
-			  ENOENT :
-			  epollfd_ctx_modify_node(epollfd, kq, fd2_node, ev);
+		    ENOENT :
+		    epollfd_ctx_modify_node(epollfd, kq, fd2_node, ev);
 	} else {
 		ec = EINVAL;
 	}

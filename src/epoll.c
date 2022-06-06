@@ -153,8 +153,8 @@ epoll_ctl_impl(int fd, int op, int fd2, struct epoll_event *ev)
 	}
 
 	FileDescription *fd2_desc = (op == EPOLL_CTL_ADD) ?
-		  epoll_shim_ctx_find_desc(epoll_shim_ctx, fd2) :
-		  NULL;
+	    epoll_shim_ctx_find_desc(epoll_shim_ctx, fd2) :
+	    NULL;
 
 	(void)pthread_mutex_lock(&desc->mutex);
 	ec = epollfd_ctx_ctl(&desc->ctx.epollfd, fd, op, fd2,

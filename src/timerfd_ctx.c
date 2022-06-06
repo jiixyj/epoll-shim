@@ -499,8 +499,8 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, int kq, /**/
 
 		timerfd_ctx_gettime_impl(timerfd, old,
 		    timerfd->timer_type == TIMER_TYPE_UNSPECIFIED ?
-			      NULL :
-			      &current_time);
+			NULL :
+			&current_time);
 	}
 
 	if (new->it_value.tv_sec == 0 && new->it_value.tv_nsec == 0) {
@@ -514,8 +514,8 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, int kq, /**/
 		timerfd->is_abstime = false;
 	} else {
 		TimerType new_timer_type = is_abstime ? /**/
-			  TIMER_TYPE_ABSOLUTE :
-			  TIMER_TYPE_RELATIVE;
+		    TIMER_TYPE_ABSOLUTE :
+		    TIMER_TYPE_RELATIVE;
 
 		if (!has_current_time ||
 		    timerfd->timer_type != new_timer_type) {
@@ -558,8 +558,8 @@ timerfd_ctx_settime(TimerFDCtx *timerfd, int kq, /**/
 	timerfd->nr_expirations = 0;
 	return (timerfd_ctx_check_for_cancel(timerfd, kq) &&
 		   old_is_cancel_on_set) ?
-		  ECANCELED :
-		  0;
+	    ECANCELED :
+	    0;
 }
 
 errno_t
@@ -577,8 +577,8 @@ timerfd_ctx_gettime(TimerFDCtx *timerfd, struct itimerspec *cur)
 
 	timerfd_ctx_gettime_impl(timerfd, cur,
 	    timerfd->timer_type == TIMER_TYPE_UNSPECIFIED ? /**/
-		      NULL :
-		      &current_time);
+		NULL :
+		&current_time);
 
 	return 0;
 }

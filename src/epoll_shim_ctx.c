@@ -74,8 +74,8 @@ file_description_terminate(FileDescription *desc)
 
 	{
 		errno_t ec_local = desc->vtable ?
-			  desc->vtable->close_fun(desc) :
-			  0;
+		    desc->vtable->close_fun(desc) :
+		    0;
 		ec = ec != 0 ? ec : ec_local;
 	}
 
@@ -649,11 +649,11 @@ epoll_shim_poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
 	return epoll_shim_ppoll(fds, nfds,
 	    timeout >= 0 ?
-		      &(struct timespec) {
+		&(struct timespec) {
 		    .tv_sec = timeout / 1000,
 		    .tv_nsec = timeout % 1000 * 1000000,
 		} :
-		      NULL,
+		NULL,
 	    NULL);
 }
 
