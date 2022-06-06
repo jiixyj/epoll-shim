@@ -78,6 +78,17 @@ set_target_properties(
              C_EXTENSIONS NO)
 add_test(NAME epoll-include-test COMMAND epoll-include-test)
 
+add_executable(epoll-include-c89-test epoll-include-c89-test.c)
+target_link_libraries(epoll-include-c89-test PRIVATE epoll-shim::epoll-shim)
+set_target_properties(
+  epoll-include-c89-test
+  PROPERTIES C_STANDARD 90 #
+             C_STANDARD_REQUIRED YES #
+             C_EXTENSIONS NO)
+add_test(NAME epoll-include-c89-test COMMAND epoll-include-c89-test)
+target_compile_options(epoll-include-c89-test PRIVATE "-pedantic"
+                                                      "-Werror=variadic-macros")
+
 add_executable(fcntl-warning fcntl-warning.c)
 target_link_libraries(fcntl-warning PRIVATE epoll-shim::epoll-shim)
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
