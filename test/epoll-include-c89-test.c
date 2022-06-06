@@ -7,7 +7,7 @@
 int
 main(void)
 {
-	int ep = epoll_create1(EPOLL_CLOEXEC);
+	int ep = epoll_create1(0);
 	close(ep);
 	return 0;
 }
