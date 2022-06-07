@@ -13,8 +13,8 @@ target_include_directories(rwlock
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_library(epoll-shim INTERFACE)
   add_library(epoll-shim::epoll-shim ALIAS epoll-shim)
-  add_library(epoll-shim-elf INTERFACE)
-  add_library(epoll-shim-elf::epoll-shim-elf ALIAS epoll-shim-elf)
+  add_library(epoll-shim-interpose INTERFACE)
+  add_library(epoll-shim::epoll-shim-interpose ALIAS epoll-shim-interpose)
   return()
 endif()
 
@@ -130,11 +130,11 @@ set_target_properties(epoll-shim PROPERTIES SOVERSION 0)
 
 #
 
-add_library(epoll-shim-elf epoll_shim_elf.c)
-target_link_libraries(epoll-shim-elf PUBLIC epoll-shim)
-target_compile_definitions(epoll-shim-elf
+add_library(epoll-shim-interpose epoll_shim_interpose.c)
+target_link_libraries(epoll-shim-interpose PUBLIC epoll-shim)
+target_compile_definitions(epoll-shim-interpose
                            PUBLIC EPOLL_SHIM_DISABLE_WRAPPER_MACROS)
-generate_export_header(epoll-shim-elf BASE_NAME epoll_shim_elf)
+generate_export_header(epoll-shim-interpose BASE_NAME epoll_shim_interpose)
 target_include_directories(
-  epoll-shim-elf PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-set_target_properties(epoll-shim-elf PROPERTIES SOVERSION 0)
+  epoll-shim-interpose PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+set_target_properties(epoll-shim-interpose PROPERTIES SOVERSION 0)

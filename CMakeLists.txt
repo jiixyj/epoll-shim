@@ -38,7 +38,7 @@ if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   if(BUILD_TESTING)
     file(WRITE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
          "add_library(${_namespace}::epoll-shim ALIAS epoll-shim)\n
-add_library(${_namespace}::epoll-shim-elf ALIAS epoll-shim-elf)\n")
+add_library(${_namespace}::epoll-shim-interpose ALIAS epoll-shim-interpose)\n")
     set(${PROJECT_NAME}_DIR "${PROJECT_BINARY_DIR}")
     add_subdirectory(test)
   endif()
@@ -58,7 +58,7 @@ add_library(${_namespace}::epoll-shim-elf ALIAS epoll-shim-elf)\n")
       CACHE PATH "Installation directory for CMake config (.cmake) files")
   mark_as_advanced(CMAKE_INSTALL_CMAKEBASEDIR)
 
-  foreach(_pc_filename "${PROJECT_NAME}" "${PROJECT_NAME}-elf")
+  foreach(_pc_filename "${PROJECT_NAME}" "${PROJECT_NAME}-interpose")
     configure_file("${PROJECT_SOURCE_DIR}/${_pc_filename}.pc.cmakein"
                    "${PROJECT_BINARY_DIR}/${_pc_filename}.pc" @ONLY)
     install(FILES "${PROJECT_BINARY_DIR}/${_pc_filename}.pc"
@@ -67,7 +67,7 @@ add_library(${_namespace}::epoll-shim-elf ALIAS epoll-shim-elf)\n")
 
   set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/libepoll-shim")
   install(
-    TARGETS epoll-shim epoll-shim-elf
+    TARGETS epoll-shim epoll-shim-interpose
     EXPORT ${PROJECT_NAME}-targets
     LIBRARY
     INCLUDES

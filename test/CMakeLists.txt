@@ -25,18 +25,18 @@ macro(atf_test _testname)
   atf_discover_tests("${_testname}" ${ARGN})
 
   if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_executable("${_testname}-elf" "${_testname}.c")
+    add_executable("${_testname}-interpose" "${_testname}.c")
     target_link_libraries(
-      "${_testname}-elf" PRIVATE epoll-shim::epoll-shim-elf Threads::Threads
-                                 microatf::microatf-c)
-    atf_discover_tests("${_testname}-elf" ${ARGN})
+      "${_testname}-interpose" PRIVATE epoll-shim::epoll-shim-interpose
+                                       Threads::Threads microatf::microatf-c)
+    atf_discover_tests("${_testname}-interpose" ${ARGN})
   endif()
 endmacro()
 
 #
 
 atf_test(epoll-test)
-foreach(_target epoll-test epoll-test-elf)
+foreach(_target epoll-test epoll-test-interpose)
   if(TARGET ${_target})
     target_sources(${_target} PRIVATE real_close.c)
     target_link_libraries(${_target} PRIVATE ${CMAKE_DL_LIBS})
@@ -55,7 +55,7 @@ get_target_property(_target_type epoll-shim::epoll-shim TYPE)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" #
    AND NOT _target_type STREQUAL STATIC_LIBRARY)
   atf_test(malloc-fail-test)
-  foreach(_target malloc-fail-test malloc-fail-test-elf)
+  foreach(_target malloc-fail-test malloc-fail-test-interpose)
     if(TARGET ${_target})
       target_sources(${_target} PRIVATE real_close.c)
       target_link_libraries(${_target} PRIVATE ${CMAKE_DL_LIBS})
