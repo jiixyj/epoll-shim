@@ -9,8 +9,7 @@ It may be useful for porting other software that uses epoll as well.
 There are some tests inside `test/`. They should also compile under Linux and
 can be used to verify proper epoll behavior.
 
-However, this library contains some very ugly hacks and workarounds. For
-example:
+Sadly, this library contains some very ugly hacks and workarounds. For example:
 
 - When using `timerfd`, `signalfd` or `eventfd`, the system calls `read`,
   `write` and `close` are redefined as macros to internal helper functions.
@@ -20,6 +19,16 @@ example:
   `sys/timerfd.h` isn't included. The context would leak. Luckily, software
   such as libinput behaves very nicely and puts all `timerfd` related code in
   a single source file.
+
+  Alternatively, a target/library `epoll-shim-interpose` is also provided.
+  Instead of redefining those symbols as macros they are provided as "proper"
+  symbols, making use of POSIX `dlsym` chaining with `RTLD_NEXT`.
+
+  What approach is more suitable depends on the application: If the use of
+  `epoll` is very localized the macro based approach is less overhead. If the
+  use of those file descriptors is more pervasive, the interposition approach
+  is more robust. It will be a bit less performant because all calls to
+  `read`/`write`/`close` and so on will be routed through `epoll-shim`.
 
 - There is limited support for file descriptors that lack support for
   kqueue but are supported by `poll(2)`. This includes graphics or sound
@@ -70,6 +79,19 @@ To install (as root):
     cmake --build . --target install
 
 ## Changelog
+
+### 2022-06-07
+
+- Introduce `epoll-shim-interpose` library. This library provides proper
+  wrapper symbols for `read`/`write`/`close`/`poll`/`ppoll`/`fcntl`. If for
+  some reason the macro based approach of redefining those symbols is not
+  appropriate, using this library instead of `epoll-shim` might be an
+  alternative.
+- More faithful simulation of file descriptor semantics, including reference
+  counting.
+- Faster file descriptor lookup, using an array instead of a tree data
+  structure.
+- Define wrapper macros as variadic, except when ANSI C is used.
 
 ### 2021-04-18
 
