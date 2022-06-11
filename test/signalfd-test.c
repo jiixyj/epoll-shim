@@ -484,7 +484,12 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwait_openbsd, tcptr)
 		 *      	error = EAGAIN;
 		 *
 		 */
+#if OpenBSD >= 202204
+		/* OpenBSD 7.1 fixed this bug. */
+		ATF_REQUIRE_ERRNO(EINVAL, s < 0);
+#else
 		ATF_REQUIRE_ERRNO(EAGAIN, s < 0);
+#endif
 	}
 #endif
 }
