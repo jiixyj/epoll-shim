@@ -76,14 +76,16 @@ static microatf_context_t microatf_context_static;
 static microatf_context_t *microatf_context = &microatf_context_static;
 
 struct atf_tc_impl_s_ {
+	size_t variables_size;
+	size_t config_variables_size;
 	char const *variables_key[128];
 	char const *variables_value[128];
-	size_t variables_size;
 	char const *config_variables_key[128];
 	char const *config_variables_value[128];
-	size_t config_variables_size;
 	STAILQ_ENTRY(atf_tc_s) entries;
 };
+_Static_assert(sizeof(atf_tc_t) - offsetof(atf_tc_t, impl_space_) >=
+    sizeof(struct atf_tc_impl_s_), "struct atf_tc_s is too small");
 
 atf_error_t
 atf_tc_set_md_var(atf_tc_t *tc, char const *key, char const *value, ...)
