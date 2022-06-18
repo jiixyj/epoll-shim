@@ -209,6 +209,7 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__fd_exhaustion, tc)
 		--i;
 		ATF_REQUIRE(close(fds[i]) == 0);
 	}
+	free(fds);
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__invalid_op);

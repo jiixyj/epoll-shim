@@ -37,6 +37,7 @@ ATF_TC_BODY(perf_many_fds__perf, tc)
 			fprintf(stderr, ".");
 		}
 	}
+	free(eventfds);
 }
 
 ATF_TP_ADD_TCS(tp)
