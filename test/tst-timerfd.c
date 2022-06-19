@@ -313,8 +313,10 @@ dotest(int clockid)
 	expect(tout.it_interval.tv_sec, t8.it_interval.tv_sec);
 	expect(tout.it_interval.tv_nsec, t8.it_interval.tv_nsec);
 	expect(tout.it_value.tv_sec, t8.it_value.tv_sec);
+#ifndef ALLOW_TIMER_SLACK
 	expectge(tout.it_value.tv_nsec, (long)MS_TO_NSEC(200));
 	expectge((long)MS_TO_NSEC(400), tout.it_value.tv_nsec);
+#endif
 
 	// Check timerfd_gettime() after expiration of a single-time timer:
 	struct itimerspec t9 = { { 0, 0 }, { 0, MS_TO_NSEC(100) } };
