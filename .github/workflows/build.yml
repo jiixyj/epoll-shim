@@ -4,6 +4,7 @@ on: [push]
 
 env:
   BUILD_TYPE: RelWithDebInfo
+  CFLAGS: -DALLOW_TIMER_SLACK
 
 jobs:
   test:

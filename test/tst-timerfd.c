@@ -194,7 +194,10 @@ dotest(int clockid)
 	expect(poll(&pfd, 1, 0), 1);
 	expect((int)pfd.revents, POLLIN);
 	expect(read(fd, &counter, sizeof(counter)), (ssize_t)8);
+	expectge(counter, (u64)3);
+#ifndef ALLOW_TIMER_SLACK
 	expect(counter, (u64)3);
+#endif
 	expect_errno(read(fd, &counter, sizeof(counter)), EAGAIN);
 
 	// If sleep (so counter becomes nonzero again) and then cancel the
@@ -300,8 +303,10 @@ dotest(int clockid)
 	expect(tout.it_value.tv_sec, t8.it_value.tv_sec);
 	expectge(t8.it_value.tv_nsec - (long)MS_TO_NSEC(100),
 	    tout.it_value.tv_nsec);
+#ifndef ALLOW_TIMER_SLACK
 	expectge(tout.it_value.tv_nsec,
 	    t8.it_value.tv_nsec - (long)MS_TO_NSEC(200));
+#endif
 	// After expiration, we have the interval
 	usleep(300000);
 	expect_success(junk, timerfd_gettime(fd, &tout));
