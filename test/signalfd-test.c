@@ -562,6 +562,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwinch, tcptr)
 	ATF_REQUIRE(close(sfd) == 0);
 }
 
+#if !defined(__APPLE__)
 static atomic_int signalfd__multiple_readers_count;
 static void *
 signalfd__multiple_readers_thread(void *arg)
@@ -593,9 +594,13 @@ signalfd__multiple_readers_thread(void *arg)
 
 	return NULL;
 }
+#endif
 ATF_TC_WITHOUT_HEAD(signalfd__multiple_readers);
 ATF_TC_BODY_FD_LEAKCHECK(signalfd__multiple_readers, tcptr)
 {
+#if defined(__APPLE__)
+	atf_tc_skip("Apple does not have pthread_barrier_t");
+#else
 	sigset_t mask;
 
 	ATF_REQUIRE(sigemptyset(&mask) == 0);
@@ -630,6 +635,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__multiple_readers, tcptr)
 	}
 
 	ATF_REQUIRE(signalfd__multiple_readers_count == 1);
+#endif
 }
 
 ATF_TP_ADD_TCS(tp)
