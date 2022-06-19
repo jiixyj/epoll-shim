@@ -374,9 +374,61 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, int kq,
 	}
 #ifdef EVFILT_EXCEPT
 	else if (kev->filter == EVFILT_EXCEPT) {
-		assert((kev->fflags & NOTE_OOB) != 0);
+#ifdef __APPLE__
+		if ((kev->fflags & NOTE_OOB) != 0) {
+			/*
+			 * macOS might still report NOTE_OOB
+			 * even if there is no longer OOB data pending.
+			 * Therefore we must recheck and reset
+			 * the EVFILT_EXCEPT filter if needed.
+			 */
 
+			int tmp_kq = kqueue();
+			if (tmp_kq >= 0) {
+				struct kevent kev;
+				EV_SET(&kev, fd2_node->fd, EVFILT_EXCEPT,
+				    EV_ADD | EV_ONESHOT, NOTE_OOB, 0, fd2_node);
+
+				bool need_reset = false;
+
+				if (kevent(tmp_kq, &kev, 1, NULL, 0, NULL) ==
+					0 &&
+				    kevent(tmp_kq, NULL, 0, &kev, 1,
+					&(struct timespec) { 0, 0 }) == 1 &&
+				    (kev.fflags & NOTE_OOB)) {
+					revents |= EPOLLPRI;
+
+					NeededFilters needed_filters =
+					    get_needed_filters(fd2_node);
+					if (needed_filters.evfilt_except &&
+					    !(needed_filters.evfilt_except &
+						EV_CLEAR)) {
+						need_reset = true;
+					}
+				} else {
+					need_reset = true;
+				}
+
+				real_close(tmp_kq);
+
+				if (need_reset) {
+					EV_SET(&kev, fd2_node->fd,
+					    EVFILT_EXCEPT, EV_DELETE, 0, 0, 0);
+					(void)kevent(kq, &kev, 1, NULL, 0,
+					    NULL);
+					EV_SET(&kev, fd2_node->fd,
+					    EVFILT_EXCEPT, EV_ADD | EV_CLEAR,
+					    NOTE_OOB, 0, fd2_node);
+					(void)kevent(kq, &kev, 1, NULL, 0,
+					    NULL);
+				}
+			}
+		}
+#else
+		assert((kev->fflags & NOTE_OOB) != 0);
 		revents |= EPOLLPRI;
+#endif
+
 		goto out;
 	}
 #endif
@@ -877,7 +929,19 @@ epollfd_ctx__register_events(EpollFDCtx *epollfd, int kq,
 #ifdef EVFILT_EXCEPT
 			fd2_node->has_evfilt_except = true;
 			EV_SET(&kev[n++], (unsigned int)fd2, EVFILT_EXCEPT,
-			    EV_ADD | (needed_filters.evfilt_except & EV_CLEAR),
+			    EV_ADD |
+#ifdef __APPLE__
+				/*
+				 * On macOS EVFILT_EXCEPT also triggers on
+				 * normal data, so we must set the filter to
+				 * edge triggered in all cases. Otherwise we
+				 * will get swamped by events.
+				 */
+				EV_CLEAR
+#else
+				(needed_filters.evfilt_except & EV_CLEAR)
+#endif
+			    ,
 			    NOTE_OOB, 0, fd2_node);
 #else
 			assert(0);

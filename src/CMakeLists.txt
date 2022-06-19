@@ -4,6 +4,9 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+find_package(tree-macros REQUIRED)
+find_package(queue-macros REQUIRED)
+
 add_library(rwlock OBJECT rwlock.c)
 set_property(TARGET rwlock PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(rwlock PUBLIC Threads::Threads)
@@ -18,11 +21,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   return()
 endif()
 
-find_package(tree-macros REQUIRED)
-find_package(queue-macros REQUIRED)
+add_library(wrap OBJECT wrap.c)
+set_property(TARGET wrap PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(wrap PUBLIC Threads::Threads)
+target_include_directories(wrap
+                           PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
 
 macro(add_compat_target _name _condition)
   add_library(compat_${_name} OBJECT compat_${_name}.c)
+  target_link_libraries(compat_${_name} PUBLIC wrap)
   set_property(TARGET compat_${_name} PROPERTY POSITION_INDEPENDENT_CODE ON)
   target_compile_options(
     compat_${_name}
@@ -39,12 +46,13 @@ macro(add_compat_target _name _condition)
 endmacro()
 
 include(CheckSymbolExists)
+
 # FreeBSD 13 and NetBSD 10 support native eventfd descriptors. NetBSD 10
 # supports native timerfd descriptors. Prefer them if available.
 check_symbol_exists(eventfd "sys/eventfd.h" HAVE_EVENTFD)
 check_symbol_exists(timerfd_create "sys/timerfd.h" HAVE_TIMERFD)
 
-check_symbol_exists(kqueue1 "sys/event.h" HAVE_KQUEUE1)
+check_symbol_exists(kqueue1 "sys/event.h;sys/time.h" HAVE_KQUEUE1)
 add_compat_target(kqueue1 "NOT;HAVE_KQUEUE1")
 check_symbol_exists(sigandset "signal.h" HAVE_SIGANDSET)
 check_symbol_exists(sigorset "signal.h" HAVE_SIGORSET)
@@ -71,6 +79,14 @@ if(NOT ALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO)
     evfilt_timer_quirks
     INTERFACE QUIRK_EVFILT_TIMER_DISALLOWS_ONESHOT_TIMEOUT_ZERO)
 endif()
+add_compat_target(pipe2 "APPLE")
+add_compat_target(socket "APPLE")
+add_compat_target(socketpair "APPLE")
+add_compat_target(itimerspec "APPLE")
+add_compat_target(sem "APPLE")
+add_compat_target(ppoll "APPLE")
+
+target_link_libraries(rwlock PUBLIC $<BUILD_INTERFACE:compat_enable_sem>)
 
 add_library(
   epoll-shim
@@ -80,8 +96,7 @@ add_library(
   kqueue_event.c
   signalfd.c
   signalfd_ctx.c
-  timespec_util.c
-  wrap.c)
+  timespec_util.c)
 if(NOT HAVE_EVENTFD)
   target_sources(epoll-shim PRIVATE eventfd.c eventfd_ctx.c)
 endif()
@@ -94,11 +109,14 @@ target_link_libraries(
   epoll-shim
   PRIVATE Threads::Threads #
           $<BUILD_INTERFACE:queue-macros::queue-macros>
-          $<BUILD_INTERFACE:tree-macros::tree-macros>
+          $<BUILD_INTERFACE:tree-macros::tree-macros> #
           $<BUILD_INTERFACE:evfilt_timer_quirks>
           $<BUILD_INTERFACE:compat_enable_kqueue1>
+          $<BUILD_INTERFACE:compat_enable_ppoll>
+          $<BUILD_INTERFACE:compat_enable_itimerspec>
           $<BUILD_INTERFACE:compat_enable_sigops>
-          $<BUILD_INTERFACE:rwlock>)
+          $<BUILD_INTERFACE:rwlock>
+          $<BUILD_INTERFACE:wrap>)
 if(HAVE_TIMERFD)
   target_compile_definitions(epoll-shim PRIVATE HAVE_TIMERFD)
 endif()

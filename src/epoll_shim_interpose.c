@@ -43,6 +43,7 @@ poll(struct pollfd fds[], nfds_t nfds, int timeout)
 	return epoll_shim_poll(fds, nfds, timeout);
 }
 
+#if !defined(__APPLE__)
 EPOLL_SHIM_INTERPOSE_EXPORT
 int
 #ifdef __NetBSD__
@@ -55,6 +56,7 @@ ppoll
 {
 	return epoll_shim_ppoll(fds, nfds, timeout, newsigmask);
 }
+#endif
 
 EPOLL_SHIM_INTERPOSE_EXPORT
 int

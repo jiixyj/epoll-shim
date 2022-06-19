@@ -162,7 +162,7 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 	siginfo_t siginfo;
 	memset(&siginfo, 0, sizeof(siginfo));
 
-#if defined(__OpenBSD__)
+#if defined(__OpenBSD__) || defined(__APPLE__)
 	for (;;) {
 		bool has_pending;
 		sigset_t pending_sigs;
@@ -174,6 +174,7 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 			return EAGAIN;
 		}
 
+#if defined(__OpenBSD__)
 		/*
 		 * sigwait does not behave nicely when multiple signals
 		 * are pending (as of OpenBSD 6.8). So, only try to
@@ -196,6 +197,12 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 			 * one signal. There may be others pending. */
 			continue;
 		}
+#elif defined(__APPLE__)
+		int s;
+		ec = sigwait(&signalfd->sigs, &s);
+#else
+#error ""
+#endif
 		if (ec != 0) {
 			break;
 		}

@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__) || defined(__APPLE__)
 int
 compat_sigisemptyset(sigset_t const *set)
 {

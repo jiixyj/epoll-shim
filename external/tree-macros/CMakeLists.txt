@@ -4,6 +4,9 @@ project(tree-macros LANGUAGES C)
 add_library(tree-macros INTERFACE)
 target_include_directories(tree-macros
                            INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")
+if(APPLE)
+  target_compile_definitions(tree-macros INTERFACE __uintptr_t=uintptr_t)
+endif()
 
 #
 

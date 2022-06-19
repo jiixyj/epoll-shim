@@ -4,8 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if !defined(__APPLE__)
 #include <dlfcn.h>
 #include <link.h>
+#endif
+
 #include <unistd.h>
 
 extern int real_close_for_test(int fd);
@@ -13,9 +16,12 @@ extern int real_close_for_test(int fd);
 int
 real_close_for_test(int fd)
 {
+#if defined(__APPLE__)
+	return close(fd);
+#else
 	void *libc_handle;
 
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__)
 	struct r_debug *r_debug = NULL;
 	for (Elf_Dyn *dyn = _DYNAMIC; dyn->d_tag != DT_NULL; ++dyn) {
 		if (dyn->d_tag == DT_DEBUG) {
@@ -62,4 +68,5 @@ real_close_for_test(int fd)
 	}
 
 	return real_close(fd);
+#endif
 }

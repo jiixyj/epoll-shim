@@ -38,6 +38,15 @@ compat_kqueue1_impl(int *fd_out, int flags)
 				goto out;
 			}
 		}
+#ifdef __APPLE__
+		else {
+			if ((r = fcntl(fd, F_GETFD, 0)) < 0 ||
+			    fcntl(fd, F_SETFD, r & ~FD_CLOEXEC) < 0) {
+				ec = errno;
+				goto out;
+			}
+		}
+#endif
 
 		if (flags & O_NONBLOCK) {
 			if ((r = real_fcntl(fd, F_GETFL)) < 0) {
