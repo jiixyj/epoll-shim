@@ -11,6 +11,7 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -560,6 +561,76 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwinch, tcptr)
 	ATF_REQUIRE(close(sfd) == 0);
 }
 
+static atomic_int signalfd__multiple_readers_count;
+static void *
+signalfd__multiple_readers_thread(void *arg)
+{
+	pthread_barrier_t *barrier = arg;
+
+	sigset_t mask;
+	ATF_REQUIRE(sigemptyset(&mask) == 0);
+	ATF_REQUIRE(sigaddset(&mask, SIGUSR1) == 0);
+	int sfd = signalfd(-1, &mask, SFD_NONBLOCK);
+	ATF_REQUIRE(sfd >= 0);
+
+	{
+		int ec = pthread_barrier_wait(barrier);
+		ATF_REQUIRE(ec == 0 || ec == PTHREAD_BARRIER_SERIAL_THREAD);
+	}
+
+	while (signalfd__multiple_readers_count == 0) {
+		struct signalfd_siginfo fdsi;
+		ssize_t s = read(sfd, &fdsi, sizeof(struct signalfd_siginfo));
+		ATF_REQUIRE(s == (ssize_t)sizeof(struct signalfd_siginfo) ||
+		    (s < 0 && errno == EAGAIN));
+		if (s == (ssize_t)sizeof(struct signalfd_siginfo)) {
+			++signalfd__multiple_readers_count;
+		}
+	}
+
+	ATF_REQUIRE(close(sfd) == 0);
+
+	return NULL;
+}
+ATF_TC_WITHOUT_HEAD(signalfd__multiple_readers);
+ATF_TC_BODY_FD_LEAKCHECK(signalfd__multiple_readers, tcptr)
+{
+	sigset_t mask;
+
+	ATF_REQUIRE(sigemptyset(&mask) == 0);
+	ATF_REQUIRE(sigaddset(&mask, SIGUSR1) == 0);
+
+	ATF_REQUIRE(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+
+	pthread_t threads[64];
+	size_t nr_threads = sizeof(threads) / sizeof(threads[0]);
+
+	pthread_barrier_t barrier;
+	ATF_REQUIRE(pthread_barrier_init(&barrier, NULL,
+			(unsigned int)(nr_threads + 1)) == 0);
+
+	for (size_t i = 0; i < nr_threads; ++i) {
+		ATF_REQUIRE(
+		    pthread_create(&threads[i], NULL,
+			signalfd__multiple_readers_thread, &barrier) == 0);
+	}
+
+	{
+		int ec = pthread_barrier_wait(&barrier);
+		ATF_REQUIRE(ec == 0 || ec == PTHREAD_BARRIER_SERIAL_THREAD);
+	}
+
+	kill(getpid(), SIGUSR1);
+
+	alarm(30);
+
+	for (size_t i = 0; i < nr_threads; ++i) {
+		ATF_REQUIRE(pthread_join(threads[i], NULL) == 0);
+	}
+
+	ATF_REQUIRE(signalfd__multiple_readers_count == 1);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, signalfd__simple_signalfd);
@@ -573,6 +644,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, signalfd__sigwait_openbsd);
 	ATF_TP_ADD_TC(tp, signalfd__sigchld);
 	ATF_TP_ADD_TC(tp, signalfd__sigwinch);
+	ATF_TP_ADD_TC(tp, signalfd__multiple_readers);
 
 	return atf_no_error();
 }
