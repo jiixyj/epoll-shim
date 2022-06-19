@@ -269,7 +269,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 	uint64_t timeouts = wait_for_timerfd(timerfd);
 
+	ATF_REQUIRE(timeouts >= 1);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(timeouts == 1);
+#endif
 
 	time = (struct itimerspec) {
 		.it_value.tv_sec = 0,
@@ -286,8 +289,11 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reenable_periodic_timer, tc)
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
 
+	ATF_REQUIRE((e.tv_sec == 0 && e.tv_nsec >= 350000000) || e.tv_sec > 0);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 350000000 &&
 	    e.tv_nsec < 350000000 + TIMER_SLACK * 2);
+#endif
 
 	time = (struct itimerspec) {
 		.it_value.tv_sec = 1,
@@ -557,21 +563,32 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__upgrade_simple_to_complex, tc)
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
 	uint64_t timeouts = wait_for_timerfd(timerfd);
+	ATF_REQUIRE(timeouts >= 1);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(timeouts == 1);
+#endif
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
-	ATF_REQUIRE_MSG(e.tv_sec == 0 && e.tv_nsec >= 50000000 &&
-		e.tv_nsec < 50000000 + TIMER_SLACK,
+	ATF_REQUIRE((e.tv_sec == 0 && e.tv_nsec >= 50000000) || e.tv_sec > 0);
+#ifndef ALLOW_TIMER_SLACK
+	ATF_REQUIRE_MSG(e.tv_sec == 0 && e.tv_nsec < 50000000 + TIMER_SLACK,
 	    "%ld", e.tv_nsec);
+#endif
 
 	timeouts = wait_for_timerfd(timerfd);
+	ATF_REQUIRE(timeouts >= 1);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(timeouts == 1);
+#endif
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
+	ATF_REQUIRE((e.tv_sec == 0 && e.tv_nsec >= 145000000) || e.tv_sec > 0);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 145000000 &&
 	    e.tv_nsec < 145000000 + TIMER_SLACK);
+#endif
 
 	ATF_REQUIRE(close(timerfd) == 0);
 }
@@ -610,10 +627,12 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__absolute_timer, tc)
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(e.tv_sec == 0 &&
 	    /* Don't check for this because of spurious wakeups. */
 	    /* e.tv_nsec >= 600000000 && */
 	    e.tv_nsec < 600000000 + TIMER_SLACK);
+#endif
 
 	struct itimerspec zeroed_its = {
 		.it_value.tv_sec = 0,
