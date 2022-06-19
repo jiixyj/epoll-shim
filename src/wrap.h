@@ -14,6 +14,6 @@ int real_poll(struct pollfd fds[], nfds_t nfds, int timeout);
 int real_ppoll(struct pollfd fds[], nfds_t nfds,
     struct timespec const *restrict timeout,
     sigset_t const *restrict newsigmask);
-int real_fcntl(int fd, int cmd, ...);
+int real_fcntl(int fd, int cmd, intptr_t);
 
 #endif
