@@ -3,6 +3,7 @@
 
 #include <poll.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <time.h>
 #include <unistd.h>
@@ -15,5 +16,6 @@ int real_ppoll(struct pollfd fds[], nfds_t nfds,
     struct timespec const *restrict timeout,
     sigset_t const *restrict newsigmask);
 int real_fcntl(int fd, int cmd, ...);
+int real_vfcntl(int fd, int cmd, va_list ap);
 
 #endif
