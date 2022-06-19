@@ -164,22 +164,6 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__simple, tc)
 	ATF_REQUIRE_ERRNO(EINVAL, epoll_create1(42) < 0);
 }
 
-ATF_TC_WITHOUT_HEAD(epoll__poll_flags);
-ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_flags, tc)
-{
-	ATF_REQUIRE(POLLIN == EPOLLIN);
-	ATF_REQUIRE(POLLPRI == EPOLLPRI);
-	ATF_REQUIRE(POLLOUT == EPOLLOUT);
-	ATF_REQUIRE(POLLERR == EPOLLERR);
-	ATF_REQUIRE(POLLHUP == EPOLLHUP);
-#ifdef EPOLLNVAL
-	ATF_REQUIRE(POLLNVAL == EPOLLNVAL);
-#endif
-#ifdef POLLRDHUP
-	ATF_REQUIRE(POLLRDHUP == EPOLLRDHUP);
-#endif
-}
-
 ATF_TC_WITHOUT_HEAD(epoll__leakcheck);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__leakcheck, tc)
 {
@@ -2122,9 +2106,6 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__fcntl_fl, tcptr)
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, epoll__simple);
-#ifndef USE_EPOLLRDHUP_LINUX_DEFINITION
-	ATF_TP_ADD_TC(tp, epoll__poll_flags);
-#endif
 	ATF_TP_ADD_TC(tp, epoll__leakcheck);
 	ATF_TP_ADD_TC(tp, epoll__fd_exhaustion);
 	ATF_TP_ADD_TC(tp, epoll__invalid_op);
