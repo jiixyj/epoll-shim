@@ -341,6 +341,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__simple_wait, tc)
 ATF_TC_WITHOUT_HEAD(epoll__event_size);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__event_size, tc)
 {
+#if !defined(__x86_64__) && !defined(__i386__)
+	atf_tc_skip("Only check epoll_event size on X86 platforms");
+#endif
 	struct epoll_event event;
 	// this check works on 32bit _and_ 64bit, since
 	// sizeof(epoll_event) == sizeof(uint32_t) + sizeof(uint64_t)
