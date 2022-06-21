@@ -128,6 +128,7 @@ fd_tcp_socket(int fds[3])
 
 #ifdef __APPLE__
 	int conn = accept(sock, NULL, NULL);
+	ATF_REQUIRE(fcntl(conn, F_SETFD, FD_CLOEXEC) >= 0);
 #else
 	int conn = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
 #endif
