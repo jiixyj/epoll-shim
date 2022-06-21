@@ -47,9 +47,7 @@ struct epoll_event {
 	uint32_t events;
 	epoll_data_t data;
 }
-#if (defined(_LP64) || defined(__LP64__)) || \
-	(defined(__x86_64__) || defined(__x86_64) || defined(__amd64) || defined(__amd64__)) || \
-	(defined(__arm64__) || defined(__arm64) || defined(__aarch64__))
+#ifdef __x86_64__
 __attribute__((__packed__))
 #endif
 ;
