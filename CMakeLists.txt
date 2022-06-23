@@ -49,8 +49,13 @@ add_library(${_namespace}::epoll-shim-interpose ALIAS epoll-shim-interpose)\n")
 
   include(GNUInstallDirs)
 
+  if(NOT APPLE)
+    set(_pkgconfigdir "libdata/pkgconfig")
+  else()
+    set(_pkgconfigdir "lib/pkgconfig")
+  endif()
   set(CMAKE_INSTALL_PKGCONFIGDIR
-      "libdata/pkgconfig"
+      "${_pkgconfigdir}"
       CACHE PATH "Installation directory for pkgconfig (.pc) files")
   mark_as_advanced(CMAKE_INSTALL_PKGCONFIGDIR)
   set(CMAKE_INSTALL_CMAKEBASEDIR
