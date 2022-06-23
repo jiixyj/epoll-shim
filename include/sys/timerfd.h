@@ -14,7 +14,14 @@ extern "C" {
 #define TFD_TIMER_ABSTIME 1
 #define TFD_TIMER_CANCEL_ON_SET (1 << 1)
 
+#ifdef __APPLE__
+struct itimerspec {
+	struct timespec it_interval;
+	struct timespec it_value;
+};
+#else
 struct itimerspec;
+#endif
 
 int timerfd_create(int, int);
 int timerfd_settime(int, int, struct itimerspec const *, struct itimerspec *);
