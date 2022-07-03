@@ -95,3 +95,7 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
   target_compile_options(
     fcntl-warning PRIVATE "-Werror" "-Wgnu-zero-variadic-macro-arguments")
 endif()
+
+add_executable(dlsym-fail epoll-include-test.c)
+target_link_libraries(dlsym-fail PRIVATE c epoll-shim::epoll-shim)
+add_test(NAME dlsym-fail COMMAND dlsym-fail)
