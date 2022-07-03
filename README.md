@@ -80,6 +80,13 @@ To install (as root):
 
 ## Changelog
 
+### 2022-07-03
+
+- Fix crashes when `libepoll-shim.so` is placed after `libc.so` in library
+  search order.
+- Test on OpenBSD 7.1.
+- Fix memory leak in tests (thanks arichardson!).
+
 ### 2022-06-07
 
 - Introduce `epoll-shim-interpose` library. This library provides proper
