@@ -9,4 +9,4 @@ Description: Small epoll implementation using kqueue (interposing wrapper)
 Version: 
 Requires: epoll-shim
 Libs: -L${libdir} -lepoll-shim-interpose
-Cflags: -DEPOLL_SHIM_DISABLE_WRAPPER_MACROS
+Cflags: -I${includedir}/libepoll-shim -DEPOLL_SHIM_DISABLE_WRAPPER_MACROS
