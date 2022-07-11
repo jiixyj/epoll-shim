@@ -31,6 +31,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifndef __linux__
+#include <epoll-shim/detail/poll.h>
+#endif
+
 #include "atf-c-leakcheck.h"
 
 static void
@@ -122,7 +126,11 @@ fd_tcp_socket(int fds[3])
 	ATF_REQUIRE(
 	    pthread_create(&client_thread, NULL, connector_client, NULL) == 0);
 
+#ifdef __APPLE__
+	int conn = accept(sock, NULL, NULL);
+#else
 	int conn = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
+#endif
 	ATF_REQUIRE(conn >= 0);
 
 	void *client_socket = NULL;
@@ -139,7 +147,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__simple, tc)
 {
 	int fd;
 
-	ATF_REQUIRE((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0);
+	ATF_REQUIRE_MSG((fd = epoll_create1(EPOLL_CLOEXEC)) >= 0,
+	    "errno: %d/%s", errno, strerror(errno));
 	ATF_REQUIRE(close(fd) == 0);
 
 	ATF_REQUIRE_ERRNO(EINVAL, epoll_create(0) < 0);
@@ -610,6 +619,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__poll_only_fd, tc)
 {
 #ifdef __linux__
 	atf_tc_skip("Test hangs on Linux");
+#elif defined(__APPLE__)
+	atf_tc_skip("/dev/random not pollable under macOS");
 #endif
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
@@ -937,10 +948,10 @@ signalfd_in_thread_test(int which)
 
 	{
 		struct pollfd pfd = { .fd = ep, .events = POLLIN };
-#if defined(__DragonFly__)
+#if defined(__DragonFly__) || defined(__APPLE__)
 		ATF_REQUIRE(poll(&pfd, 1, 0) == 0);
 		atf_tc_skip("signals sent to threads won't trigger "
-			    "EVFILT_SIGNAL on DragonFly");
+			    "EVFILT_SIGNAL on DragonFly/macOS");
 #endif
 		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
 		ATF_REQUIRE(pfd.revents == POLLIN);
@@ -1981,6 +1992,11 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epoll_pwait, tcptr)
 		    &emptyset);
 		ATF_REQUIRE(n == 0 || (n < 0 && errno == EINTR));
 		ATF_REQUIRE(epoll_pwait_got_signal == 1);
+
+#ifdef __APPLE__
+		n = ppoll(&pfd, 1, &(struct timespec) { 0, 500000000 }, NULL);
+		ATF_REQUIRE(n == 0);
+#endif
 	}
 
 	ATF_REQUIRE(close(ep) == 0);
@@ -1992,14 +2008,14 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__cloexec, tcptr)
 	int fd;
 	int r;
 
-#define CLOEXEC_TEST(fun, cmp, ...)                  \
-	do {                                         \
-		fd = fun(__VA_ARGS__);               \
-		ATF_REQUIRE(fd >= 0);                \
-		r = fcntl(fd, F_GETFD);              \
-		ATF_REQUIRE(r >= 0);                 \
-		ATF_REQUIRE((r & FD_CLOEXEC) cmp 0); \
-		ATF_REQUIRE(close(fd) == 0);         \
+#define CLOEXEC_TEST(fun, cmp, ...)                               \
+	do {                                                      \
+		fd = fun(__VA_ARGS__);                            \
+		ATF_REQUIRE(fd >= 0);                             \
+		r = fcntl(fd, F_GETFD);                           \
+		ATF_REQUIRE(r >= 0);                              \
+		ATF_REQUIRE_MSG((r & FD_CLOEXEC) cmp 0, "%d", r); \
+		ATF_REQUIRE(close(fd) == 0);                      \
 	} while (0)
 
 	CLOEXEC_TEST(epoll_create1, !=, EPOLL_CLOEXEC);

@@ -120,11 +120,15 @@ ATF_TC_BODY_FD_LEAKCHECK(socketpair__simple_edge_triggering, tc)
 	ATF_REQUIRE(eps[0].events == (EPOLLRDHUP | EPOLLOUT));
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
 
+#if defined(__APPLE__)
+	ATF_REQUIRE_ERRNO(ENOTCONN, shutdown(p[0], SHUT_RD) < 0);
+#else
 	ATF_REQUIRE(shutdown(p[0], SHUT_RD) == 0);
 
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, -1) == 1);
 	ATF_REQUIRE(eps[0].events == (EPOLLRDHUP | EPOLLOUT));
 	ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 0);
+#endif
 
 	ATF_REQUIRE(shutdown(p[0], SHUT_WR) == 0);
 

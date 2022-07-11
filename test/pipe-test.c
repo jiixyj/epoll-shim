@@ -214,7 +214,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close_hup, tc)
 	{
 		struct pollfd pfd = { .fd = p[1] };
 		int rv = poll(&pfd, 1, 1000);
-#if defined(__DragonFly__)
+#if defined(__DragonFly__) || defined(__APPLE__)
 		if (rv == 0) {
 			atf_tc_skip("polling of pipes broken");
 		}
@@ -437,7 +437,8 @@ print_statbuf(struct stat *sb)
 }
 
 static int const SPURIOUS_EV_ADD = 0
-#if defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
+#if defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__) || \
+    defined(__APPLE__)
     | EV_ADD
 #endif
     ;
@@ -664,6 +665,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 	ATF_REQUIRE_MSG(kev[0].data == 16384 ||
 		kev[0].data == 4096 /* On OpenBSD < 7.0 */ ||
 		kev[0].data == 8192 /* On OpenBSD 7.0 */ ||
+		kev[0].data == 8192 /* On macOS */ ||
 		kev[0].data == 65536 /* On DragonFly */,
 	    "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
@@ -689,7 +691,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec) { 0, 0 });
-#if defined(__DragonFly__) || defined(__NetBSD__)
+#if defined(__DragonFly__) || defined(__NetBSD__) || defined(__APPLE__)
 	ATF_REQUIRE(r == 1);
 	ATF_REQUIRE_MSG(kev[0].filter == EVFILT_READ, "%d", kev[0].filter);
 #else
@@ -702,12 +704,17 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_writes, tc)
 		ATF_REQUIRE(read(p[0], &c, 1) == 1);
 	}
 
-#if defined(__DragonFly__)
+#if defined(__DragonFly__) || defined(__APPLE__)
 try_again:
 #endif
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	r = kevent(kq, NULL, 0, kev, nitems(kev), &(struct timespec) { 0, 0 });
+#if defined(__APPLE__)
+	if (r == 2) {
+		atf_tc_skip("Something is broken here.");
+	}
+#endif
 #if defined(__DragonFly__)
 	while (r == 1) {
 		if (kev[0].filter == EVFILT_READ) {
@@ -905,7 +912,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	ATF_REQUIRE(close(p[0]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-#if defined(__DragonFly__) || defined(__NetBSD__)
+#if defined(__DragonFly__) || defined(__NetBSD__) || defined(__APPLE__)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev), NULL) == 2);
 	int index = 1;
 #else
@@ -913,7 +920,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_connecting_reader, tc)
 	int index = 0;
 #endif
 	ATF_REQUIRE(kev[index].filter == EVFILT_WRITE);
+#if !defined(__APPLE__)
 	ATF_REQUIRE((kev[index].flags & EV_EOF) != 0);
+#endif
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec) { 0, 0 }) == 0);
 #endif
@@ -1085,6 +1094,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_wakeups, tc)
 	ATF_REQUIRE(close(p[1]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
+#if defined(__APPLE__)
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec) { 0, 0 }) == 0);
+	atf_tc_skip("This doesn't work on macOS");
+#endif
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
@@ -1167,6 +1181,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__fifo_read_eof_state_when_reconnecting, tc)
 	ATF_REQUIRE(close(p[1]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
+#if defined(__APPLE__)
+	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
+			&(struct timespec) { 0, 0 }) == 0);
+	atf_tc_skip("This doesn't work on macOS");
+#endif
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec) { 0, 0 }) == 1);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
@@ -1260,6 +1279,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 	ATF_REQUIRE((kev[1].flags & EV_ERROR) != 0);
 #ifdef __NetBSD__
 	ATF_REQUIRE(kev[1].data == EBADF);
+#elif defined(__APPLE__)
+	ATF_REQUIRE(kev[1].data == 0);
+	atf_tc_skip("This doesn't work on macOS");
 #else
 	ATF_REQUIRE(kev[1].data == EPIPE);
 #endif
@@ -1579,6 +1601,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 	ATF_REQUIRE((kev[1].flags & EV_ERROR) != 0);
 #ifdef __NetBSD__
 	ATF_REQUIRE(kev[1].data == EBADF);
+#elif defined(__APPLE__)
+	ATF_REQUIRE(kev[1].data == 0);
+	atf_tc_skip("This doesn't work on macOS");
 #else
 	ATF_REQUIRE(kev[1].data == EPIPE);
 #endif
@@ -1707,9 +1732,18 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end_register_before_close, tc)
 	ATF_REQUIRE(close(p[1]) == 0);
 
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
-#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__DragonFly__) || \
+    defined(__APPLE__)
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec) { 0, 0 }) == 2);
+#if defined(__APPLE__)
+	{
+		struct kevent tmp;
+		memcpy(&tmp, &kev[0], sizeof(tmp));
+		memcpy(&kev[0], &kev[1], sizeof(tmp));
+		memcpy(&kev[1], &tmp, sizeof(tmp));
+	}
+#endif
 	{
 		ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 		ATF_REQUIRE(kev[0].filter == EVFILT_WRITE);

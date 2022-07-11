@@ -46,7 +46,8 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__simple_signalfd, tcptr)
 
 	{
 		struct pollfd pfd = { .fd = sfd, .events = POLLIN };
-		ATF_REQUIRE(poll(&pfd, 1, -1) == 1);
+		int n;
+		ATF_REQUIRE_MSG((n = poll(&pfd, 1, -1)) == 1, "%d", n);
 		ATF_REQUIRE(pfd.revents == POLLIN);
 	}
 
@@ -351,7 +352,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 	}
 
 	{
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__) || defined(__APPLE__)
 		sigset_t mask2;
 		sigemptyset(&mask2);
 		sigaddset(&mask2, SIGINT);
@@ -378,7 +379,7 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigwaitinfo, tcptr)
 	}
 
 	{
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__) || defined(__APPLE__)
 		sigset_t mask2;
 		sigemptyset(&mask2);
 		sigaddset(&mask2, SIGUSR1);
@@ -526,10 +527,10 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__sigchld, tcptr)
 	ATF_REQUIRE(close(sfd) == 0);
 
 	ATF_REQUIRE(fdsi.ssi_signo == SIGCHLD);
-#if defined(__OpenBSD__) || defined(__DragonFly__)
+#if defined(__OpenBSD__) || defined(__DragonFly__) || defined(__APPLE__)
 	ATF_REQUIRE(fdsi.ssi_pid == 0);
 	ATF_REQUIRE(fdsi.ssi_code == 0);
-	atf_tc_skip("OpenBSD/DragonFlyBSD do not fill si_pid on SIGCHLD");
+	atf_tc_skip("OpenBSD/DragonFlyBSD/macOS do not fill si_pid on SIGCHLD");
 #endif
 	ATF_REQUIRE_MSG(fdsi.ssi_pid == (uint32_t)pid, "%d %d",
 	    (int)fdsi.ssi_pid, (int)pid);

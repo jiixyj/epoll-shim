@@ -17,19 +17,25 @@ find_package(Threads REQUIRED)
 
 #
 
-macro(atf_test _testname)
-  add_executable("${_testname}" "${_testname}.c")
+macro(atf_test_impl _testname _suffix)
+  add_executable("${_testname}${_suffix}" "${_testname}.c")
   target_link_libraries(
-    "${_testname}" PRIVATE epoll-shim::epoll-shim Threads::Threads
-                           microatf::microatf-c)
-  atf_discover_tests("${_testname}" ${ARGN})
-
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_executable("${_testname}-interpose" "${_testname}.c")
+    "${_testname}${_suffix}" PRIVATE epoll-shim::epoll-shim${_suffix}
+                                     Threads::Threads microatf::microatf-c)
+  if(APPLE)
     target_link_libraries(
-      "${_testname}-interpose" PRIVATE epoll-shim::epoll-shim-interpose
-                                       Threads::Threads microatf::microatf-c)
-    atf_discover_tests("${_testname}-interpose" ${ARGN})
+      "${_testname}${_suffix}"
+      PRIVATE wrap compat_enable_pipe2 compat_enable_ppoll
+              compat_enable_socketpair compat_enable_socket
+              compat_enable_itimerspec)
+  endif()
+  atf_discover_tests("${_testname}${_suffix}" ${ARGN})
+endmacro()
+
+macro(atf_test _testname)
+  atf_test_impl("${_testname}" "" ${ARGN})
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    atf_test_impl("${_testname}" "-interpose" ${ARGN})
   endif()
 endmacro()
 

@@ -1,7 +1,9 @@
 #include "wrap.h"
 
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -9,8 +11,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#include "epoll_shim_ctx.h"
-#include "epoll_shim_export.h"
+#include "compat_ppoll.h"
 
 static struct {
 	pthread_once_t wrap_init;
@@ -19,10 +20,12 @@ static struct {
 	typeof(write) *real_write;
 	typeof(close) *real_close;
 	typeof(poll) *real_poll;
+#if !defined(__APPLE__)
 #ifdef __NetBSD__
 	typeof(pollts) *real___pollts50;
 #else
 	typeof(ppoll) *real_ppoll;
+#endif
 #endif
 	typeof(fcntl) *real_fcntl;
 } wrap = { .wrap_init = PTHREAD_ONCE_INIT };
@@ -55,10 +58,12 @@ wrap_initialize_impl(void)
 	WRAP(write);
 	WRAP(close);
 	WRAP(poll);
+#if !defined(__APPLE__)
 #ifdef __NetBSD__
 	WRAP(__pollts50);
 #else
 	WRAP(ppoll);
+#endif
 #endif
 	WRAP(fcntl);
 
@@ -106,11 +111,15 @@ real_ppoll(struct pollfd fds[], nfds_t nfds,
     struct timespec const *restrict timeout,
     sigset_t const *restrict newsigmask)
 {
+#ifdef __APPLE__
+	return compat_ppoll(fds, nfds, timeout, newsigmask);
+#else
 	wrap_initialize();
 #ifdef __NetBSD__
 	return wrap.real___pollts50(fds, nfds, timeout, newsigmask);
 #else
 	return wrap.real_ppoll(fds, nfds, timeout, newsigmask);
+#endif
 #endif
 }
 

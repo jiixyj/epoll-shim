@@ -155,6 +155,10 @@ ATF_TC_BODY_FD_LEAKCHECK(epollfd_osv__epolloneshot, tc)
 ATF_TC_WITHOUT_HEAD(epollfd_osv__epoll_file);
 ATF_TC_BODY_FD_LEAKCHECK(epollfd_osv__epoll_file, tc)
 {
+#if defined(__APPLE__)
+	atf_tc_skip("/dev/random not pollable under macOS");
+#endif
+
 	struct epoll_event events[MAXEVENTS];
 
 	int ep = epoll_create(1);
