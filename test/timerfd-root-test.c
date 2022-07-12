@@ -45,7 +45,12 @@ clock_settime_or_skip_test(clockid_t clockid, struct timespec const *ts)
 ATF_TC(timerfd_root__zero_read_on_abs_realtime);
 ATF_TC_HEAD(timerfd_root__zero_read_on_abs_realtime, tc)
 {
-	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+	atf_tc_set_md_var(tc, "X-ctest.properties",
+	    "RUN_SERIAL TRUE"
+#ifdef __APPLE__
+	    " ENVIRONMENT ASL_DISABLE=1"
+#endif
+	);
 }
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__zero_read_on_abs_realtime, tc)
 {
@@ -122,7 +127,12 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__zero_read_on_abs_realtime, tc)
 ATF_TC(timerfd_root__read_on_abs_realtime_no_interval);
 ATF_TC_HEAD(timerfd_root__read_on_abs_realtime_no_interval, tc)
 {
-	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+	atf_tc_set_md_var(tc, "X-ctest.properties",
+	    "RUN_SERIAL TRUE"
+#ifdef __APPLE__
+	    " ENVIRONMENT ASL_DISABLE=1"
+#endif
+	);
 }
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__read_on_abs_realtime_no_interval, tc)
 {
@@ -160,7 +170,12 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__read_on_abs_realtime_no_interval, tc)
 ATF_TC(timerfd_root__cancel_on_set);
 ATF_TC_HEAD(timerfd_root__cancel_on_set, tc)
 {
-	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+	atf_tc_set_md_var(tc, "X-ctest.properties",
+	    "RUN_SERIAL TRUE"
+#ifdef __APPLE__
+	    " ENVIRONMENT ASL_DISABLE=1"
+#endif
+	);
 }
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set, tc)
 {
@@ -295,7 +310,12 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set, tc)
 ATF_TC(timerfd_root__cancel_on_set_init);
 ATF_TC_HEAD(timerfd_root__cancel_on_set_init, tc)
 {
-	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+	atf_tc_set_md_var(tc, "X-ctest.properties",
+	    "RUN_SERIAL TRUE"
+#ifdef __APPLE__
+	    " ENVIRONMENT ASL_DISABLE=1"
+#endif
+	);
 }
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__cancel_on_set_init, tc)
 {
@@ -363,7 +383,12 @@ ATF_TC(timerfd_root__clock_change_notification);
 ATF_TC_HEAD(timerfd_root__clock_change_notification, tc)
 {
 	atf_tc_set_md_var(tc, "timeout", "10");
-	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+	atf_tc_set_md_var(tc, "X-ctest.properties",
+	    "RUN_SERIAL TRUE"
+#ifdef __APPLE__
+	    " ENVIRONMENT ASL_DISABLE=1"
+#endif
+	);
 }
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__clock_change_notification, tc)
 {
@@ -408,7 +433,12 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__clock_change_notification, tc)
 ATF_TC(timerfd_root__advance_time_no_cancel);
 ATF_TC_HEAD(timerfd_root__advance_time_no_cancel, tc)
 {
-	atf_tc_set_md_var(tc, "X-ctest.properties", "RUN_SERIAL TRUE");
+	atf_tc_set_md_var(tc, "X-ctest.properties",
+	    "RUN_SERIAL TRUE"
+#ifdef __APPLE__
+	    " ENVIRONMENT ASL_DISABLE=1"
+#endif
+	);
 }
 ATF_TC_BODY_FD_LEAKCHECK(timerfd_root__advance_time_no_cancel, tc)
 {

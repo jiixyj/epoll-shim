@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <dlfcn.h>
@@ -32,9 +33,25 @@ static struct {
 static void
 wrap_initialize_impl(void)
 {
-#define WRAP(fun)                                         \
-	do {                                              \
-		wrap.real_##fun = dlsym(RTLD_NEXT, #fun); \
+	/*
+	 * Try to get the "real" function with `RTLD_NEXT` first. If that
+	 * fails, it means that `libc` is before `libepoll-shim` in library
+	 * search order. This shouldn't really happen, but try with
+	 * `RTLD_DEFAULT` as a fallback anyway.
+	 */
+#define WRAP(fun)                                                    \
+	do {                                                         \
+		wrap.real_##fun = dlsym(RTLD_NEXT, #fun);            \
+		if (wrap.real_##fun == NULL) {                       \
+			wrap.real_##fun = dlsym(RTLD_DEFAULT, #fun); \
+		}                                                    \
+		if (wrap.real_##fun == NULL) {                       \
+			fprintf(stderr,                              \
+			    "epoll-shim: error resolving \"%s\" "    \
+			    "with dlsym RTLD_NEXT/RTLD_DEFAULT!\n",  \
+			    #fun);                                   \
+			abort();                                     \
+		}                                                    \
 	} while (0)
 
 	WRAP(read);

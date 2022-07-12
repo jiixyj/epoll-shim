@@ -157,7 +157,10 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__simple_periodic_timer, tc)
 
 	ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) ==
 	    (ssize_t)sizeof(timeouts));
+	ATF_REQUIRE(timeouts >= 2);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(timeouts == 2);
+#endif
 
 	ATF_REQUIRE(close(timerfd) == 0);
 }
@@ -238,12 +241,18 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_periodic_timer, tc)
 	ATF_REQUIRE(timerfd_settime(timerfd, 0, &time, NULL) == 0);
 
 	uint64_t timeouts = wait_for_timerfd(timerfd);
+	ATF_REQUIRE(timeouts >= 1);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(timeouts == 1);
+#endif
 
 	ATF_REQUIRE(clock_gettime(CLOCK_MONOTONIC, &e) == 0);
 	timespecsub(&e, &b, &e);
+	ATF_REQUIRE((e.tv_sec == 0 && e.tv_nsec >= 150000000) || e.tv_sec > 0);
+#ifndef ALLOW_TIMER_SLACK
 	ATF_REQUIRE(e.tv_sec == 0 && e.tv_nsec >= 150000000 &&
 	    e.tv_nsec < 150000000 + TIMER_SLACK * 2);
+#endif
 
 	ATF_REQUIRE(close(timerfd) == 0);
 }
