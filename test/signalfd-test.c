@@ -5,6 +5,7 @@
 #include <sys/types.h>
 
 #include <sys/param.h>
+#include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -573,7 +574,7 @@ signalfd__multiple_readers_thread(void *arg)
 	ATF_REQUIRE(sigemptyset(&mask) == 0);
 	ATF_REQUIRE(sigaddset(&mask, SIGUSR1) == 0);
 	int sfd = signalfd(-1, &mask, SFD_NONBLOCK);
-	ATF_REQUIRE(sfd >= 0);
+	ATF_REQUIRE_MSG(sfd >= 0, "errno: %d", errno);
 
 	{
 		int ec = pthread_barrier_wait(barrier);
@@ -602,6 +603,9 @@ ATF_TC_BODY_FD_LEAKCHECK(signalfd__multiple_readers, tcptr)
 	atf_tc_skip("Apple does not have pthread_barrier_t");
 #else
 	sigset_t mask;
+
+	struct rlimit lim = { 512, 512 };
+	ATF_REQUIRE(setrlimit(RLIMIT_NOFILE, &lim) == 0);
 
 	ATF_REQUIRE(sigemptyset(&mask) == 0);
 	ATF_REQUIRE(sigaddset(&mask, SIGUSR1) == 0);
