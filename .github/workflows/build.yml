@@ -84,3 +84,25 @@ jobs:
           cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
           cmake --build . --config $BUILD_TYPE || exit 1
           ctest -C $BUILD_TYPE --output-on-failure || exit 1
+
+  testnetbsd:
+    runs-on: macos-12
+    steps:
+    - uses: actions/checkout@v2
+    - name: Test in NetBSD
+      id: test
+      uses: vmactions/netbsd-vm@v0.0.4
+      with:
+        release: 9.1
+        envs: 'BUILD_TYPE'
+        usesh: true
+        prepare: pkg_add cmake
+        run: |
+          mkdir build || exit 1
+          cd build || exit 1
+          cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
+          sed -e 's/-DNDEBUG//g' < CMakeCache.txt > CMakeCache.txt.new || exit 1
+          mv -- CMakeCache.txt.new CMakeCache.txt || exit 1
+          cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
+          cmake --build . --config $BUILD_TYPE || exit 1
+          ctest -C $BUILD_TYPE --output-on-failure || exit 1
