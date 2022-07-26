@@ -68,14 +68,15 @@ jobs:
       with:
         envs: 'BUILD_TYPE'
         usesh: true
-        prepare: pkg_add cmake
+        prepare: pkg_add cmake gcc%11
         run: |
           echo "pwd1: $PWD $GITHUB_WORKSPACE"
           cd || exit 1
           echo "pwd2: $PWD"
+          ls -la /usr/lib/crt0.o || exit 1
           mkdir build || exit 1
           cd build || exit 1
-          CC=clang cmake --trace-expand $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
+          CC=x86_64-unknown-openbsd7.1-egcc cmake --trace-expand $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
           sed -e 's/-DNDEBUG//g' < CMakeCache.txt > CMakeCache.txt.new || exit 1
           mv -- CMakeCache.txt.new CMakeCache.txt || exit 1
           cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
