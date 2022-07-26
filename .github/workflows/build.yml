@@ -34,13 +34,17 @@ jobs:
       run: ctest -C $BUILD_TYPE --output-on-failure
 
   testfreebsd:
+    strategy:
+      matrix:
+        release: [12.3, 13.1]
     runs-on: macos-10.15
     steps:
     - uses: actions/checkout@v2
     - name: Test in FreeBSD
       id: test
-      uses: vmactions/freebsd-vm@v0.1.7
+      uses: vmactions/freebsd-vm@v0.2.0
       with:
+        release: ${{ matrix.release }}
         envs: 'BUILD_TYPE'
         usesh: true
         prepare: pkg install -y cmake
