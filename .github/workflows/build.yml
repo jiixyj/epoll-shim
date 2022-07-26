@@ -70,11 +70,14 @@ jobs:
         usesh: true
         prepare: pkg_add cmake
         run: |
+          echo "pwd1: $PWD $GITHUB_WORKSPACE"
+          cd || exit 1
+          echo "pwd2: $PWD"
           mkdir build || exit 1
           cd build || exit 1
-          CC=clang cmake --trace .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
+          CC=clang cmake --trace $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
           sed -e 's/-DNDEBUG//g' < CMakeCache.txt > CMakeCache.txt.new || exit 1
           mv -- CMakeCache.txt.new CMakeCache.txt || exit 1
-          cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
+          cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
           cmake --build . --config $BUILD_TYPE || exit 1
           ctest -C $BUILD_TYPE --output-on-failure || exit 1
