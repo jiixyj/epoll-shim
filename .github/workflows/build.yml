@@ -62,7 +62,7 @@ jobs:
     runs-on: macos-12
     steps:
     - uses: actions/checkout@v2
-    - name: Test in FreeBSD
+    - name: Test in OpenBSD
       id: test
       uses: vmactions/openbsd-vm@v0.0.6
       with:
@@ -72,7 +72,7 @@ jobs:
         run: |
           mkdir build || exit 1
           cd build || exit 1
-          cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
+          CC=clang cmake --trace .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
           sed -e 's/-DNDEBUG//g' < CMakeCache.txt > CMakeCache.txt.new || exit 1
           mv -- CMakeCache.txt.new CMakeCache.txt || exit 1
           cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
