@@ -42,7 +42,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Test in FreeBSD
       id: test
-      uses: vmactions/freebsd-vm@v0.2.0
+      uses: vmactions/freebsd-vm@v0
       with:
         release: ${{ matrix.release }}
         envs: 'BUILD_TYPE'
@@ -64,7 +64,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Test in OpenBSD
       id: test
-      uses: vmactions/openbsd-vm@v0.0.6
+      uses: vmactions/openbsd-vm@v0
       with:
         release: 7.1
         envs: 'BUILD_TYPE'
@@ -91,7 +91,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Test in NetBSD
       id: test
-      uses: vmactions/netbsd-vm@v0.0.4
+      uses: vmactions/netbsd-vm@v0
       with:
         release: 9.1
         envs: 'BUILD_TYPE'
