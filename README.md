@@ -52,10 +52,11 @@ Sadly, this library contains some very ugly hacks and workarounds. For example:
 
 The library is tested on the following operating systems:
 
-- FreeBSD 12.2, 13.0
+- FreeBSD 12.3, 13.1
 - NetBSD 9.1, -current 2022-03-06
 - OpenBSD 7.1
-- DragonFlyBSD 6.0.1
+- DragonFlyBSD 6.2.2
+- macOS 12.5
 
 Be aware of some subtle kqueue bugs that may affect the emulated
 epoll behavior. I've marked tests that hit those behaviors as "skipped".
