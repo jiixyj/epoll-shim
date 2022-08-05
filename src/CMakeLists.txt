@@ -82,7 +82,6 @@ endif()
 add_compat_target(pipe2 "APPLE")
 add_compat_target(socket "APPLE")
 add_compat_target(socketpair "APPLE")
-add_compat_target(itimerspec "APPLE")
 add_compat_target(sem "APPLE")
 add_compat_target(ppoll "APPLE")
 
@@ -113,7 +112,6 @@ target_link_libraries(
           $<BUILD_INTERFACE:evfilt_timer_quirks>
           $<BUILD_INTERFACE:compat_enable_kqueue1>
           $<BUILD_INTERFACE:compat_enable_ppoll>
-          $<BUILD_INTERFACE:compat_enable_itimerspec>
           $<BUILD_INTERFACE:compat_enable_sigops>
           $<BUILD_INTERFACE:rwlock>
           $<BUILD_INTERFACE:wrap>)
@@ -138,6 +136,10 @@ if(NOT HAVE_EVENTFD)
 endif()
 if(NOT HAVE_TIMERFD)
   list(APPEND _headers "sys/timerfd.h")
+endif()
+if(APPLE)
+  list(APPEND _headers "time.h")
+  list(APPEND _headers "sys/time.h")
 endif()
 foreach(_header IN LISTS _headers)
   configure_file("${PROJECT_SOURCE_DIR}/include/${_header}"
