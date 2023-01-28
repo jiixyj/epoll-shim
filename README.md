@@ -81,6 +81,10 @@ To install (as root):
 
 ## Changelog
 
+### 2023-01-28
+
+- Initial port to macOS.
+
 ### 2022-07-03
 
 - Fix crashes when `libepoll-shim.so` is placed after `libc.so` in library
