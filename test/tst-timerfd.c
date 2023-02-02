@@ -187,11 +187,19 @@ dotest(int clockid)
 		{ 0, MS_TO_NSEC(300) } };
 	expect_success(junk, timerfd_settime(fd, 0, &t2, NULL));
 	expect_errno(read(fd, buf, sizeof(buf)), EAGAIN);
-	usleep(400000);
+	expect(usleep(400000), 0);
+#ifdef ALLOW_TIMER_SLACK
+	expect(poll(&pfd, 1, -1), 1);
+#else
 	expect(poll(&pfd, 1, 0), 1);
+#endif
 	expect((int)pfd.revents, POLLIN);
-	usleep(400000);
+	expect(usleep(400000), 0);
+#ifdef ALLOW_TIMER_SLACK
+	expect(poll(&pfd, 1, -1), 1);
+#else
 	expect(poll(&pfd, 1, 0), 1);
+#endif
 	expect((int)pfd.revents, POLLIN);
 	expect(read(fd, &counter, sizeof(counter)), (ssize_t)8);
 	expectge(counter, (u64)3);

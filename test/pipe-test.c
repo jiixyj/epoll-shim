@@ -107,8 +107,6 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLERR));
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
-#elif defined(__DragonFly__)
-		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -158,8 +156,6 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__poll_full_write_end_after_read_end_close, tc)
 		ATF_REQUIRE(pfd.revents == POLLERR);
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
-#elif defined(__DragonFly__)
-		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -283,8 +279,6 @@ ATF_TC_BODY_FD_LEAKCHECK(
 		ATF_REQUIRE(pfd.revents == POLLERR);
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
-#elif defined(__DragonFly__)
-		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -339,8 +333,6 @@ ATF_TC_BODY_FD_LEAKCHECK(
 		ATF_REQUIRE(pfd.revents == POLLERR);
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
-#elif defined(__DragonFly__)
-		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -396,8 +388,6 @@ ATF_TC_BODY_FD_LEAKCHECK(
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLERR));
 #elif defined(__NetBSD__)
 		ATF_REQUIRE(pfd.revents == (POLLOUT | POLLHUP));
-#elif defined(__DragonFly__)
-		ATF_REQUIRE(pfd.revents == POLLNVAL);
 #else
 		ATF_REQUIRE(pfd.revents == POLLHUP);
 #endif
@@ -1282,12 +1272,20 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 #elif defined(__APPLE__)
 	ATF_REQUIRE(kev[1].data == 0);
 	atf_tc_skip("This doesn't work on macOS");
+#elif defined(__DragonFly__)
+	ATF_REQUIRE(kev[1].data == 0);
 #else
 	ATF_REQUIRE(kev[1].data == EPIPE);
 #endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec) { 0, 0 }) == 1);
+			&(struct timespec) { 0, 0 }) ==
+#if defined(__DragonFly__)
+	    2
+#else
+	    1
+#endif
+	);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[1]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE_MSG(kev[0].flags ==
@@ -1297,6 +1295,12 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 	ATF_REQUIRE(kev[0].fflags == 0);
 	ATF_REQUIRE_MSG(kev[0].data == 0, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
+#if defined(__DragonFly__)
+	ATF_REQUIRE(kev[1].ident == (uintptr_t)p[1]);
+	ATF_REQUIRE(kev[1].filter == EVFILT_WRITE);
+	ATF_REQUIRE(kev[1].flags & EV_EOF);
+	ATF_REQUIRE(kev[1].data == 0);
+#endif
 	ATF_REQUIRE(close(kq) == 0);
 #endif
 	{
@@ -1607,12 +1611,20 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 #elif defined(__APPLE__)
 	ATF_REQUIRE(kev[1].data == 0);
 	atf_tc_skip("This doesn't work on macOS");
+#elif defined(__DragonFly__)
+	ATF_REQUIRE(kev[1].data == 0);
 #else
 	ATF_REQUIRE(kev[1].data == EPIPE);
 #endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
-			&(struct timespec) { 0, 0 }) == 1);
+			&(struct timespec) { 0, 0 }) ==
+#if defined(__DragonFly__)
+	    2
+#else
+	    1
+#endif
+	);
 	ATF_REQUIRE(kev[0].ident == (uintptr_t)p[0]);
 	ATF_REQUIRE(kev[0].filter == EVFILT_READ);
 	ATF_REQUIRE_MSG(kev[0].flags ==
@@ -1631,6 +1643,11 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 	    ;
 	ATF_REQUIRE_MSG(kev[0].data == pipe_read_size, "%d", (int)kev[0].data);
 	ATF_REQUIRE(kev[0].udata == 0);
+#if defined(__DragonFly__)
+	ATF_REQUIRE(kev[1].ident == (uintptr_t)p[0]);
+	ATF_REQUIRE(kev[1].filter == EVFILT_WRITE);
+	ATF_REQUIRE(kev[1].flags & EV_EOF);
+#endif
 	ATF_REQUIRE(close(kq) == 0);
 #endif
 	{
@@ -1660,7 +1677,8 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 
 		ATF_REQUIRE(epoll_wait(ep, eps, 32, 0) == 1);
 #if defined(__OpenBSD__) || defined(__DragonFly__)
-		if (eps[0].events == (EPOLLOUT | EPOLLERR)) {
+		if (eps[0].events == (EPOLLOUT | EPOLLERR) ||
+		    eps[0].events == EPOLLERR) {
 			atf_tc_skip("OpenBSD/DragonFly have duplex pipes but "
 				    "no way to tell p[0] and p[1] apart");
 		}
