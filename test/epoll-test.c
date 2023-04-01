@@ -37,6 +37,11 @@
 
 #include "atf-c-leakcheck.h"
 
+#ifdef USE_EPOLLRDHUP_LINUX_DEFINITION
+#undef EPOLLRDHUP
+#define EPOLLRDHUP 0x2000
+#endif
+
 static void
 fd_pipe(int fds[3])
 {
@@ -321,6 +326,35 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__invalid_op2, tc)
 	ATF_REQUIRE_ERRNO(EINVAL,
 	    epoll_wait(fd, evs, /**/
 		INT_MAX / sizeof(struct epoll_event) + 1, 0) < 0);
+}
+
+ATF_TC_WITHOUT_HEAD(epoll__rdhup_linux);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__rdhup_linux, tcptr)
+{
+	if (EPOLLRDHUP == 0x2000) {
+		return;
+	}
+
+	int fds[3];
+	fd_tcp_socket(fds);
+
+	int ep = epoll_create1(EPOLL_CLOEXEC);
+	ATF_REQUIRE(ep >= 0);
+
+	// It is not allowed to specify both 0x2000 and EPOLLRDHUP on
+	// systems where 0x2000 and EPOLLRDHUP differ by value (for
+	// example on FreeBSD). On those systems it is allowed to use 0x2000
+	// instead of EPOLLRDHUP for Linux compatibility, but you have
+	// to choose for each fd which value to use.
+	struct epoll_event event = {
+		.events = EPOLLIN | EPOLLRDHUP | 0x2000 | EPOLLPRI | EPOLLET,
+	};
+	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0);
+
+	ATF_REQUIRE(close(ep) == 0);
+	ATF_REQUIRE(close(fds[0]) == 0);
+	ATF_REQUIRE(close(fds[1]) == 0);
+	ATF_REQUIRE(close(fds[2]) == 0);
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__simple_wait);
@@ -2081,11 +2115,14 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__fcntl_fl, tcptr)
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, epoll__simple);
+#ifndef USE_EPOLLRDHUP_LINUX_DEFINITION
 	ATF_TP_ADD_TC(tp, epoll__poll_flags);
+#endif
 	ATF_TP_ADD_TC(tp, epoll__leakcheck);
 	ATF_TP_ADD_TC(tp, epoll__fd_exhaustion);
 	ATF_TP_ADD_TC(tp, epoll__invalid_op);
 	ATF_TP_ADD_TC(tp, epoll__invalid_op2);
+	ATF_TP_ADD_TC(tp, epoll__rdhup_linux);
 	ATF_TP_ADD_TC(tp, epoll__simple_wait);
 	ATF_TP_ADD_TC(tp, epoll__event_size);
 	ATF_TP_ADD_TC(tp, epoll__recursive_register);

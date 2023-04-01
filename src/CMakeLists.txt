@@ -126,6 +126,23 @@ target_include_directories(
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/install-include>)
 
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/pollrdhup.c"
+  [=[
+#define _GNU_SOURCE
+#include <poll.h>
+int main() {
+  printf("0x%x", POLLRDHUP);
+  return 0;
+}
+]=])
+try_run(HAVE_POLLRDHUP_RUN_RESULT HAVE_POLLRDHUP
+    "${CMAKE_CURRENT_BINARY_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/pollrdhup.c"
+    RUN_OUTPUT_VARIABLE POLLRDHUP_VALUE)
+if(NOT HAVE_POLLRDHUP)
+  set(POLLRDHUP_VALUE "0x2000")
+endif()
+
 set(_headers
     "epoll-shim/detail/common.h" #
     "epoll-shim/detail/poll.h" #
@@ -141,7 +158,7 @@ if(NOT HAVE_TIMERFD)
 endif()
 foreach(_header IN LISTS _headers)
   configure_file("${PROJECT_SOURCE_DIR}/include/${_header}"
-                 "${PROJECT_BINARY_DIR}/install-include/${_header}" COPYONLY)
+                 "${PROJECT_BINARY_DIR}/install-include/${_header}")
 endforeach()
 
 set_target_properties(epoll-shim PROPERTIES SOVERSION 0)

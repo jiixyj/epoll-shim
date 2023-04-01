@@ -42,7 +42,12 @@ endmacro()
 #
 
 atf_test(epoll-test)
-foreach(_target epoll-test epoll-test-interpose)
+add_library(epoll-shim-rdhup-linux-def INTERFACE)
+target_link_libraries(epoll-shim-rdhup-linux-def INTERFACE epoll-shim::epoll-shim)
+target_compile_definitions(epoll-shim-rdhup-linux-def INTERFACE -DUSE_EPOLLRDHUP_LINUX_DEFINITION)
+add_library(epoll-shim::epoll-shim-rdhup-linux-def ALIAS epoll-shim-rdhup-linux-def)
+atf_test_impl(epoll-test "-rdhup-linux-def")
+foreach(_target epoll-test epoll-test-interpose epoll-test-rdhup-linux-def)
   if(TARGET ${_target})
     target_sources(${_target} PRIVATE real_close.c)
     target_link_libraries(${_target} PRIVATE ${CMAKE_DL_LIBS})

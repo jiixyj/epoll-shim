@@ -62,6 +62,7 @@ struct registered_fds_node_ {
 	bool pollpri_active;
 
 	uint16_t events;
+	bool needs_rdhup_translation;
 	uint32_t revents;
 
 	bool is_edge_triggered;

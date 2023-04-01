@@ -218,6 +218,13 @@ registered_fds_node_update_flags_from_epoll_event(RegisteredFDsNode *fd2_node,
 {
 	fd2_node->events = ev->events &
 	    (EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT);
+	if (EPOLLRDHUP != 0x2000 && (ev->events & 0x2000) != 0) {
+		assert((ev->events & EPOLLRDHUP) == 0);
+		fd2_node->events |= EPOLLRDHUP;
+		fd2_node->needs_rdhup_translation = true;
+	} else {
+		fd2_node->needs_rdhup_translation = false;
+	}
 	fd2_node->data = ev->data;
 	fd2_node->is_edge_triggered = ev->events & EPOLLET;
 	fd2_node->is_oneshot = ev->events & EPOLLONESHOT;
@@ -301,8 +308,12 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, int kq,
 
 		fd2_node->revents = revents & POLLNVAL ? 0 : (uint32_t)revents;
 		assert(!(fd2_node->revents &
-		    ~(uint32_t)(POLLIN | POLLOUT | POLLERR | POLLHUP)));
-		return;
+		    ~(uint32_t)(POLLIN | POLLOUT | POLLERR | POLLHUP
+#ifdef POLLRDHUP
+			    | POLLRDHUP
+#endif
+			    )));
+		goto maybe_translate_rdhup;
 	}
 
 	if (fd2_node->node_type == NODE_TYPE_FIFO &&
@@ -337,10 +348,10 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, int kq,
 			}
 
 			goto out;
-		} else {
-			fd2_node->has_evfilt_write = true;
-			return;
 		}
+
+		fd2_node->has_evfilt_write = true;
+		goto maybe_translate_rdhup;
 	}
 
 #ifdef EVFILT_EXCEPT
@@ -510,7 +521,7 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, int kq,
 					if (fd2_node->revents != 0) {
 						fd2_node->revents |= POLLHUP;
 					}
-					return;
+					goto maybe_translate_rdhup;
 				}
 
 				epoll_event = EPOLLERR;
@@ -563,6 +574,12 @@ out:
 		pollable_desc_poll(fd2_node->node_data.kqueue.pollable_desc,
 		    fd2_node->fd, &fd2_node->revents);
 		fd2_node->revents &= (fd2_node->events | EPOLLHUP | EPOLLERR);
+	}
+
+maybe_translate_rdhup:
+	if ((fd2_node->revents & EPOLLRDHUP) != 0 && fd2_node->needs_rdhup_translation) {
+		fd2_node->revents &= ~EPOLLRDHUP;
+		fd2_node->revents |= 0x2000;
 	}
 }
 
@@ -1236,10 +1253,11 @@ epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
 
 	if (op != EPOLL_CTL_DEL &&
 	    ((ev->events &
-		~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLRDHUP | /**/
+		~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLRDHUP | 0x2000 | /**/
 		    EPOLLPRI |		  /* unsupported by FreeBSD's kqueue! */
 		    EPOLLHUP | EPOLLERR | /**/
-		    EPOLLET | EPOLLONESHOT)))) {
+		    EPOLLET | EPOLLONESHOT)) != 0 ||
+	     (EPOLLRDHUP != 0x2000 && (ev->events & EPOLLRDHUP) != 0 && (ev->events & 0x2000) != 0))) {
 		return EINVAL;
 	}
 
@@ -1322,7 +1340,7 @@ epollfd_ctx_wait(EpollFDCtx *epollfd, int kq, struct epoll_event *ev, int cnt,
 
 			if (pfd->revents & POLLNVAL) {
 				epollfd_ctx_remove_node(epollfd, kq, poll_node);
-			} else if (pfd->revents) {
+			} else if (pfd->revents != 0) {
 				registered_fds_node_trigger_self(poll_node, kq);
 			}
 		}
