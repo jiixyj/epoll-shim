@@ -81,6 +81,11 @@ To install (as root):
 
 ## Changelog
 
+### 2023-04-11
+
+- Add support for FreeBSD's `POLLRDHUP`.
+- Use `CMAKE_INSTALL_FULL_*` in `*.pc` files (thanks alyssais!).
+
 ### 2023-01-28
 
 - Initial port to macOS.
