@@ -26,8 +26,7 @@ macro(atf_test_impl _testname _suffix)
     target_link_libraries(
       "${_testname}${_suffix}"
       PRIVATE wrap compat_enable_pipe2 compat_enable_ppoll
-              compat_enable_socketpair compat_enable_socket
-              compat_enable_itimerspec)
+              compat_enable_socketpair compat_enable_socket)
   endif()
   atf_discover_tests("${_testname}${_suffix}" ${ARGN})
 endmacro()

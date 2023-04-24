@@ -1590,6 +1590,9 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 #if !defined(__linux__) && !defined(FORCE_EPOLL)
 	int kq = kqueue();
 	ATF_REQUIRE(kq >= 0);
+#if defined(__APPLE__)
+	ATF_REQUIRE(fcntl(kq, F_SETFD, 0) >= 0);
+#endif
 
 	struct kevent kev[32];
 	EV_SET(&kev[0], (unsigned int)p[0], EVFILT_READ, /**/
