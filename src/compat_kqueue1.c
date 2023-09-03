@@ -32,7 +32,7 @@ compat_kqueue1_impl(int *fd_out, int flags)
 		int r;
 
 		if (flags & O_CLOEXEC) {
-			if ((r = real_fcntl(fd, F_GETFD)) < 0 ||
+			if ((r = real_fcntl(fd, F_GETFD, 0)) < 0 ||
 			    real_fcntl(fd, F_SETFD, r | FD_CLOEXEC) < 0) {
 				ec = errno;
 				goto out;
@@ -49,7 +49,7 @@ compat_kqueue1_impl(int *fd_out, int flags)
 #endif
 
 		if (flags & O_NONBLOCK) {
-			if ((r = real_fcntl(fd, F_GETFL)) < 0) {
+			if ((r = real_fcntl(fd, F_GETFL, 0)) < 0) {
 				ec = errno;
 				goto out;
 			}

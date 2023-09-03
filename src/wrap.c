@@ -124,15 +124,9 @@ real_ppoll(struct pollfd fds[], nfds_t nfds,
 }
 
 int
-real_fcntl(int fd, int cmd, ...)
+real_fcntl(int fd, int cmd, intptr_t arg)
 {
 	wrap_initialize();
-	va_list ap;
-
-	va_start(ap, cmd);
-	void *arg = va_arg(ap, void *);
 	int rv = wrap.real_fcntl(fd, cmd, arg);
-	va_end(ap);
-
 	return rv;
 }

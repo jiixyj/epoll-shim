@@ -16,6 +16,11 @@ function(atf_discover_tests _target)
     TARGET "${_target}"
     PROPERTY CROSSCOMPILING_EMULATOR)
 
+  if(CMAKE_CROSSCOMPILING AND NOT _test_executor)
+    message(WARNING "Cannot detect tests for ${_target} without CROSSCOMPILING_EMULATOR")
+    return()
+  endif()
+
   add_custom_command(
     TARGET ${_target}
     POST_BUILD

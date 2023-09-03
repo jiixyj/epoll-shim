@@ -790,6 +790,55 @@ epoll_shim_ppoll(struct pollfd *fds, nfds_t nfds, struct timespec const *tmo_p,
 }
 
 EPOLL_SHIM_EXPORT
+intptr_t
+epoll_shim_fcntl_optional_arg(int cmd, va_list ap)
+{
+	intptr_t arg;
+	/*
+	 * fcntl() abuses C variadic arguments to implement optional parameters.
+	 * We want to forward this argument to the real fcntl() call, but doing
+	 * so is non-portable. On most architectures, we can just read an
+	 * intptr_t/void* and this will give us a (semi-)valid result even if
+	 * no argument/an int was passed instead since va_arg() will generally
+	 * read the next argument register or arbitrary data from the stack.
+	 *
+	 * On CHERI-enabled architectures, variadic arguments are tightly
+	 * bounded, which means that reading a void* if an int was passed will
+	 * result in a runtime trap. This switch ensures that we read the
+	 * correct number of bytes from the variadic arguments.
+	 * This ugly workaround would not be needed if a vfcntl() call taking
+	 * a va_list existed, or if fcntl just took an intptr_t argument.
+	 */
+#if defined(__FreeBSD__) && defined(__CHERI_PURE_CAPABILITY__)
+	/* Copied from lib/libc/sys/fcntl.c in the CheriBSD source tree. */
+	switch (cmd) {
+	case F_GETLK:
+	case F_SETLK:
+	case F_SETLKW:
+	case F_KINFO:
+		arg = va_arg(ap, intptr_t);
+		break;
+
+	case F_GETFD:
+	case F_GETFL:
+	case F_GETOWN:
+	case F_GET_SEALS:
+	case F_ISUNIONSTACK:
+		arg = 0;
+		break;
+
+	default:
+		arg = va_arg(ap, int);
+		break;
+	}
+#else
+	/* Not a CHERI-enabled system, reading an intptr_t will just "work". */
+	arg = va_arg(ap, intptr_t);
+#endif
+	return arg;
+}
+
+EPOLL_SHIM_EXPORT
 int
 epoll_shim_fcntl(int fd, int cmd, ...)
 {
@@ -798,22 +847,19 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	EpollShimCtx *epoll_shim_ctx;
 	FileDescription *desc;
 	va_list ap;
+	intptr_t arg;
+
+	va_start(ap, cmd);
+	arg = epoll_shim_fcntl_optional_arg(cmd, ap);
+	va_end(ap);
 
 	if (fd < 0 || cmd != F_SETFL ||
 	    epoll_shim_ctx_global(&epoll_shim_ctx) != 0 ||
 	    (desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd)) == NULL) {
-		va_start(ap, cmd);
-		void *arg = va_arg(ap, void *);
-		va_end(ap);
-
 		ERRNO_RETURN(0, -1, real_fcntl(fd, cmd, arg));
 	}
 
 	errno_t ec;
-
-	va_start(ap, cmd);
-	int arg = va_arg(ap, int);
-	va_end(ap);
 
 	(void)pthread_mutex_lock(&desc->mutex);
 	{
@@ -822,7 +868,7 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 		ec = (ec == ENOTTY) ? 0 : ec;
 
 		if (ec == 0) {
-			desc->flags = arg & O_NONBLOCK;
+			desc->flags = (int)arg & O_NONBLOCK;
 		}
 	}
 	(void)pthread_mutex_unlock(&desc->mutex);

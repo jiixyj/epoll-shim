@@ -1139,7 +1139,7 @@ epollfd_ctx_add_node(EpollFDCtx *epollfd, int kq, int fd2,
 		} else {
 			fd2_node->node_type = NODE_TYPE_FIFO;
 
-			int fl = real_fcntl(fd2, F_GETFL);
+			int fl = real_fcntl(fd2, F_GETFL, 0);
 			if (fl < 0) {
 				errno_t ec = errno;
 				registered_fds_node_destroy(fd2_node);
