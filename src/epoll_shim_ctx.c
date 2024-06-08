@@ -799,7 +799,7 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	FileDescription *desc;
 	va_list ap;
 
-	if (fd < 0 || cmd != F_SETFL ||
+	if (fd < 0 || (cmd != F_SETFL && cmd != F_GETFL) ||
 	    epoll_shim_ctx_global(&epoll_shim_ctx) != 0 ||
 	    (desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd)) == NULL) {
 		va_start(ap, cmd);
@@ -810,23 +810,43 @@ epoll_shim_fcntl(int fd, int cmd, ...)
 	}
 
 	errno_t ec;
+	int result = 0;
 
-	va_start(ap, cmd);
-	int arg = va_arg(ap, int);
-	va_end(ap);
+	if (cmd == F_SETFL) {
+		va_start(ap, cmd);
+		int arg = va_arg(ap, int);
+		va_end(ap);
 
-	(void)pthread_mutex_lock(&desc->mutex);
-	{
-		int opt = (arg & O_NONBLOCK) ? 1 : 0;
-		ec = ioctl(fd, FIONBIO, &opt) < 0 ? errno : 0;
-		ec = (ec == ENOTTY) ? 0 : ec;
+		(void)pthread_mutex_lock(&desc->mutex);
+		{
+			int opt = (arg & O_NONBLOCK) ? 1 : 0;
+			ec = ioctl(fd, FIONBIO, &opt) < 0 ? errno : 0;
+			ec = (ec == ENOTTY) ? 0 : ec;
 
-		if (ec == 0) {
-			desc->flags = arg & O_NONBLOCK;
+			if (ec == 0) {
+				desc->flags = arg & O_NONBLOCK;
+			}
 		}
+		(void)pthread_mutex_unlock(&desc->mutex);
+	} else {
+		assert(cmd == F_GETFL);
+
+		(void)pthread_mutex_lock(&desc->mutex);
+		{
+			result = real_fcntl(fd, F_GETFL, 0);
+			ec = result < 0 ? errno : 0;
+
+			// On (at least) FreeBSD, `F_SETFL` on `kqueue` fds is
+			// not supported at all (returns `ENOTTY`). Therefore,
+			// `F_GETFL` will never return `O_NONBLOCK` set, so we
+			// have to do this ourselves.
+			if (ec == 0) {
+				result |= desc->flags & O_NONBLOCK;
+			}
+		}
+		(void)pthread_mutex_unlock(&desc->mutex);
 	}
-	(void)pthread_mutex_unlock(&desc->mutex);
 
 	(void)file_description_unref(&desc);
-	ERRNO_RETURN(ec, -1, 0);
+	ERRNO_RETURN(ec, -1, result);
 }

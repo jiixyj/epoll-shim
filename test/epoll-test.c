@@ -2071,13 +2071,15 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__fcntl_fl, tcptr)
 	int fd;
 	int r;
 
-#define FCNTL_FL_TEST(fun, expected, ...)                    \
-	do {                                                 \
-		fd = fun(__VA_ARGS__);                       \
-		ATF_REQUIRE(fd >= 0);                        \
-		r = fcntl(fd, F_GETFL, 0);                   \
-		ATF_REQUIRE_MSG(r == (expected), "%04x", r); \
-		ATF_REQUIRE(close(fd) == 0);                 \
+#define FCNTL_FL_TEST(fun, expected, ...)           \
+	do {                                        \
+		fd = fun(__VA_ARGS__);              \
+		ATF_REQUIRE(fd >= 0);               \
+		r = fcntl(fd, F_GETFL, 0);          \
+		ATF_REQUIRE_MSG(r == (expected),    \
+		    "got %04x, expected %04x", /**/ \
+		    r, (expected));                 \
+		ATF_REQUIRE(close(fd) == 0);        \
 	} while (0)
 
 	FCNTL_FL_TEST(epoll_create1, O_RDWR, 0);
