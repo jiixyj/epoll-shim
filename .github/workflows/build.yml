@@ -36,13 +36,13 @@ jobs:
   testfreebsd:
     strategy:
       matrix:
-        release: [12.3, 13.1]
+        release: [13.3]
     runs-on: macos-12
     steps:
     - uses: actions/checkout@v2
     - name: Test in FreeBSD
       id: test
-      uses: vmactions/freebsd-vm@v0
+      uses: vmactions/freebsd-vm@v1
       with:
         release: ${{ matrix.release }}
         envs: 'BUILD_TYPE'
