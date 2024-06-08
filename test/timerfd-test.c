@@ -820,8 +820,17 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__argument_overflow, tc)
 		ATF_REQUIRE(read(timerfd, &timeouts, sizeof(timeouts)) < 0);
 	}
 	{
+		time_t max_time = INT_MAX;
+		// DragonFly BSD seems to start its `CLOCK_MONOTONIC` at some
+		// random value at boot which may be larger than `INT_MAX`, so
+		// make sure to set `max_time` to the maximum value. This is
+		// still an approximation though as POSIX does not provide the
+		// means to get the maximum `time_t`.
+		if (sizeof(time_t) > sizeof(int)) {
+			max_time = LONG_MAX;
+		}
 		struct itimerspec time = {
-			.it_value.tv_sec = INT_MAX,
+			.it_value.tv_sec = max_time,
 			.it_value.tv_nsec = 999999999,
 		};
 
