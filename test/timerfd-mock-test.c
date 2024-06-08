@@ -99,8 +99,9 @@ ATF_TC_BODY(timerfd_mock__mocked_kevent, tc)
 		ATF_REQUIRE(kevent_called == 1 || kevent_called == 2);
 
 #ifndef __linux__
-#if defined(__FreeBSD__) || \
-    (defined(__NetBSD__) && __NetBSD_Version__ >= 999009100)
+#if defined(__FreeBSD__) ||                                     \
+    (defined(__NetBSD__) && __NetBSD_Version__ >= 999009100) || \
+    defined(__OpenBSD__)
 		if (evfilt_timer_fflags == 0) {
 			ATF_REQUIRE(evfilt_timer_data == ms);
 		} else {

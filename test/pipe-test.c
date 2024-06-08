@@ -1272,15 +1272,15 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_read_end, tc)
 #elif defined(__APPLE__)
 	ATF_REQUIRE(kev[1].data == 0);
 	atf_tc_skip("This doesn't work on macOS");
-#elif defined(__DragonFly__)
+#elif defined(__DragonFly__) || defined(__OpenBSD__)
 	ATF_REQUIRE(kev[1].data == 0);
 #else
-	ATF_REQUIRE(kev[1].data == EPIPE);
+	ATF_REQUIRE_MSG(kev[1].data == EPIPE, "kev[1].data: %d", (int)kev[1].data);
 #endif
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec) { 0, 0 }) ==
-#if defined(__DragonFly__)
+#if defined(__DragonFly__) || defined(__OpenBSD__)
 	    2
 #else
 	    1
@@ -1608,7 +1608,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 #elif defined(__APPLE__)
 	ATF_REQUIRE(kev[1].data == 0);
 	atf_tc_skip("This doesn't work on macOS");
-#elif defined(__DragonFly__)
+#elif defined(__DragonFly__) || defined(__OpenBSD__)
 	ATF_REQUIRE(kev[1].data == 0);
 #else
 	ATF_REQUIRE(kev[1].data == EPIPE);
@@ -1616,7 +1616,7 @@ ATF_TC_BODY_FD_LEAKCHECK(pipe__closed_write_end, tc)
 
 	ATF_REQUIRE(kevent(kq, NULL, 0, kev, nitems(kev),
 			&(struct timespec) { 0, 0 }) ==
-#if defined(__DragonFly__)
+#if defined(__DragonFly__) || defined(__OpenBSD__)
 	    2
 #else
 	    1

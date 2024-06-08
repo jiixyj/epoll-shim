@@ -52,7 +52,7 @@ include(CheckSymbolExists)
 check_symbol_exists(eventfd "sys/eventfd.h" HAVE_EVENTFD)
 check_symbol_exists(timerfd_create "sys/timerfd.h" HAVE_TIMERFD)
 
-check_symbol_exists(kqueue1 "sys/event.h;sys/time.h" HAVE_KQUEUE1)
+check_symbol_exists(kqueue1 "sys/types.h;sys/event.h;sys/time.h" HAVE_KQUEUE1)
 add_compat_target(kqueue1 "NOT;HAVE_KQUEUE1")
 check_symbol_exists(sigandset "signal.h" HAVE_SIGANDSET)
 check_symbol_exists(sigorset "signal.h" HAVE_SIGORSET)
