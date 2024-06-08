@@ -2114,6 +2114,31 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__fcntl_fl, tcptr)
 #endif
 }
 
+// Test adapted from <https://github.com/jiixyj/epoll-shim/issues/49>.
+ATF_TC_WITHOUT_HEAD(epoll__fcntl_issue49);
+ATF_TC_BODY_FD_LEAKCHECK(epoll__fcntl_issue49, tcptr)
+{
+	int fd = eventfd(0, EFD_NONBLOCK);
+	ATF_REQUIRE(fd >= 0);
+
+	int epoll_fd = epoll_create(1);
+	ATF_REQUIRE(epoll_fd >= 0);
+
+	struct epoll_event ee;
+	ee.events = 0;
+	ee.data.u64 = 0;
+
+	ATF_REQUIRE((fcntl(fd, F_GETFL) & O_NONBLOCK) != 0);
+
+	int err = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ee);
+	ATF_REQUIRE(err == 0);
+
+	ATF_REQUIRE((fcntl(fd, F_GETFL) & O_NONBLOCK) != 0);
+
+	ATF_REQUIRE(close(epoll_fd) == 0);
+	ATF_REQUIRE(close(fd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, epoll__simple);
@@ -2161,6 +2186,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, epoll__epoll_pwait);
 	ATF_TP_ADD_TC(tp, epoll__cloexec);
 	ATF_TP_ADD_TC(tp, epoll__fcntl_fl);
+	ATF_TP_ADD_TC(tp, epoll__fcntl_issue49);
 
 	return atf_no_error();
 }
