@@ -59,20 +59,20 @@ jobs:
           ctest -C $BUILD_TYPE --output-on-failure || exit 1
 
   testopenbsd:
-    runs-on: macos-12
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - name: Test in OpenBSD
       id: test
-      uses: vmactions/openbsd-vm@v0
+      uses: vmactions/openbsd-vm@v1
       with:
-        release: 7.1
+        release: 7.4
         envs: 'BUILD_TYPE'
         usesh: true
         prepare: pkg_add cmake
         run: |
           cd /tmp || exit 1
-          ftp https://cloudflare.cdn.openbsd.org/pub/OpenBSD/7.1/amd64/comp71.tgz || exit 1
+          ftp https://cloudflare.cdn.openbsd.org/pub/OpenBSD/7.4/amd64/comp74.tgz || exit 1
           cd / || exit 1
           tar xzvphf /tmp/comp71.tgz
           cd || exit 1
