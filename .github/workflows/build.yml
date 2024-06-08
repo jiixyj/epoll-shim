@@ -93,7 +93,7 @@ jobs:
       id: test
       uses: vmactions/netbsd-vm@v1
       with:
-        release: 9.1
+        release: 9.4
         envs: 'BUILD_TYPE'
         usesh: true
         prepare: pkg_add cmake
