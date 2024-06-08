@@ -108,14 +108,14 @@ jobs:
           ctest -C $BUILD_TYPE --output-on-failure || exit 1
 
   testdragonflybsd:
-    runs-on: macos-12
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - name: Test in DragonFly BSD
       id: test
-      uses: vmactions/dragonflybsd-vm@v0
+      uses: vmactions/dragonflybsd-vm@v1
       with:
-        release: 6.2.2
+        release: 6.4.0
         envs: 'BUILD_TYPE'
         usesh: true
         prepare: pkg install -y cmake
