@@ -52,10 +52,10 @@ Sadly, this library contains some very ugly hacks and workarounds. For example:
 
 The library is tested on the following operating systems:
 
-- FreeBSD 12.3, 13.1
-- NetBSD 9.1, -current 2022-03-06
-- OpenBSD 7.1
-- DragonFlyBSD 6.2.2
+- FreeBSD 13.3
+- NetBSD 9.4
+- OpenBSD 7.5
+- DragonFlyBSD 6.4.0
 - macOS 12.5
 
 Be aware of some subtle kqueue bugs that may affect the emulated
@@ -80,6 +80,14 @@ To install (as root):
     cmake --build . --target install
 
 ## Changelog
+
+### 2024-06-08
+
+- Add support for `kqueue1` on OpenBSD.
+- Fix issue #46 (on FreeBSD, `O_NONBLOCK` flag of fds added to an epoll fd
+  might change unexpectedly).
+- Update CI action to `vmactions/freebsd-vm@v1`.
+- Bump supported OS versions.
 
 ### 2023-04-11
 
