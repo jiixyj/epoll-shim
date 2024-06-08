@@ -96,7 +96,7 @@ jobs:
         release: 9.4
         envs: 'BUILD_TYPE'
         usesh: true
-        prepare: pkg_add cmake
+        prepare: /usr/sbin/pkg_add cmake
         run: |
           mkdir build || exit 1
           cd build || exit 1
