@@ -310,9 +310,9 @@ registered_fds_node_feed_event(RegisteredFDsNode *fd2_node, int kq,
 		assert(!(fd2_node->revents &
 		    ~(uint32_t)(POLLIN | POLLOUT | POLLERR | POLLHUP
 #ifdef POLLRDHUP
-			    | POLLRDHUP
+			| POLLRDHUP
 #endif
-			    )));
+			)));
 		goto maybe_translate_rdhup;
 	}
 
@@ -577,7 +577,8 @@ out:
 	}
 
 maybe_translate_rdhup:
-	if ((fd2_node->revents & EPOLLRDHUP) != 0 && fd2_node->needs_rdhup_translation) {
+	if ((fd2_node->revents & EPOLLRDHUP) != 0 &&
+	    fd2_node->needs_rdhup_translation) {
 		fd2_node->revents &= ~EPOLLRDHUP;
 		fd2_node->revents |= 0x2000;
 	}
@@ -1253,11 +1254,12 @@ epollfd_ctx_ctl(EpollFDCtx *epollfd, int kq, int op, int fd2,
 
 	if (op != EPOLL_CTL_DEL &&
 	    ((ev->events &
-		~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLRDHUP | 0x2000 | /**/
-		    EPOLLPRI |		  /* unsupported by FreeBSD's kqueue! */
-		    EPOLLHUP | EPOLLERR | /**/
-		    EPOLLET | EPOLLONESHOT)) != 0 ||
-	     (EPOLLRDHUP != 0x2000 && (ev->events & EPOLLRDHUP) != 0 && (ev->events & 0x2000) != 0))) {
+		 ~(uint32_t)(EPOLLIN | EPOLLOUT | EPOLLRDHUP | 0x2000 | /**/
+		     EPOLLPRI | /* unsupported by FreeBSD's kqueue! */
+		     EPOLLHUP | EPOLLERR | /**/
+		     EPOLLET | EPOLLONESHOT)) != 0 ||
+		(EPOLLRDHUP != 0x2000 && (ev->events & EPOLLRDHUP) != 0 &&
+		    (ev->events & 0x2000) != 0))) {
 		return EINVAL;
 	}
 

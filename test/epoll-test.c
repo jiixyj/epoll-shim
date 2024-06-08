@@ -349,7 +349,8 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__rdhup_linux, tcptr)
 	struct epoll_event event = {
 		.events = EPOLLIN | EPOLLRDHUP | 0x2000 | EPOLLPRI | EPOLLET,
 	};
-	ATF_REQUIRE_ERRNO(EINVAL, epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0);
+	ATF_REQUIRE_ERRNO(EINVAL,
+	    epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], &event) < 0);
 
 	ATF_REQUIRE(close(ep) == 0);
 	ATF_REQUIRE(close(fds[0]) == 0);
@@ -2015,12 +2016,11 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epoll_pwait, tcptr)
 		int n = ppoll(
 #endif
 		    &pfd, 1,
-		    &(struct timespec) {
-			    0,
+		    &(struct timespec) { 0,
 #if defined(__DragonFly__)
-				1
+			1
 #else
-				0
+			0
 #endif
 		    },
 		    &emptyset);
