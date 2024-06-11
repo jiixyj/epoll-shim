@@ -133,6 +133,7 @@ fd_tcp_socket(int fds[3])
 
 #ifdef __APPLE__
 	int conn = accept(sock, NULL, NULL);
+	ATF_REQUIRE(fcntl(conn, F_SETFD, FD_CLOEXEC) >= 0);
 #else
 	int conn = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
 #endif
@@ -375,6 +376,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__simple_wait, tc)
 ATF_TC_WITHOUT_HEAD(epoll__event_size);
 ATF_TC_BODY_FD_LEAKCHECK(epoll__event_size, tc)
 {
+#if !defined(__x86_64__) && !defined(__amd64__)
+	atf_tc_skip("Only check epoll_event size on X86 platforms");
+#endif
 	struct epoll_event event;
 	// this check works on 32bit _and_ 64bit, since
 	// sizeof(epoll_event) == sizeof(uint32_t) + sizeof(uint64_t)

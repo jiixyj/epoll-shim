@@ -96,10 +96,17 @@ timerfd_ctx_get_monotonic_offset(struct timespec *monotonic_offset)
 	}
 #else
 	struct timeval boottime;
+#ifdef __APPLE__
+	if (sysctlbyname("kern.boottime", &boottime,
+		&(size_t) { sizeof(boottime) }, NULL, 0) < 0) {
+		return errno;
+	}
+#else
 	if (sysctl((int const[2]) { CTL_KERN, KERN_BOOTTIME }, 2, /**/
 		&boottime, &(size_t) { sizeof(boottime) }, NULL, 0) < 0) {
 		return errno;
 	}
+#endif
 
 	*monotonic_offset = (struct timespec) {
 		.tv_sec = boottime.tv_sec,

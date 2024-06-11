@@ -241,7 +241,7 @@ signalfd_ctx_read_impl(SignalFDCtx *signalfd,
 
 	signalfd_siginfo->ssi_status = siginfo.si_status;
 
-#ifndef __OpenBSD__
+#if !defined(__OpenBSD__) && !defined(__APPLE__)
 	signalfd_siginfo->ssi_band = (uint32_t)siginfo.si_band;
 #endif
 
