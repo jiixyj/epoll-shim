@@ -126,21 +126,17 @@ target_include_directories(
   PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/install-include>)
 
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/pollrdhup.c"
-  [=[
-#define _GNU_SOURCE
-#include <poll.h>
-int main() {
-  printf("0x%x", POLLRDHUP);
-  return 0;
-}
-]=])
-try_run(HAVE_POLLRDHUP_RUN_RESULT HAVE_POLLRDHUP
-    "${CMAKE_CURRENT_BINARY_DIR}"
-    "${CMAKE_CURRENT_BINARY_DIR}/pollrdhup.c"
-    RUN_OUTPUT_VARIABLE POLLRDHUP_VALUE)
-if(NOT HAVE_POLLRDHUP)
+include(CMakePushCheckState)
+cmake_push_check_state()
+set(CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+set(CMAKE_EXTRA_INCLUDE_FILES poll.h)
+check_type_size("((struct { char x[POLLRDHUP]\\; }*)0)->x" POLLRDHUP_VALUE)
+cmake_pop_check_state()
+
+if(NOT POLLRDHUP_VALUE)
   set(POLLRDHUP_VALUE "0x2000")
+else()
+  message(STATUS "Detected value of POLLRDHUP as ${POLLRDHUP_VALUE}")
 endif()
 
 set(_headers
