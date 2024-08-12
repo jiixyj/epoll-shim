@@ -378,7 +378,12 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__event_size, tc)
 	struct epoll_event event;
 	// this check works on 32bit _and_ 64bit, since
 	// sizeof(epoll_event) == sizeof(uint32_t) + sizeof(uint64_t)
+#if __SIZEOF_POINTER__ <= 8
 	ATF_REQUIRE(sizeof(event) == 12);
+#else
+	/* On systems with 128-bit pointers, it will be padded to 32 bytes */
+	ATF_REQUIRE(sizeof(event) == 2 * sizeof(void*));
+#endif
 }
 
 ATF_TC_WITHOUT_HEAD(epoll__recursive_register);
@@ -1232,7 +1237,9 @@ ATF_TC_BODY_FD_LEAKCHECK(epoll__epollpri, tcptr)
 	fd_tcp_socket(fds);
 
 	ATF_REQUIRE(fcntl(fds[0], F_SETFL, O_NONBLOCK) == 0);
+	ATF_REQUIRE(fcntl(fds[0], F_GETFL) & O_NONBLOCK);
 	ATF_REQUIRE(fcntl(fds[1], F_SETFL, O_NONBLOCK) == 0);
+	ATF_REQUIRE(fcntl(fds[1], F_GETFL) & O_NONBLOCK);
 
 	int ep = epoll_create1(EPOLL_CLOEXEC);
 	ATF_REQUIRE(ep >= 0);

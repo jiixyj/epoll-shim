@@ -25,6 +25,7 @@ add_library(wrap OBJECT wrap.c)
 set_property(TARGET wrap PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(wrap PUBLIC Threads::Threads)
 target_include_directories(wrap
+                           PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
                            PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>)
 
 macro(add_compat_target _name _condition)
@@ -51,6 +52,8 @@ include(CheckSymbolExists)
 # supports native timerfd descriptors. Prefer them if available.
 check_symbol_exists(eventfd "sys/eventfd.h" HAVE_EVENTFD)
 check_symbol_exists(timerfd_create "sys/timerfd.h" HAVE_TIMERFD)
+# Presence of a variadic version of fcntl allows for safer interposing.
+check_symbol_exists(vfcntl "fcntl.h;stdarg.h" HAVE_VFCNTL)
 
 check_symbol_exists(kqueue1 "sys/types.h;sys/event.h;sys/time.h" HAVE_KQUEUE1)
 add_compat_target(kqueue1 "NOT;HAVE_KQUEUE1")
@@ -117,9 +120,9 @@ target_link_libraries(
           $<BUILD_INTERFACE:compat_enable_sigops>
           $<BUILD_INTERFACE:rwlock>
           $<BUILD_INTERFACE:wrap>)
-if(HAVE_TIMERFD)
-  target_compile_definitions(epoll-shim PRIVATE HAVE_TIMERFD)
-endif()
+configure_file(
+  epoll_shim_config.h.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/epoll_shim_config.h)
 target_compile_definitions(epoll-shim PRIVATE EPOLL_SHIM_DISABLE_WRAPPER_MACROS)
 target_include_directories(
   epoll-shim
