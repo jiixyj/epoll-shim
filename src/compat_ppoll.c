@@ -93,7 +93,7 @@ compat_ppoll_impl(struct pollfd fds[], nfds_t nfds,
 			goto out;
 		}
 
-#ifdef EVFILT_USER
+#if defined(EVFILT_USER) && (defined(NOTE_TRIGGER) || defined(EV_TRIGGER))
 		sigset_t pending;
 		if (sigpending(&pending) < 0) {
 			ec = errno;
@@ -103,8 +103,13 @@ compat_ppoll_impl(struct pollfd fds[], nfds_t nfds,
 			if (sigismember(&pending, (int)kevs[i].ident)) {
 				EV_SET(&kevs[0], 0, EVFILT_USER, /**/
 				    EV_ADD | EV_ONESHOT, 0, 0, 0);
+#if defined(NOTE_TRIGGER)
 				EV_SET(&kevs[1], 0, EVFILT_USER, /**/
 				    0, NOTE_TRIGGER, 0, 0);
+#elif defined(EV_TRIGGER)
+				EV_SET(&kevs[1], 0, EVFILT_USER, /**/
+				    EV_TRIGGER, 0, 0, 0);
+#endif
 				if (kevent(kq, kevs, 2, NULL, 0, NULL) < 0) {
 					ec = errno;
 					goto out;

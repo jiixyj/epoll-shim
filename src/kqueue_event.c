@@ -16,13 +16,18 @@ kqueue_event_init(KQueueEvent *kqueue_event, struct kevent *kevs,
 {
 	*kqueue_event = (KQueueEvent) { .self_pipe_ = { -1, -1 } };
 
-#ifdef EVFILT_USER
+#if defined(EVFILT_USER) && (defined(NOTE_TRIGGER) || defined(EV_TRIGGER))
 	EV_SET(&kevs[(*kevs_length)++], 0, /**/
 	    EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
 
 	if (should_trigger) {
+#if defined(NOTE_TRIGGER)
 		EV_SET(&kevs[(*kevs_length)++], 0, /**/
 		    EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
+#elif defined(EV_TRIGGER)
+		EV_SET(&kevs[(*kevs_length)++], 0, /**/
+		    EVFILT_USER, EV_TRIGGER, 0, 0, 0);
+#endif
 		kqueue_event->is_triggered_ = true;
 	}
 
@@ -82,9 +87,13 @@ kqueue_event_trigger(KQueueEvent *kqueue_event, int kq)
 		return 0;
 	}
 
-#ifdef EVFILT_USER
+#if defined(EVFILT_USER) && (defined(NOTE_TRIGGER) || defined(EV_TRIGGER))
 	struct kevent kevs[1];
+#if defined(NOTE_TRIGGER)
 	EV_SET(&kevs[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
+#elif defined(EV_TRIGGER)
+	EV_SET(&kevs[0], 0, EVFILT_USER, EV_TRIGGER, 0, 0, 0);
+#endif
 
 	if (kevent(kq, kevs, 1, NULL, 0, NULL) < 0) {
 		return errno;
