@@ -56,7 +56,7 @@ The library is tested on the following operating systems:
 - NetBSD 9.4
 - OpenBSD 7.5
 - DragonFlyBSD 6.4.0
-- macOS 12.5
+- macOS 13.7.1
 
 Be aware of some subtle kqueue bugs that may affect the emulated
 epoll behavior. I've marked tests that hit those behaviors as "skipped".
