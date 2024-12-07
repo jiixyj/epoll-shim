@@ -42,6 +42,11 @@
 #define EPOLLRDHUP 0x2000
 #endif
 
+/* macOS and Solaris do not have it */
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 static void
 fd_pipe(int fds[3])
 {

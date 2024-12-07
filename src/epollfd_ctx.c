@@ -268,10 +268,15 @@ registered_fds_node_add_self_trigger(RegisteredFDsNode *fd2_node, int kq)
 static void
 registered_fds_node_trigger_self(RegisteredFDsNode *fd2_node, int kq)
 {
-#ifdef EVFILT_USER
+#if defined(EVFILT_USER) && (defined(NOTE_TRIGGER) || defined(EV_TRIGGER))
 	struct kevent kevs[1];
+#if defined(NOTE_TRIGGER)
 	EV_SET(&kevs[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
 	    0, NOTE_TRIGGER, 0, fd2_node);
+#elif defined(EV_TRIGGER)
+	EV_SET(&kevs[0], (uintptr_t)fd2_node, EVFILT_USER, /**/
+	    EV_TRIGGER, 0, 0, fd2_node);
+#endif
 	(void)kevent(kq, kevs, 1, NULL, 0, NULL);
 #else
 	(void)kq;
@@ -792,10 +797,14 @@ epollfd_ctx__add_self_trigger(EpollFDCtx *epollfd, int kq)
 static void
 epollfd_ctx__trigger_self(EpollFDCtx *epollfd, int kq)
 {
-#ifdef EVFILT_USER
+#if defined(EVFILT_USER) && (defined(NOTE_TRIGGER) || defined(EV_TRIGGER))
 	(void)epollfd;
 	struct kevent kevs[1];
+#if defined(NOTE_TRIGGER)
 	EV_SET(&kevs[0], 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
+#elif defined(EV_TRIGGER)
+	EV_SET(&kevs[0], 0, EVFILT_USER, EV_TRIGGER, 0, 0, 0);
+#endif
 	(void)kevent(kq, kevs, 1, NULL, 0, NULL);
 #else
 	assert(epollfd->self_pipe[0] >= 0);
