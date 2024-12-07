@@ -952,6 +952,7 @@ check:
 ATF_TC_WITHOUT_HEAD(timerfd__unmodified_errno);
 ATF_TC_BODY_FD_LEAKCHECK(timerfd__unmodified_errno, tc)
 {
+	ATF_REQUIRE(errno == 0);
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
 	    TFD_CLOEXEC | TFD_NONBLOCK);
 	ATF_REQUIRE(timerfd >= 0);
@@ -963,6 +964,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__unmodified_errno, tc)
 			    .it_value.tv_nsec = 100000000,
 			},
 			NULL) == 0);
+	ATF_REQUIRE(errno == 0);
 	(void)wait_for_timerfd(timerfd);
 	ATF_REQUIRE(errno == 0);
 
@@ -989,6 +991,7 @@ ATF_TC_BODY_FD_LEAKCHECK(timerfd__unmodified_errno, tc)
 ATF_TC_WITHOUT_HEAD(timerfd__reset_to_very_long);
 ATF_TC_BODY_FD_LEAKCHECK(timerfd__reset_to_very_long, tc)
 {
+	ATF_REQUIRE(errno == 0);
 	int timerfd = timerfd_create(CLOCK_MONOTONIC, /**/
 	    TFD_CLOEXEC | TFD_NONBLOCK);
 	ATF_REQUIRE(timerfd >= 0);
