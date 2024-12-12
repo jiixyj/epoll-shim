@@ -36,12 +36,13 @@ typedef struct atf_tc_s atf_tc_t;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpragmas"
 #pragma GCC diagnostic ignored "-Wpedantic"
+#define ATF_IMPL_SIZE (2 * sizeof(size_t) + 513 * sizeof(void*))
 struct atf_tc_s {
-	MICROATF_ALIGNAS(8192) char const *name;
+	char const *name;
 	void (*head)(atf_tc_t *);
 	void (*body)(atf_tc_t const *);
 	struct atf_tc_impl_s_ *impl_;
-	MICROATF_ALIGNAS(max_align_t) unsigned char impl_space_[];
+	MICROATF_ALIGNAS(max_align_t) unsigned char impl_space_[ATF_IMPL_SIZE];
 };
 #pragma GCC diagnostic pop
 
@@ -143,6 +144,7 @@ void atf_tc_skip(const char *reason, ...);
 		NULL,                                          \
 		microatf_tc_##tc##_body,                       \
 		NULL,                                          \
+		{}                                             \
 	}
 
 #define ATF_TC(tc)                                             \
@@ -153,6 +155,7 @@ void atf_tc_skip(const char *reason, ...);
 		microatf_tc_##tc##_head,                       \
 		microatf_tc_##tc##_body,                       \
 		NULL,                                          \
+		{}                                             \
 	}
 
 #define ATF_TC_HEAD(tc, tcptr)               \
