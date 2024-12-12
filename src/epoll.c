@@ -18,6 +18,18 @@
 #include "timespec_util.h"
 #include "wrap.h"
 
+_Static_assert(POLLIN == EPOLLIN, "");
+_Static_assert(POLLPRI == EPOLLPRI, "");
+_Static_assert(POLLOUT == EPOLLOUT, "");
+_Static_assert(POLLERR == EPOLLERR, "");
+_Static_assert(POLLHUP == EPOLLHUP, "");
+#ifdef EPOLLNVAL
+_Static_assert(POLLNVAL == EPOLLNVAL, "");
+#endif
+#ifdef POLLRDHUP
+_Static_assert(POLLRDHUP == EPOLLRDHUP, "");
+#endif
+
 void epollfd_lock(FileDescription *desc);
 void epollfd_unlock(FileDescription *desc);
 void epollfd_remove_fd(FileDescription *desc, int kq, int fd);
