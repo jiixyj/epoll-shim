@@ -614,7 +614,7 @@ timerfd_ctx_read(TimerFDCtx *timerfd, int kq, uint64_t *value)
 	}
 
 	bool got_kevent = false;
-	unsigned long event_ident;
+	uintptr_t event_ident;
 	{
 		struct kevent kevs[3];
 		int n = kevent(kq, NULL, 0, kevs, 3,

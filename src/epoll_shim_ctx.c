@@ -20,6 +20,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "epoll_shim_config.h"
 #include "epoll_shim_export.h"
 #include "errno_return.h"
 #include "timespec_util.h"
@@ -427,7 +428,7 @@ epoll_shim_ctx_drop_desc(EpollShimCtx *epoll_shim_ctx, /**/
 	rwlock_unlock_write(&epoll_shim_ctx->rwlock);
 }
 
-#ifndef HAVE_TIMERFD
+#if !HAVE_TIMERFD
 static void
 trigger_realtime_change_notification(FileDescription *desc, int kq, void *arg)
 {
@@ -793,29 +794,33 @@ EPOLL_SHIM_EXPORT
 int
 epoll_shim_fcntl(int fd, int cmd, ...)
 {
+	va_list ap;
+	va_start(ap, cmd);
+	int result = epoll_shim_vfcntl(fd, cmd, ap);
+	va_end(ap);
+	return result;
+}
+
+EPOLL_SHIM_EXPORT
+int
+epoll_shim_vfcntl(int fd, int cmd, va_list ap)
+{
 	ERRNO_SAVE;
 
 	EpollShimCtx *epoll_shim_ctx;
 	FileDescription *desc;
-	va_list ap;
 
 	if (fd < 0 || (cmd != F_SETFL && cmd != F_GETFL) ||
 	    epoll_shim_ctx_global(&epoll_shim_ctx) != 0 ||
 	    (desc = epoll_shim_ctx_find_desc(epoll_shim_ctx, fd)) == NULL) {
-		va_start(ap, cmd);
-		void *arg = va_arg(ap, void *);
-		va_end(ap);
-
-		ERRNO_RETURN(0, -1, real_fcntl(fd, cmd, arg));
+		ERRNO_RETURN(0, -1, real_vfcntl(fd, cmd, ap));
 	}
 
 	errno_t ec;
 	int result = 0;
 
 	if (cmd == F_SETFL) {
-		va_start(ap, cmd);
 		int arg = va_arg(ap, int);
-		va_end(ap);
 
 		(void)pthread_mutex_lock(&desc->mutex);
 		{

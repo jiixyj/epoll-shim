@@ -4,6 +4,7 @@
 #include <sys/tree.h>
 
 #include <stdatomic.h>
+#include <stdarg.h>
 
 #include <signal.h>
 #include <unistd.h>
@@ -83,5 +84,6 @@ int epoll_shim_ppoll(struct pollfd *, nfds_t, struct timespec const *,
     sigset_t const *);
 
 int epoll_shim_fcntl(int fd, int cmd, ...);
+int epoll_shim_vfcntl(int fd, int cmd, va_list);
 
 #endif
