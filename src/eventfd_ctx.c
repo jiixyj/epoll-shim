@@ -77,6 +77,11 @@ eventfd_ctx_write(EventFDCtx *eventfd, int kq, uint64_t value)
 
 	eventfd->counter_ = new_value;
 
+	/* Linux wakes poll waiters on every write, even while count is nonzero.
+	 * Refresh the kqueue notification so edge-triggered watchers wake again. */
+	if (kqueue_event_is_triggered(&eventfd->kqueue_event_)) {
+		kqueue_event_clear(&eventfd->kqueue_event_, kq);
+	}
 	ec = kqueue_event_trigger(&eventfd->kqueue_event_, kq);
 	if (ec != 0) {
 		return ec;

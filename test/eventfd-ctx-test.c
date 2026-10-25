@@ -564,6 +564,48 @@ ATF_TC_BODY_FD_LEAKCHECK(eventfd__epoll, tc)
 	ATF_REQUIRE(close(ep) == 0);
 }
 
+ATF_TC_WITHOUT_HEAD(eventfd__epoll_repeated_writes);
+ATF_TC_BODY_FD_LEAKCHECK(eventfd__epoll_repeated_writes, tc)
+{
+	for (int semaphore = 0; semaphore <= 1; ++semaphore) {
+		int ep = epoll_create1(EPOLL_CLOEXEC);
+		ATF_REQUIRE(ep >= 0);
+		int efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK |
+		    (semaphore ? EFD_SEMAPHORE : 0));
+		ATF_REQUIRE(efd >= 0);
+		struct epoll_event event;
+		ATF_REQUIRE(epoll_ctl(ep, EPOLL_CTL_ADD, efd,
+				&(struct epoll_event) {
+				    .events = EPOLLIN | EPOLLET,
+				    .data.fd = efd,
+				}) == 0);
+		ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+
+		/* Each write must wake the edge-triggered watcher even though
+		 * the eventfd counter has not been drained by a read. */
+		for (int i = 0; i < 3; ++i) {
+			ATF_REQUIRE(eventfd_write(efd, 1) == 0);
+			ATF_REQUIRE(epoll_wait(ep, &event, 1, 100) == 1);
+			ATF_REQUIRE(event.events == EPOLLIN);
+			ATF_REQUIRE(event.data.fd == efd);
+			ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+		}
+
+		uint64_t value;
+		for (int i = 0; i < (semaphore ? 3 : 1); ++i) {
+			ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+			ATF_REQUIRE(value == (semaphore ? 1 : 3));
+		}
+		ATF_REQUIRE(epoll_wait(ep, &event, 1, 0) == 0);
+		ATF_REQUIRE(eventfd_write(efd, 1) == 0);
+		ATF_REQUIRE(epoll_wait(ep, &event, 1, 100) == 1);
+		ATF_REQUIRE(eventfd_read(efd, &value) == 0);
+		ATF_REQUIRE(value == 1);
+		ATF_REQUIRE(close(efd) == 0);
+		ATF_REQUIRE(close(ep) == 0);
+	}
+}
+
 ATF_TC_WITHOUT_HEAD(eventfd__toggle_nonblock);
 ATF_TC_BODY_FD_LEAKCHECK(eventfd__toggle_nonblock, tc)
 {
@@ -648,6 +690,7 @@ for the licenses and copyright statements of these projects.
 #endif
 	ATF_TP_ADD_TC(tp, eventfd__threads_blocking);
 	ATF_TP_ADD_TC(tp, eventfd__epoll);
+	ATF_TP_ADD_TC(tp, eventfd__epoll_repeated_writes);
 	ATF_TP_ADD_TC(tp, eventfd__toggle_nonblock);
 
 	return atf_no_error();
